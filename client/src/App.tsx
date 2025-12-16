@@ -4,13 +4,36 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
+import Home from "@/pages/Home";
+import AppLayout from "@/pages/app/Layout";
+import Dashboard from "@/pages/app/Dashboard";
+import CivicGuard from "@/pages/app/Civic";
+import Marketplace from "@/pages/app/Marketplace";
+import Jobs from "@/pages/app/Jobs";
+import Forum from "@/pages/app/Forum";
 
 function Router() {
   return (
     <Switch>
-      {/* Add pages below */}
-      {/* <Route path="/" component={Home}/> */}
-      {/* Fallback to 404 */}
+      <Route path="/" component={Home} />
+      
+      {/* App Routes */}
+      <Route path="/app">
+        <AppLayout><Dashboard /></AppLayout>
+      </Route>
+      <Route path="/app/civic">
+        <AppLayout><CivicGuard /></AppLayout>
+      </Route>
+      <Route path="/app/marketplace">
+        <AppLayout><Marketplace /></AppLayout>
+      </Route>
+      <Route path="/app/jobs">
+        <AppLayout><Jobs /></AppLayout>
+      </Route>
+      <Route path="/app/forum">
+        <AppLayout><Forum /></AppLayout>
+      </Route>
+
       <Route component={NotFound} />
     </Switch>
   );
