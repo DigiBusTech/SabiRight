@@ -31,6 +31,8 @@ export default function Jobs() {
   
   const [role, setRole] = useState("");
   const [location, setLocation] = useState("Lagos");
+  const [employmentType, setEmploymentType] = useState("");
+  const [workMode, setWorkMode] = useState("");
 
   useEffect(() => {
     const q = query(
@@ -55,7 +57,7 @@ export default function Jobs() {
     try {
         const aiPrompt = `
             Act as a Job Search API for Nigeria.
-            Criteria: Role: ${role}, Location: ${location}.
+            Criteria: Role: ${role}, Location: ${location}${employmentType ? `, Employment: ${employmentType}` : ''}${workMode ? `, Work Mode: ${workMode}` : ''}.
             
             Task: List 3 highly realistic job opportunities matching these criteria.
             
@@ -63,9 +65,11 @@ export default function Jobs() {
             1. The 'description' must be a full, comprehensive job description (at least 100 words). **Format the description using Markdown.**
             2. The 'contact' field must be a URL or email.
             3. The 'source' field must be the name of the external job platform (e.g., LinkedIn).
+            4. The 'type' must be either "Full-time" or "Part-time".
+            5. The 'workMode' must be either "Remote", "Onsite", or "Hybrid".
             
             Output: Return ONLY a JSON Array of objects. No markdown blocks.
-            Schema: [{"title": "...", "company": "...", "location": "...", "type": "Full-time", "salary": "...", "contact": "...", "description": "...", "source": "..."}]
+            Schema: [{"title": "...", "company": "...", "location": "...", "type": "Full-time", "workMode": "Remote", "salary": "...", "contact": "...", "description": "...", "source": "..."}]
         `;
 
         const aiResponse = await runGemini(aiPrompt);
@@ -94,6 +98,12 @@ export default function Jobs() {
     }
   };
 
+  const filteredJobs = jobs.filter(job => {
+    if (employmentType && job.type !== employmentType) return false;
+    if (workMode && job.workMode !== workMode) return false;
+    return true;
+  });
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -109,7 +119,7 @@ export default function Jobs() {
       {/* Search Form */}
       <Card className="bg-blue-50 border-blue-100">
         <CardContent className="p-6">
-            <form id="search-form" onSubmit={handleSearch} className="grid md:grid-cols-3 gap-4">
+            <form id="search-form" onSubmit={handleSearch} className="grid md:grid-cols-5 gap-4">
                 <div className="space-y-2">
                     <label className="text-xs font-bold text-blue-800 uppercase">Role / Keywords</label>
                     <input 
@@ -128,10 +138,35 @@ export default function Jobs() {
                         onChange={e => setLocation(e.target.value)}
                     />
                 </div>
+                <div className="space-y-2">
+                    <label className="text-xs font-bold text-blue-800 uppercase">Employment</label>
+                    <select 
+                        className="w-full p-2 rounded border border-blue-200 focus:ring-2 ring-blue-500 outline-none bg-white"
+                        value={employmentType}
+                        onChange={e => setEmploymentType(e.target.value)}
+                    >
+                        <option value="">All Types</option>
+                        <option value="Full-time">Full-time</option>
+                        <option value="Part-time">Part-time</option>
+                    </select>
+                </div>
+                <div className="space-y-2">
+                    <label className="text-xs font-bold text-blue-800 uppercase">Work Mode</label>
+                    <select 
+                        className="w-full p-2 rounded border border-blue-200 focus:ring-2 ring-blue-500 outline-none bg-white"
+                        value={workMode}
+                        onChange={e => setWorkMode(e.target.value)}
+                    >
+                        <option value="">All Modes</option>
+                        <option value="Remote">Remote</option>
+                        <option value="Onsite">Onsite</option>
+                        <option value="Hybrid">Hybrid</option>
+                    </select>
+                </div>
                 <div className="flex items-end">
                     <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 font-bold" disabled={searching}>
                         {searching ? <Loader2 className="animate-spin mr-2" /> : <Search className="mr-2 h-4 w-4" />}
-                        Find Matches
+                        Find
                     </Button>
                 </div>
             </form>
@@ -142,10 +177,10 @@ export default function Jobs() {
       <div className="grid gap-4">
         {loading ? (
             <div className="text-center py-10 text-slate-400">Loading jobs...</div>
-        ) : jobs.length === 0 ? (
-            <div className="text-center py-10 text-slate-400">No jobs found. Try running a search!</div>
+        ) : filteredJobs.length === 0 ? (
+            <div className="text-center py-10 text-slate-400">No jobs match your filters. Try adjusting them!</div>
         ) : (
-            jobs.map((job) => (
+            filteredJobs.map((job) => (
             <Card 
               key={job.id} 
               className="hover:border-primary/50 transition-all cursor-pointer hover:shadow-md group relative overflow-hidden"
@@ -175,6 +210,7 @@ export default function Jobs() {
                       
                       <div className="flex flex-wrap gap-3 text-sm text-slate-500 mb-3">
                         <span className="flex items-center gap-1"><MapPin className="h-4 w-4 text-slate-400" /> {job.location}</span>
+                        {job.workMode && <span className="flex items-center gap-1"><Briefcase className="h-4 w-4 text-slate-400" /> {job.workMode}</span>}
                         {job.salary && <span className="flex items-center gap-1"><DollarSign className="h-4 w-4 text-slate-400" /> {job.salary}</span>}
                       </div>
                       
@@ -196,7 +232,6 @@ export default function Jobs() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-xl">
             <CardContent className="p-6">
-              {/* Header */}
               <div className="flex justify-between items-start mb-6">
                 <div className="flex-1">
                   <div className="flex items-start gap-4 mb-4">
@@ -226,29 +261,25 @@ export default function Jobs() {
                 </button>
               </div>
 
-              {/* Details Grid */}
-              <div className="grid md:grid-cols-3 gap-4 mb-6 p-4 bg-slate-50 rounded-lg">
+              <div className="grid md:grid-cols-4 gap-4 mb-6 p-4 bg-slate-50 rounded-lg">
                 <div>
                   <p className="text-xs font-bold text-slate-500 uppercase">Location</p>
-                  <p className="text-sm font-medium text-slate-900 mt-1 flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-slate-400" />
-                    {selectedJob.location}
-                  </p>
+                  <p className="text-sm font-medium text-slate-900 mt-1">{selectedJob.location}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase">Employment</p>
+                  <p className="text-sm font-medium text-slate-900 mt-1">{selectedJob.type}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase">Work Mode</p>
+                  <p className="text-sm font-medium text-slate-900 mt-1">{selectedJob.workMode || "Not specified"}</p>
                 </div>
                 <div>
                   <p className="text-xs font-bold text-slate-500 uppercase">Salary</p>
-                  <p className="text-sm font-medium text-slate-900 mt-1 flex items-center gap-2">
-                    <DollarSign className="h-4 w-4 text-slate-400" />
-                    {selectedJob.salary || "Negotiable"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase">Employment Type</p>
-                  <p className="text-sm font-medium text-slate-900 mt-1">{selectedJob.type}</p>
+                  <p className="text-sm font-medium text-slate-900 mt-1">{selectedJob.salary || "Negotiable"}</p>
                 </div>
               </div>
 
-              {/* Description */}
               <div className="mb-6">
                 <h3 className="text-lg font-bold text-slate-900 mb-3">Job Description</h3>
                 <div className="prose prose-sm max-w-none text-slate-700">
@@ -256,7 +287,6 @@ export default function Jobs() {
                 </div>
               </div>
 
-              {/* Apply Button */}
               <Button 
                 size="lg" 
                 className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3"

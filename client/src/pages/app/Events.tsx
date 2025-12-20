@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Calendar, MapPin, Users, Clock, Search, Filter, ChevronRight } from "lucide-react";
+import { Calendar, MapPin, Users, Clock } from "lucide-react";
 import { db, FIREBASE_APP_ID } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, updateDoc, doc, increment, arrayUnion } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,7 +19,7 @@ interface Event {
   attendees: number;
   maxAttendees?: number;
   organizer: string;
-  image?: string;
+  registeredBy?: string[];
   timestamp?: any;
 }
 
@@ -53,12 +53,28 @@ export default function Events() {
       return;
     }
 
-    toast({ title: "Registered!", description: `You're registered for ${event.title}` });
+    if (event.registeredBy?.includes(user.uid)) {
+      toast({ title: "Already Registered", description: "You are already registered for this event." });
+      return;
+    }
+
+    try {
+      const eventRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'civic_events', event.id);
+      await updateDoc(eventRef, {
+        attendees: increment(1),
+        registeredBy: arrayUnion(user.uid)
+      });
+      toast({ title: "Registered!", description: `You're registered for ${event.title}` });
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to register for event.", variant: "destructive" });
+    }
   };
 
   const filteredEvents = selectedCategory 
     ? events.filter(e => e.category === selectedCategory)
     : events;
+
+  const isUserRegistered = (event: Event) => event.registeredBy?.includes(user?.uid || "");
 
   return (
     <div className="space-y-8 pb-20">
@@ -106,14 +122,14 @@ export default function Events() {
           <div className="text-center py-10 text-slate-400">Loading events...</div>
         ) : filteredEvents.length === 0 ? (
           <div className="text-center py-10 text-slate-400">
-            No events found {selectedCategory && `in "${selectedCategory}"`}
+            No events found {selectedCategory && `in "${selectedCategory}"`}. Check back soon!
           </div>
         ) : (
           filteredEvents.map((event) => (
             <Card key={event.id} className="hover:border-primary/50 transition-all hover:shadow-md overflow-hidden">
               <CardContent className="p-6">
                 <div className="flex gap-6 items-start">
-                  {/* Event Card */}
+                  {/* Date Card */}
                   <div className="w-20 h-20 rounded-lg bg-gradient-to-br from-green-100 to-slate-100 flex flex-col items-center justify-center shrink-0">
                     <p className="text-2xl font-bold text-green-700">{new Date(event.date).getDate()}</p>
                     <p className="text-xs font-bold text-slate-600 uppercase">
@@ -126,7 +142,7 @@ export default function Events() {
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
                         <h3 className="text-lg font-bold text-slate-900">{event.title}</h3>
-                        <p className="text-sm text-slate-600 mt-1">by {event.organizer}</p>
+                        <p className="text-sm text-slate-600 mt-1">by <span className="font-semibold">{event.organizer}</span></p>
                       </div>
                       <Badge variant="outline" className="shrink-0 bg-green-50 text-green-700 border-green-200">
                         {event.category}
@@ -157,10 +173,11 @@ export default function Events() {
                     <Button 
                       size="sm" 
                       onClick={() => handleRegister(event)}
-                      className="bg-green-600 hover:bg-green-700"
+                      variant={isUserRegistered(event) ? "secondary" : "default"}
+                      className={isUserRegistered(event) ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-green-600 hover:bg-green-700"}
                     >
                       <Users className="h-4 w-4 mr-2" />
-                      Register Now
+                      {isUserRegistered(event) ? "Registered ✓" : "Register Now"}
                     </Button>
                   </div>
                 </div>

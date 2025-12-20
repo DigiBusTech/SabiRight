@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, ThumbsUp, Flag, Trash2, Send, CornerDownRight } from "lucide-react";
+import { MessageSquare, ThumbsUp, Flag, Trash2, Send, CornerDownRight, Reply } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { db, FIREBASE_APP_ID } from "@/lib/firebase";
 import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, increment, arrayUnion, orderBy, query, deleteDoc } from "firebase/firestore";
@@ -14,6 +14,8 @@ interface Comment {
     text: string;
     author: string;
     userId: string;
+    upvotes?: number;
+    upvotedBy?: string[];
     timestamp: any;
 }
 
@@ -39,6 +41,7 @@ export default function Forum() {
   
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(
@@ -86,7 +89,6 @@ export default function Forum() {
       const post = posts.find(p => p.id === postId);
       if (!post) return;
 
-      // Check if user already voted
       if (post.upvotedBy?.includes(user.uid)) {
           toast({ title: "Already Voted", description: "You can only vote once per post." });
           return;
@@ -97,6 +99,33 @@ export default function Forum() {
           [type === 'up' ? 'upvotes' : 'downvotes']: increment(1),
           upvotedBy: arrayUnion(user.uid)
       });
+  };
+
+  const handleCommentVote = async (postId: string, commentId: string) => {
+      if (!user) {
+          toast({ title: "Login Required", description: "Please login to like comments." });
+          return;
+      }
+
+      const post = posts.find(p => p.id === postId);
+      if (!post) return;
+
+      const comment = post.comments.find(c => c.id === commentId);
+      if (!comment) return;
+
+      if (comment.upvotedBy?.includes(user.uid)) {
+          toast({ title: "Already Liked", description: "You already liked this comment." });
+          return;
+      }
+
+      const newComments = post.comments.map(c => 
+          c.id === commentId 
+              ? { ...c, upvotes: (c.upvotes || 0) + 1, upvotedBy: [...(c.upvotedBy || []), user.uid] }
+              : c
+      );
+
+      const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', postId);
+      await updateDoc(postRef, { comments: newComments });
   };
 
   const handleFlag = async (postId: string) => {
@@ -120,9 +149,11 @@ export default function Forum() {
 
       const newComment: Comment = {
           id: crypto.randomUUID(),
-          text: commentText,
+          text: replyingTo ? `@${posts.find(p => p.id === postId)?.comments.find(c => c.id === replyingTo)?.author || 'User'} ${commentText}` : commentText,
           author: user.displayName || "Citizen",
           userId: user.uid,
+          upvotes: 0,
+          upvotedBy: [],
           timestamp: new Date().toISOString()
       };
 
@@ -132,6 +163,7 @@ export default function Forum() {
       });
       
       setCommentText("");
+      setReplyingTo(null);
       toast({ title: "Comment Added", description: "Your reply has been posted." });
   };
 
@@ -185,7 +217,7 @@ export default function Forum() {
                   
                   <div className="flex items-center gap-2 mb-4">
                     <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold text-slate-500 uppercase">{post.city}</span>
-                    <span className="text-xs text-slate-400">• Posted by {post.author}</span>
+                    <span className="text-xs text-slate-400">• Posted by <span className="font-semibold text-slate-600">{post.author}</span></span>
                   </div>
                   
                   {/* Action Bar */}
@@ -226,29 +258,50 @@ export default function Forum() {
                                           <div className="flex justify-between items-baseline mb-1">
                                               <span className="font-bold text-xs text-slate-700">{comment.author}</span>
                                           </div>
-                                          <p className="text-slate-600">{comment.text}</p>
-                                          {user?.uid === comment.userId && (
+                                          <p className="text-slate-600 mb-2">{comment.text}</p>
+                                          <div className="flex items-center gap-3">
                                               <button 
-                                                  onClick={async () => {
-                                                      const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', post.id);
-                                                      const newComments = post.comments.filter(c => c.id !== comment.id);
-                                                      await updateDoc(postRef, { comments: newComments });
-                                                  }}
-                                                  className="text-[10px] text-red-500 hover:text-red-700 mt-2 font-medium"
+                                                  onClick={() => handleCommentVote(post.id, comment.id)}
+                                                  className={cn("flex items-center gap-1 text-[10px] font-medium transition-colors", comment.upvotedBy?.includes(user?.uid || "") ? "text-green-600" : "text-slate-400 hover:text-green-600")}
                                               >
-                                                  Delete
+                                                  <ThumbsUp className="h-3 w-3" /> {comment.upvotes || 0}
                                               </button>
-                                          )}
+                                              <button 
+                                                  onClick={() => setReplyingTo(comment.id)}
+                                                  className="flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-primary transition-colors"
+                                              >
+                                                  <Reply className="h-3 w-3" /> Reply
+                                              </button>
+                                              {user?.uid === comment.userId && (
+                                                  <button 
+                                                      onClick={async () => {
+                                                          const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', post.id);
+                                                          const newComments = post.comments.filter(c => c.id !== comment.id);
+                                                          await updateDoc(postRef, { comments: newComments });
+                                                      }}
+                                                      className="text-[10px] text-red-500 hover:text-red-700 font-medium ml-auto"
+                                                  >
+                                                      Delete
+                                                  </button>
+                                              )}
+                                          </div>
                                       </div>
                                   </div>
                               ))}
                           </div>
 
+                          {replyingTo && (
+                              <div className="mb-3 pl-7 text-xs text-slate-500 italic">
+                                  Replying to <span className="font-semibold">{post.comments.find(c => c.id === replyingTo)?.author}</span>
+                                  <button onClick={() => setReplyingTo(null)} className="ml-2 text-red-500 hover:text-red-700">Cancel</button>
+                              </div>
+                          )}
+
                           <form onSubmit={(e) => handleComment(e, post.id)} className="flex gap-2 pl-7">
                               <Input 
                                   value={commentText}
                                   onChange={e => setCommentText(e.target.value)}
-                                  placeholder="Write a reply..." 
+                                  placeholder={replyingTo ? "Write a reply..." : "Write a comment..."} 
                                   className="h-9 text-xs bg-white"
                               />
                               <Button type="submit" size="sm" className="h-9 w-9 p-0">
