@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Briefcase, Building2, MapPin, DollarSign, Clock, Search, Loader2 } from "lucide-react";
+import { Briefcase, Building2, MapPin, DollarSign, Clock, Search, Loader2, X } from "lucide-react";
 import { db, FIREBASE_APP_ID } from "@/lib/firebase";
-import { collection, query, orderBy, limit, onSnapshot, getDocs, where, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
 import { runGemini } from "@/lib/gemini";
 import ReactMarkdown from "react-markdown";
+import { cn } from "@/lib/utils";
 
 interface Job {
   id: string;
@@ -26,13 +27,12 @@ export default function Jobs() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   
-  // Search state
   const [role, setRole] = useState("");
   const [location, setLocation] = useState("Lagos");
 
   useEffect(() => {
-    // Initial Load - Listen to jobs
     const q = query(
       collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'jobs'), 
       orderBy('postedAt', 'desc'), 
@@ -53,10 +53,6 @@ export default function Jobs() {
     setSearching(true);
 
     try {
-        // 1. Filter local/db results first (Mocking complex query for speed)
-        // In a real app we'd do a complex compound query, but here we'll fetch and filter or trust the listener
-        
-        // 2. AI Match Logic if needed
         const aiPrompt = `
             Act as a Job Search API for Nigeria.
             Criteria: Role: ${role}, Location: ${location}.
@@ -75,13 +71,10 @@ export default function Jobs() {
         const aiResponse = await runGemini(aiPrompt);
         if (aiResponse) {
              try {
-                // Use a simpler regex for compatibility if needed, or just handle the string directly
-                // The issue was the 's' flag for dotAll which might need es2018 target
                 const jsonMatch = aiResponse.match(/\[[\s\S]*\]/); 
                 const cleanJson = jsonMatch ? jsonMatch[0] : aiResponse;
                 const newJobs = JSON.parse(cleanJson);
                 
-                // Add to Firestore to trigger update
                 for (const job of newJobs) {
                     await addDoc(collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'jobs'), {
                         ...job,
@@ -145,6 +138,7 @@ export default function Jobs() {
         </CardContent>
       </Card>
 
+      {/* Jobs Grid */}
       <div className="grid gap-4">
         {loading ? (
             <div className="text-center py-10 text-slate-400">Loading jobs...</div>
@@ -152,46 +146,128 @@ export default function Jobs() {
             <div className="text-center py-10 text-slate-400">No jobs found. Try running a search!</div>
         ) : (
             jobs.map((job) => (
-            <Card key={job.id} className="hover:border-primary/50 transition-colors group relative overflow-hidden">
+            <Card 
+              key={job.id} 
+              className="hover:border-primary/50 transition-all cursor-pointer hover:shadow-md group relative overflow-hidden"
+              onClick={() => setSelectedJob(job)}
+            >
                 {job.source && job.source !== 'User Posted' && (
                     <div className="absolute top-0 right-0 bg-purple-100 text-purple-800 text-[10px] px-2 py-1 font-bold rounded-bl-lg">
-                        AI Fetched
+                        AI Matched
                     </div>
                 )}
-                <CardContent className="p-6 flex flex-col md:flex-row gap-6 items-start">
-                <div className="h-16 w-16 rounded-xl bg-slate-100 flex items-center justify-center text-2xl shrink-0">
-                    <Building2 className="h-8 w-8 text-slate-400" />
-                </div>
-                
-                <div className="flex-1 space-y-2 w-full">
-                    <div className="flex flex-wrap items-center gap-3 pr-20">
-                    <h3 className="font-bold text-lg">{job.title}</h3>
-                    <Badge variant={job.type === "Full-time" ? "default" : "secondary"}>
-                        {job.type}
-                    </Badge>
+                <CardContent className="p-6">
+                  <div className="flex gap-4 items-start">
+                    <div className="h-12 w-12 rounded-lg bg-gradient-to-br from-blue-100 to-slate-100 flex items-center justify-center shrink-0">
+                        <Building2 className="h-6 w-6 text-slate-400" />
                     </div>
                     
-                    <div className="flex flex-wrap gap-4 text-sm text-slate-500">
-                    <span className="flex items-center gap-1"><Building2 className="h-4 w-4" /> {job.company || "Confidential"}</span>
-                    <span className="flex items-center gap-1"><MapPin className="h-4 w-4" /> {job.location}</span>
-                    <span className="flex items-center gap-1"><DollarSign className="h-4 w-4" /> {job.salary || "Negotiable"}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <div className="flex-1">
+                          <h3 className="font-bold text-lg text-slate-900">{job.title}</h3>
+                          <p className="text-sm text-slate-600">{job.company || "Confidential"}</p>
+                        </div>
+                        <Badge variant={job.type === "Full-time" ? "default" : "secondary"} className="shrink-0">
+                            {job.type}
+                        </Badge>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-3 text-sm text-slate-500 mb-3">
+                        <span className="flex items-center gap-1"><MapPin className="h-4 w-4 text-slate-400" /> {job.location}</span>
+                        {job.salary && <span className="flex items-center gap-1"><DollarSign className="h-4 w-4 text-slate-400" /> {job.salary}</span>}
+                      </div>
+                      
+                      <p className="text-sm text-slate-600 line-clamp-2 mb-3">{job.description?.replace(/\*\*/g, '').replace(/\#/g, '') || "No description"}</p>
+                      
+                      <Button size="sm" className="w-full sm:w-auto">
+                        View Details
+                      </Button>
                     </div>
-
-                    <div className="text-sm text-slate-600 mt-2 line-clamp-2 prose prose-sm max-w-none">
-                        <ReactMarkdown>{job.description || ""}</ReactMarkdown>
-                    </div>
-                </div>
-
-                <div className="flex gap-3 w-full md:w-auto shrink-0 mt-4 md:mt-0">
-                    <Button className="flex-1 md:flex-none w-full" onClick={() => window.open(job.contact?.startsWith('http') ? job.contact : `mailto:${job.contact}`, '_blank')}>
-                        Apply Now
-                    </Button>
-                </div>
+                  </div>
                 </CardContent>
             </Card>
             ))
         )}
       </div>
+
+      {/* Job Detail Modal */}
+      {selectedJob && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-xl">
+            <CardContent className="p-6">
+              {/* Header */}
+              <div className="flex justify-between items-start mb-6">
+                <div className="flex-1">
+                  <div className="flex items-start gap-4 mb-4">
+                    <div className="h-14 w-14 rounded-lg bg-gradient-to-br from-blue-100 to-slate-100 flex items-center justify-center shrink-0">
+                        <Building2 className="h-7 w-7 text-slate-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="text-2xl font-bold text-slate-900">{selectedJob.title}</h2>
+                      <p className="text-lg text-slate-600">{selectedJob.company || "Confidential"}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <Badge variant={selectedJob.type === "Full-time" ? "default" : "secondary"}>
+                        {selectedJob.type}
+                    </Badge>
+                    {selectedJob.workMode && <Badge variant="outline">{selectedJob.workMode}</Badge>}
+                    {selectedJob.source && <Badge variant="outline" className="bg-purple-50">{selectedJob.source}</Badge>}
+                  </div>
+                </div>
+                
+                <button 
+                  onClick={() => setSelectedJob(null)}
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  <X className="h-5 w-5 text-slate-500" />
+                </button>
+              </div>
+
+              {/* Details Grid */}
+              <div className="grid md:grid-cols-3 gap-4 mb-6 p-4 bg-slate-50 rounded-lg">
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase">Location</p>
+                  <p className="text-sm font-medium text-slate-900 mt-1 flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-slate-400" />
+                    {selectedJob.location}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase">Salary</p>
+                  <p className="text-sm font-medium text-slate-900 mt-1 flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-slate-400" />
+                    {selectedJob.salary || "Negotiable"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase">Employment Type</p>
+                  <p className="text-sm font-medium text-slate-900 mt-1">{selectedJob.type}</p>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="mb-6">
+                <h3 className="text-lg font-bold text-slate-900 mb-3">Job Description</h3>
+                <div className="prose prose-sm max-w-none text-slate-700">
+                  <ReactMarkdown>{selectedJob.description || "No description available"}</ReactMarkdown>
+                </div>
+              </div>
+
+              {/* Apply Button */}
+              <Button 
+                size="lg" 
+                className="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3"
+                onClick={() => window.open(selectedJob.contact?.startsWith('http') ? selectedJob.contact : `mailto:${selectedJob.contact}`, '_blank')}
+              >
+                Apply Now
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

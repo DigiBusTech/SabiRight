@@ -27,6 +27,7 @@ interface Post {
     downvotes: number;
     flagged?: boolean;
     comments: Comment[];
+    upvotedBy?: string[];
     timestamp: any;
 }
 
@@ -36,7 +37,6 @@ export default function Forum() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [newPostContent, setNewPostContent] = useState("");
   
-  // State for interactions
   const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
 
@@ -59,13 +59,14 @@ export default function Forum() {
       try {
           await addDoc(collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts'), {
               content: newPostContent,
-              city: "Lagos", // In a real app, get this from user profile
+              city: "Lagos",
               author: user?.displayName || "Citizen",
               userId: user?.uid || "anon",
               upvotes: 0,
               downvotes: 0,
               comments: [],
               flagged: false,
+              upvotedBy: [],
               timestamp: serverTimestamp()
           });
           setNewPostContent("");
@@ -81,9 +82,20 @@ export default function Forum() {
           toast({ title: "Login Required", description: "You must be logged in to vote." });
           return;
       }
+
+      const post = posts.find(p => p.id === postId);
+      if (!post) return;
+
+      // Check if user already voted
+      if (post.upvotedBy?.includes(user.uid)) {
+          toast({ title: "Already Voted", description: "You can only vote once per post." });
+          return;
+      }
+
       const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', postId);
       await updateDoc(postRef, {
-          [type === 'up' ? 'upvotes' : 'downvotes']: increment(1)
+          [type === 'up' ? 'upvotes' : 'downvotes']: increment(1),
+          upvotedBy: arrayUnion(user.uid)
       });
   };
 
@@ -154,7 +166,12 @@ export default function Forum() {
               <div className="flex gap-4">
                 {/* Voting Column */}
                 <div className="flex flex-col items-center gap-1 min-w-[3rem]">
-                   <Button variant="ghost" size="icon" className="h-8 w-8 hover:text-green-600" onClick={() => handleVote(post.id, 'up')}>
+                   <Button 
+                       variant="ghost" 
+                       size="icon" 
+                       className={cn("h-8 w-8", post.upvotedBy?.includes(user?.uid || "") ? "text-green-600" : "hover:text-green-600")}
+                       onClick={() => handleVote(post.id, 'up')}
+                   >
                        <ThumbsUp className="h-4 w-4" />
                    </Button>
                    <span className="font-bold text-sm">{(post.upvotes || 0) - (post.downvotes || 0)}</span>
@@ -208,9 +225,20 @@ export default function Forum() {
                                       <div className="bg-white p-3 rounded-lg border shadow-sm flex-1">
                                           <div className="flex justify-between items-baseline mb-1">
                                               <span className="font-bold text-xs text-slate-700">{comment.author}</span>
-                                              {/* <span className="text-[10px] text-slate-400">Just now</span> */}
                                           </div>
                                           <p className="text-slate-600">{comment.text}</p>
+                                          {user?.uid === comment.userId && (
+                                              <button 
+                                                  onClick={async () => {
+                                                      const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', post.id);
+                                                      const newComments = post.comments.filter(c => c.id !== comment.id);
+                                                      await updateDoc(postRef, { comments: newComments });
+                                                  }}
+                                                  className="text-[10px] text-red-500 hover:text-red-700 mt-2 font-medium"
+                                              >
+                                                  Delete
+                                              </button>
+                                          )}
                                       </div>
                                   </div>
                               ))}

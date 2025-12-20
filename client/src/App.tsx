@@ -12,6 +12,7 @@ import CivicGuard from "@/pages/app/Civic";
 import Marketplace from "@/pages/app/Marketplace";
 import Jobs from "@/pages/app/Jobs";
 import Forum from "@/pages/app/Forum";
+import Events from "@/pages/app/Events";
 import Login from "@/pages/auth/Login";
 
 function Router() {
@@ -35,6 +36,9 @@ function Router() {
       </Route>
       <Route path="/app/forum">
         <AppLayout><Forum /></AppLayout>
+      </Route>
+      <Route path="/app/events">
+        <AppLayout><Events /></AppLayout>
       </Route>
 
       <Route component={NotFound} />
