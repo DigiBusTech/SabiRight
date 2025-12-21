@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, numeric, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -9,10 +9,92 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
 });
 
+export const userProfiles = pgTable("user_profiles", {
+  userId: varchar("user_id").primaryKey().references(() => users.id),
+  email: text("email"),
+  displayName: text("display_name"),
+  isVendor: boolean("is_vendor").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const plans = pgTable("plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: text("type").notNull(), // 'free', 'basic', 'pro', 'enterprise'
+  userType: text("user_type").notNull(), // 'user' or 'vendor'
+  price: numeric("price", { precision: 10, scale: 2 }),
+  billingCycle: text("billing_cycle"), // 'monthly', 'yearly'
+  dailyCredits: integer("daily_credits"),
+  marketplaceListings: integer("marketplace_listings"),
+  features: jsonb("features").default([]),
+});
+
+export const subscriptions = pgTable("subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  planId: varchar("plan_id").notNull().references(() => plans.id),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  status: text("status").notNull(), // 'active', 'cancelled', 'expired'
+  startDate: timestamp("start_date").defaultNow(),
+  renewalDate: timestamp("renewal_date"),
+  cancelledAt: timestamp("cancelled_at"),
+});
+
+export const credits = pgTable("credits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  totalCredits: integer("total_credits").default(0),
+  usedCredits: integer("used_credits").default(0),
+  lastRefreshDate: timestamp("last_refresh_date").defaultNow(),
+  renewalDate: timestamp("renewal_date"),
+});
+
+export const creditLog = pgTable("credit_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  amount: integer("amount").notNull(),
+  action: text("action").notNull(), // 'used', 'refunded', 'granted'
+  feature: text("feature").notNull(), // 'civic_guard', 'job_search', 'marketplace_listing'
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const vendorApplications = pgTable("vendor_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  businessName: text("business_name").notNull(),
+  serviceType: text("service_type").notNull(),
+  status: text("status").notNull(), // 'pending', 'approved', 'rejected'
+  createdAt: timestamp("created_at").defaultNow(),
+  approvedAt: timestamp("approved_at"),
+});
+
+// Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
 });
 
+export const insertUserProfileSchema = createInsertSchema(userProfiles).omit({
+  createdAt: true,
+});
+
+export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
+  startDate: true,
+});
+
+export const insertCreditsSchema = createInsertSchema(credits).omit({
+  lastRefreshDate: true,
+  renewalDate: true,
+});
+
+// Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type UserProfile = typeof userProfiles.$inferSelect;
+export type Plan = typeof plans.$inferSelect;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type Credits = typeof credits.$inferSelect;
+export type CreditLog = typeof creditLog.$inferSelect;
+export type VendorApplication = typeof vendorApplications.$inferSelect;
