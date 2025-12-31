@@ -1,25 +1,19 @@
-
-import { GEMINI_API_KEY } from "./firebase";
-
-export async function runGemini(prompt: string, modelVersion = 'gemini-1.5-flash') {
+export async function runGemini(prompt: string): Promise<string | null> {
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelVersion}:generateContent?key=${GEMINI_API_KEY}`;
-        const response = await fetch(url, {
+        const response = await fetch('/api/ai/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-            })
+            body: JSON.stringify({ prompt })
         });
 
         if (!response.ok) {
-            console.warn(`Gemini API Error (Status ${response.status}) on ${modelVersion}.`);
+            console.warn(`AI API Error (Status ${response.status})`);
             return null;
         }
         const data = await response.json();
-        return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+        return data?.response || null;
     } catch (e) {
-        console.error("Gemini Error:", e);
+        console.error("AI Error:", e);
         return null;
     }
 }

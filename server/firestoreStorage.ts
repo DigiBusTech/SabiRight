@@ -82,6 +82,9 @@ const collections = {
   vendorServices: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorServices'),
   adminSettings: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('adminSettings'),
   payments: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('payments'),
+  jobs: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('jobs'),
+  vendorLeads: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorLeads'),
+  vendorBookings: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorBookings'),
 };
 
 export class FirestoreStorage implements IStorage {
@@ -511,6 +514,63 @@ export class FirestoreStorage implements IStorage {
   async getAllVendorApplications(): Promise<VendorApplication[]> {
     const snapshot = await collections.vendorApplications().get();
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as VendorApplication));
+  }
+
+  async getJobs(limit: number = 50): Promise<any[]> {
+    const snapshot = await collections.jobs().orderBy('postedAt', 'desc').limit(limit).get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async createJob(job: any): Promise<any> {
+    const id = crypto.randomUUID();
+    const newJob = { ...job, id, postedAt: new Date().toISOString() };
+    await collections.jobs().doc(id).set(newJob);
+    return newJob;
+  }
+
+  async getVendorLeads(vendorId: string): Promise<any[]> {
+    const snapshot = await collections.vendorLeads().where('vendorId', '==', vendorId).orderBy('createdAt', 'desc').get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async createVendorLead(lead: any): Promise<any> {
+    const id = crypto.randomUUID();
+    const newLead = { ...lead, id, createdAt: new Date().toISOString(), status: 'new' };
+    await collections.vendorLeads().doc(id).set(newLead);
+    return newLead;
+  }
+
+  async getVendorBookings(vendorId: string): Promise<any[]> {
+    const snapshot = await collections.vendorBookings().where('vendorId', '==', vendorId).orderBy('createdAt', 'desc').get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async createVendorBooking(booking: any): Promise<any> {
+    const id = crypto.randomUUID();
+    const newBooking = { ...booking, id, createdAt: new Date().toISOString(), status: 'pending' };
+    await collections.vendorBookings().doc(id).set(newBooking);
+    return newBooking;
+  }
+
+  async updateVendorBooking(bookingId: string, updates: any): Promise<void> {
+    await collections.vendorBookings().doc(bookingId).update(updates);
+  }
+
+  async getVendorStats(vendorId: string): Promise<{ leads: number; bookings: number; earnings: number }> {
+    const leadsSnapshot = await collections.vendorLeads().where('vendorId', '==', vendorId).get();
+    const bookingsSnapshot = await collections.vendorBookings().where('vendorId', '==', vendorId).where('status', '==', 'completed').get();
+    
+    let earnings = 0;
+    bookingsSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      earnings += data.amount || 0;
+    });
+
+    return {
+      leads: leadsSnapshot.size,
+      bookings: bookingsSnapshot.size,
+      earnings
+    };
   }
 }
 

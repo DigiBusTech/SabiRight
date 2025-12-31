@@ -5,12 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Briefcase, Building2, MapPin, DollarSign, Clock, Search, Loader2, X, AlertCircle, Plus } from "lucide-react";
-import { db, FIREBASE_APP_ID } from "@/lib/firebase";
-import { collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
-import { runGemini } from "@/lib/gemini";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreditDisplay } from "@/components/CreditDisplay";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
@@ -67,26 +64,36 @@ export default function Jobs() {
     refetchInterval: 30000,
   });
 
-  useEffect(() => {
-    const q = query(
-      collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'jobs'), 
-      orderBy('postedAt', 'desc'), 
-      limit(50)
-    );
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const jobData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job));
-      setJobs(jobData);
-      setLoading(false);
-    });
+  const queryClient = useQueryClient();
 
-    return () => unsubscribe();
-  }, []);
+  const { data: jobsData, isLoading: jobsLoading, refetch: refetchJobs } = useQuery({
+    queryKey: ['jobs'],
+    queryFn: async () => {
+      const res = await fetch('/api/jobs');
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (jobsData) {
+      setJobs(jobsData);
+      setLoading(false);
+    }
+  }, [jobsData]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Check credits for job generation
+    if (!role.trim()) {
+      toast({ 
+        title: "Enter a Role", 
+        description: "Please enter a job role or keywords to search.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (!credits || credits.availableCredits < 1) {
       toast({ 
         title: "No Credits", 
@@ -99,65 +106,41 @@ export default function Jobs() {
     setSearching(true);
 
     try {
-        const aiPrompt = `
-            Act as a Job Search API for Nigeria.
-            Criteria: Role: ${role}, Location: ${location}${employmentType ? `, Employment: ${employmentType}` : ''}${workMode ? `, Work Mode: ${workMode}` : ''}.
-            
-            Task: List 3 highly realistic job opportunities matching these criteria.
-            
-            CRITICAL INSTRUCTIONS:
-            1. The 'description' must be a full, comprehensive job description (at least 100 words). **Format the description using Markdown.**
-            2. The 'contact' field must be a URL or email.
-            3. The 'source' field must be the name of the external job platform (e.g., LinkedIn).
-            4. The 'type' must be either "Full-time" or "Part-time".
-            5. The 'workMode' must be either "Remote", "Onsite", or "Hybrid".
-            
-            Output: Return ONLY a JSON Array of objects. No markdown blocks.
-            Schema: [{"title": "...", "company": "...", "location": "...", "type": "Full-time", "workMode": "Remote", "salary": "...", "contact": "...", "description": "...", "source": "..."}]
-        `;
+      const response = await fetch('/api/ai/jobs/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.uid,
+          role,
+          location,
+          employmentType,
+          workMode
+        })
+      });
 
-        const aiResponse = await runGemini(aiPrompt);
-        if (aiResponse) {
-             try {
-                const jsonMatch = aiResponse.match(/\[[\s\S]*\]/); 
-                const cleanJson = jsonMatch ? jsonMatch[0] : aiResponse;
-                const newJobs = JSON.parse(cleanJson);
-                
-                for (const job of newJobs) {
-                    await addDoc(collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'jobs'), {
-                        ...job,
-                        postedAt: serverTimestamp(),
-                        isAiFetched: true
-                    });
-                }
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Job search failed');
+      }
 
-                // Deduct credit
-                if (user?.uid) {
-                  await fetch(`/api/credits/${user.uid}/deduct`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      amount: 1,
-                      feature: 'job_search',
-                      description: `Job search: ${role} in ${location}`
-                    })
-                  });
-                  refetchCredits();
-                }
-                
-                toast({ 
-                  title: "Jobs Found", 
-                  description: "New job listings added to your feed"
-                });
-             } catch (e) {
-                 console.error("Failed to parse AI jobs", e);
-             }
-        }
-
-    } catch (err) {
-        console.error(err);
+      const data = await response.json();
+      
+      toast({ 
+        title: "Jobs Found", 
+        description: `${data.jobs?.length || 0} new job listings added to your feed (1 credit used)`
+      });
+      
+      refetchJobs();
+      refetchCredits();
+    } catch (err: any) {
+      console.error(err);
+      toast({ 
+        title: "Search Failed", 
+        description: err.message || "Failed to search for jobs",
+        variant: "destructive"
+      });
     } finally {
-        setSearching(false);
+      setSearching(false);
     }
   };
 
@@ -169,12 +152,19 @@ export default function Jobs() {
 
     setIsPosting(true);
     try {
-      await addDoc(collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'jobs'), {
-        ...jobForm,
-        postedAt: serverTimestamp(),
-        source: 'User Posted',
-        postedBy: user?.uid
+      const response = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...jobForm,
+          postedBy: user?.uid,
+          source: 'User Posted'
+        })
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to post job');
+      }
 
       toast({ title: "Success", description: "Job posted successfully!" });
       setShowPostJob(false);
@@ -182,6 +172,7 @@ export default function Jobs() {
         title: "", company: "", location: "Lagos", type: "Full-time",
         workMode: "Onsite", salary: "", description: "", contact: ""
       });
+      refetchJobs();
     } catch (err) {
       toast({ title: "Error", description: "Failed to post job", variant: "destructive" });
     } finally {

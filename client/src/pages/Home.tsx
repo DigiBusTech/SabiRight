@@ -41,12 +41,12 @@ export default function Home() {
             </div>
             
             <h1 className="text-5xl lg:text-7xl font-black leading-[1.1] mb-6">
-              Your Civic Life.<br />
-              <span className="text-gradient">Neural-Verified.</span>
+              Know the Law.<br />
+              <span className="text-gradient">Beat the Traffic. Get the Job.</span>
             </h1>
             
             <p className="text-lg text-slate-600 max-w-lg mb-10">
-              Stop the fragmented chaos. A unified system for AI-powered legal defense, proximity-aware services, and AI-Matched jobs.
+              SabiRight is your AI-powered Civic Super-App. Legal First Aid, Smart Traffic routing, AI-powered Jobs, and a Verified Marketplace - the essential toolkit for the modern citizen.
             </p>
             
             <div className="flex flex-wrap gap-4">
@@ -70,10 +70,8 @@ export default function Home() {
                 {/* Mockup Header */}
                 <div className="bg-white p-4 pt-8 border-b flex justify-between items-center sticky top-0 z-20">
                   <div className="flex items-center gap-2">
-                    <div className="bg-primary w-6 h-6 rounded flex items-center justify-center text-white">
-                      <Shield className="h-3 w-3" />
-                    </div>
-                    <span className="font-bold text-xs">DigiCitizen</span>
+                    <img src="/assets/sabiright-icon.png" alt="SabiRight" className="w-6 h-6 rounded" />
+                    <span className="font-bold text-xs">SabiRight</span>
                   </div>
                   <div className="flex gap-3 text-slate-400">
                     <div className="w-2 h-2 bg-red-500 rounded-full" />
@@ -193,10 +191,10 @@ export default function Home() {
              variants={fadeInUp}
           >
             <h2 className="text-4xl md:text-6xl font-black mb-8">
-              Right-to-Know <span className="text-gradient">AI Agent</span>
+              <span className="text-gradient">SabiDoctor</span> AI
             </h2>
             <p className="text-xl text-slate-400 max-w-3xl mx-auto mb-16 italic">
-              Facing harassment? Landlord dispute? Get an instant, legally accurate citation telling you exactly what to say.
+              Facing harassment? Landlord dispute? Get an instant, legally accurate citation telling you exactly what to say. Your pocket lawyer, powered by AI.
             </p>
           </motion.div>
           
@@ -226,12 +224,13 @@ export default function Home() {
       {/* Pillars Section */}
       <section id="features" className="py-24 bg-white">
         <div className="max-w-7xl mx-auto px-6 text-center">
-          <h2 className="text-4xl font-extrabold mb-16 leading-tight">Built on Three Pillars</h2>
-          <div className="grid md:grid-cols-3 gap-8">
+          <h2 className="text-4xl font-extrabold mb-16 leading-tight">The SabiRight Ecosystem</h2>
+          <div className="grid md:grid-cols-4 gap-6">
             {[
-              { icon: Shield, color: "bg-primary", borderColor: "border-primary", title: "Empowerment", desc: "Right-to-Know AI and Civic intelligence alerts to keep you safe and informed.", badge: "Free Utility" },
-              { icon: Briefcase, color: "bg-purple-600", borderColor: "border-purple-600", title: "Opportunity", desc: "AI Job Matcher and Service Marketplace matches for career and home.", badge: "High Value Credits" },
-              { icon: Users, color: "bg-pink-600", borderColor: "border-pink-600", title: "Lifestyle", desc: "Curated events and vetted community forum for citizen connection.", badge: "Retention Engine" }
+              { icon: Scale, color: "bg-primary", borderColor: "border-primary", title: "SabiGuard", desc: "Legal First Aid & Expert Advice powered by AI. Know your rights instantly.", badge: "Sabi Doctor" },
+              { icon: MapPin, color: "bg-green-600", borderColor: "border-green-600", title: "SabiMove", desc: "Smart Traffic, Cloaked Routes & Checkpoint alerts. Navigate safely.", badge: "Sabi Navigator" },
+              { icon: Search, color: "bg-purple-600", borderColor: "border-purple-600", title: "SabiMarket", desc: "Proximity-based Verified Professionals marketplace. Find trusted pros.", badge: "Find Pros" },
+              { icon: Users, color: "bg-pink-600", borderColor: "border-pink-600", title: "SabiSquare", desc: "AI Jobs, Forums, and Events. Connect, learn, and earn.", badge: "The Hub" }
             ].map((pillar, i) => (
               <motion.div 
                 key={i}
@@ -239,14 +238,14 @@ export default function Home() {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1 }}
-                className={`bg-slate-50 p-10 rounded-[2.5rem] border-t-8 ${pillar.borderColor} relative`}
+                className={`bg-slate-50 p-8 rounded-[2rem] border-t-8 ${pillar.borderColor} relative`}
               >
-                <div className={`w-16 h-16 ${pillar.color} text-white rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg`}>
-                  <pillar.icon className="h-8 w-8" />
+                <div className={`w-14 h-14 ${pillar.color} text-white rounded-2xl flex items-center justify-center mb-5 mx-auto shadow-lg`}>
+                  <pillar.icon className="h-7 w-7" />
                 </div>
-                <h4 className="text-2xl font-bold mb-4">{pillar.title}</h4>
-                <p className="text-slate-600 text-sm leading-relaxed mb-6 italic">{pillar.desc}</p>
-                <span className="px-4 py-1 rounded-full bg-slate-200 text-[10px] font-black uppercase text-slate-500 tracking-widest">{pillar.badge}</span>
+                <h4 className="text-xl font-bold mb-3">{pillar.title}</h4>
+                <p className="text-slate-600 text-sm leading-relaxed mb-4">{pillar.desc}</p>
+                <span className="px-3 py-1 rounded-full bg-slate-200 text-[9px] font-black uppercase text-slate-500 tracking-widest">{pillar.badge}</span>
               </motion.div>
             ))}
           </div>

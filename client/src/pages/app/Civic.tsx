@@ -5,7 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Send, Sparkles, User, ShieldCheck, Copy, ThumbsUp, Mic, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { GEMINI_API_KEY } from "@/lib/firebase";
+import { runGemini } from "@/lib/gemini";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { CreditDisplay } from "@/components/CreditDisplay";
@@ -81,34 +81,15 @@ export default function CivicGuard() {
            4. Use Markdown for formatting (bolding key terms).
            5. Be helpful, professional, and empowering.`;
 
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+      const fullPrompt = `${systemPrompt}\n\nUser Question: ${userText}`;
       
-      const payload = {
-        contents: [{ role: "user", parts: [{ text: userText }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        tools: [{ "google_search": {} }]
-      };
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-          throw new Error(`API Error: ${response.status}`);
+      const aiText = await runGemini(fullPrompt);
+      
+      if (!aiText) {
+        throw new Error("No response from AI");
       }
 
-      const data = await response.json();
-      const candidate = data.candidates?.[0];
-      const aiText = candidate?.content?.parts?.[0]?.text || "I couldn't generate a response. Please try again.";
-      
-      // Extract sources
-      const sources = candidate?.groundingMetadata?.groundingAttributions
-        ?.map((attr: any) => ({ uri: attr.web?.uri, title: attr.web?.title }))
-        .filter((s: any) => s.uri && s.title) || [];
-
-      setMessages(prev => [...prev, { role: "ai", text: aiText, sources }]);
+      setMessages(prev => [...prev, { role: "ai", text: aiText, sources: [] }]);
       
       // Deduct credit
       if (user?.uid) {

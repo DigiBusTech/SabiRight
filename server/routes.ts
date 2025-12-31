@@ -497,7 +497,7 @@ export async function registerRoutes(
   // Jobs API
   app.get("/api/jobs", async (req, res) => {
     try {
-      const jobs = await storage.getVendorServices();
+      const jobs = await storage.getJobs(50);
       res.json(jobs);
     } catch (err) {
       res.json([]);
@@ -505,28 +505,212 @@ export async function registerRoutes(
   });
 
   app.post("/api/jobs", async (req, res) => {
-    const { title, company, location, type, workMode, salary, description, contact, postedBy } = req.body;
+    const { title, company, location, type, workMode, salary, description, contact, postedBy, source, isAiFetched } = req.body;
     
-    if (!title || !company || !location) {
+    if (!title || !location) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const job = {
-      id: crypto.randomUUID(),
+    const job = await storage.createJob({
       title,
-      company,
+      company: company || 'Confidential',
       location,
       type: type || 'Full-time',
       workMode: workMode || 'Onsite',
-      salary,
-      description,
-      contact,
-      postedBy,
-      postedAt: new Date(),
-      source: 'User Posted'
-    };
+      salary: salary || '',
+      description: description || '',
+      contact: contact || '',
+      postedBy: postedBy || 'anonymous',
+      source: source || 'User Posted',
+      isAiFetched: isAiFetched || false
+    });
 
     res.json(job);
+  });
+
+  // AI Generation API
+  app.post("/api/ai/generate", async (req, res) => {
+    const { prompt } = req.body;
+    
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt required' });
+    }
+
+    const apiKeySetting = await storage.getAdminSetting('gemini_api_key');
+    const apiKey = apiKeySetting?.value || process.env.GEMINI_API_KEY;
+    
+    if (!apiKey) {
+      return res.status(503).json({ error: 'AI service not configured. Please set up Gemini API key in admin settings.' });
+    }
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }]
+        })
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'AI service error' });
+      }
+
+      const data = await response.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+      res.json({ response: text });
+    } catch (err) {
+      console.error('AI generation error:', err);
+      res.status(500).json({ error: 'AI generation failed' });
+    }
+  });
+
+  // AI Job Search API
+  app.post("/api/ai/jobs/search", async (req, res) => {
+    const { userId, role, location, employmentType, workMode } = req.body;
+    
+    if (!userId || !role) {
+      return res.status(400).json({ error: 'User ID and role required' });
+    }
+
+    const credits = await storage.getUserCredits(userId);
+    if (!credits || ((credits.totalCredits || 0) - (credits.usedCredits || 0)) < 1) {
+      return res.status(402).json({ error: 'Insufficient credits' });
+    }
+
+    const apiKeySetting = await storage.getAdminSetting('gemini_api_key');
+    const apiKey = apiKeySetting?.value || process.env.GEMINI_API_KEY;
+    
+    if (!apiKey) {
+      return res.status(503).json({ error: 'AI service not configured' });
+    }
+
+    const aiPrompt = `
+      Act as a Job Search API for Nigeria.
+      Criteria: Role: ${role}, Location: ${location || 'Lagos'}${employmentType ? `, Employment: ${employmentType}` : ''}${workMode ? `, Work Mode: ${workMode}` : ''}.
+      
+      Task: List 3 highly realistic job opportunities matching these criteria.
+      
+      CRITICAL INSTRUCTIONS:
+      1. The 'description' must be comprehensive (at least 100 words). Format using Markdown.
+      2. The 'contact' field must be a URL or email.
+      3. The 'source' field must be the name of an external job platform (e.g., LinkedIn).
+      4. The 'type' must be either "Full-time" or "Part-time".
+      5. The 'workMode' must be either "Remote", "Onsite", or "Hybrid".
+      
+      Output: Return ONLY a JSON Array of objects. No markdown blocks.
+      Schema: [{"title": "...", "company": "...", "location": "...", "type": "Full-time", "workMode": "Remote", "salary": "...", "contact": "...", "description": "...", "source": "..."}]
+    `;
+
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: aiPrompt }] }]
+        })
+      });
+
+      if (!response.ok) {
+        return res.status(response.status).json({ error: 'AI service error' });
+      }
+
+      const data = await response.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        return res.status(500).json({ error: 'Failed to parse AI response' });
+      }
+
+      const jobs = JSON.parse(jsonMatch[0]);
+      const savedJobs = [];
+
+      for (const job of jobs) {
+        const savedJob = await storage.createJob({
+          ...job,
+          postedBy: userId,
+          source: job.source || 'AI Generated',
+          isAiFetched: true
+        });
+        savedJobs.push(savedJob);
+      }
+
+      await storage.deductCredits(userId, 1, 'job_search', `AI job search: ${role} in ${location}`);
+
+      res.json({ jobs: savedJobs, creditsUsed: 1 });
+    } catch (err) {
+      console.error('AI job search error:', err);
+      res.status(500).json({ error: 'Job search failed' });
+    }
+  });
+
+  // Vendor Analytics API
+  app.get("/api/vendor/:vendorId/stats", async (req, res) => {
+    const { vendorId } = req.params;
+    const stats = await storage.getVendorStats(vendorId);
+    res.json(stats);
+  });
+
+  app.get("/api/vendor/:vendorId/leads", async (req, res) => {
+    const { vendorId } = req.params;
+    const leads = await storage.getVendorLeads(vendorId);
+    res.json(leads);
+  });
+
+  app.get("/api/vendor/:vendorId/bookings", async (req, res) => {
+    const { vendorId } = req.params;
+    const bookings = await storage.getVendorBookings(vendorId);
+    res.json(bookings);
+  });
+
+  app.post("/api/vendor/leads", async (req, res) => {
+    const { vendorId, customerId, customerName, customerPhone, customerEmail, serviceType, message } = req.body;
+    
+    if (!vendorId || !customerName) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const lead = await storage.createVendorLead({
+      vendorId,
+      customerId,
+      customerName,
+      customerPhone,
+      customerEmail,
+      serviceType,
+      message
+    });
+
+    res.json(lead);
+  });
+
+  app.post("/api/vendor/bookings", async (req, res) => {
+    const { vendorId, customerId, customerName, serviceType, scheduledDate, scheduledTime, amount, notes } = req.body;
+    
+    if (!vendorId || !customerName || !scheduledDate) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const booking = await storage.createVendorBooking({
+      vendorId,
+      customerId,
+      customerName,
+      serviceType,
+      scheduledDate,
+      scheduledTime,
+      amount: parseFloat(amount) || 0,
+      notes
+    });
+
+    res.json(booking);
+  });
+
+  app.patch("/api/vendor/bookings/:bookingId", async (req, res) => {
+    const { bookingId } = req.params;
+    await storage.updateVendorBooking(bookingId, req.body);
+    res.json({ success: true });
   });
 
   // Payments

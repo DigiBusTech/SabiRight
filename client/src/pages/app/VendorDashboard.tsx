@@ -4,13 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Store, FileCheck, TrendingUp, AlertCircle, Plus, X, MapPin, Phone, Edit2, Trash2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Store, FileCheck, TrendingUp, AlertCircle, Plus, X, MapPin, Phone, Edit2, Trash2, Users, Calendar, DollarSign, Mail, MessageSquare } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface VendorService {
   id: string;
+  vendorId: string;
   name: string;
   type: string;
   specialization: string;
@@ -24,6 +26,35 @@ interface VendorService {
   rating: string;
   reviewCount: number;
   verified: boolean;
+}
+
+interface VendorStats {
+  totalLeads: number;
+  totalBookings: number;
+  totalEarnings: number;
+  thisMonthLeads: number;
+  thisMonthBookings: number;
+  thisMonthEarnings: number;
+}
+
+interface VendorLead {
+  id: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  message: string;
+  status: 'new' | 'contacted' | 'converted' | 'lost';
+  createdAt: string;
+}
+
+interface VendorBooking {
+  id: string;
+  customerName: string;
+  service: string;
+  date: string;
+  time: string;
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  amount: number;
 }
 
 const SERVICE_TYPES = ["Lawyer", "Plumber", "Electrician", "Health Professional", "Mover", "Real Estate Agent", "Cleaner", "Other"];
@@ -72,6 +103,39 @@ export default function VendorDashboard() {
       if (!res.ok) return [];
       const allServices = await res.json();
       return allServices.filter((s: VendorService) => s.vendorId === user.uid);
+    },
+    enabled: !!user?.uid && application?.status === 'approved',
+  });
+
+  const { data: vendorStats } = useQuery<VendorStats>({
+    queryKey: ['vendor-stats', user?.uid],
+    queryFn: async () => {
+      if (!user?.uid) return null;
+      const res = await fetch(`/api/vendor/${user.uid}/stats`);
+      if (!res.ok) return { totalLeads: 0, totalBookings: 0, totalEarnings: 0, thisMonthLeads: 0, thisMonthBookings: 0, thisMonthEarnings: 0 };
+      return res.json();
+    },
+    enabled: !!user?.uid && application?.status === 'approved',
+  });
+
+  const { data: leads = [] } = useQuery<VendorLead[]>({
+    queryKey: ['vendor-leads', user?.uid],
+    queryFn: async () => {
+      if (!user?.uid) return [];
+      const res = await fetch(`/api/vendor/${user.uid}/leads`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user?.uid && application?.status === 'approved',
+  });
+
+  const { data: bookings = [] } = useQuery<VendorBooking[]>({
+    queryKey: ['vendor-bookings', user?.uid],
+    queryFn: async () => {
+      if (!user?.uid) return [];
+      const res = await fetch(`/api/vendor/${user.uid}/bookings`);
+      if (!res.ok) return [];
+      return res.json();
     },
     enabled: !!user?.uid && application?.status === 'approved',
   });
@@ -352,30 +416,170 @@ export default function VendorDashboard() {
       {/* Vendor Stats and Services */}
       {application?.status === 'approved' && (
         <>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-green-600" />
-                Your Vendor Stats
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center">
-                  <p className="text-2xl font-bold">{services.length}</p>
-                  <p className="text-xs text-slate-600">Active Listings</p>
+          {/* Stats Overview */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 rounded-lg">
+                    <Store className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{services.length}</p>
+                    <p className="text-xs text-slate-600">Active Listings</p>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold">0</p>
-                  <p className="text-xs text-slate-600">Total Bookings</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-green-100 rounded-lg">
+                    <Users className="h-5 w-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{vendorStats?.totalLeads || 0}</p>
+                    <p className="text-xs text-slate-600">Total Leads</p>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <p className="text-2xl font-bold">5.0</p>
-                  <p className="text-xs text-slate-600">Rating</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-100 rounded-lg">
+                    <Calendar className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">{vendorStats?.totalBookings || 0}</p>
+                    <p className="text-xs text-slate-600">Total Bookings</p>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-yellow-100 rounded-lg">
+                    <DollarSign className="h-5 w-5 text-yellow-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold">N{(vendorStats?.totalEarnings || 0).toLocaleString()}</p>
+                    <p className="text-xs text-slate-600">Total Earnings</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Tabs for Leads, Bookings, Services */}
+          <Tabs defaultValue="services" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="services">Services ({services.length})</TabsTrigger>
+              <TabsTrigger value="leads">Leads ({leads.length})</TabsTrigger>
+              <TabsTrigger value="bookings">Bookings ({bookings.length})</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="leads" className="mt-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5 text-blue-600" />
+                    Customer Inquiries
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {leads.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">
+                      No leads yet. They will appear here when customers contact you.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {leads.map((lead) => (
+                        <div key={lead.id} className="p-4 border rounded-lg">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="font-bold">{lead.customerName}</p>
+                              <p className="text-sm text-slate-600 flex items-center gap-1">
+                                <Mail className="h-3 w-3" /> {lead.customerEmail}
+                              </p>
+                              {lead.customerPhone && (
+                                <p className="text-sm text-slate-600 flex items-center gap-1">
+                                  <Phone className="h-3 w-3" /> {lead.customerPhone}
+                                </p>
+                              )}
+                            </div>
+                            <Badge className={`${
+                              lead.status === 'new' ? 'bg-blue-100 text-blue-800' :
+                              lead.status === 'contacted' ? 'bg-yellow-100 text-yellow-800' :
+                              lead.status === 'converted' ? 'bg-green-100 text-green-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                              {lead.status.charAt(0).toUpperCase() + lead.status.slice(1)}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-slate-700 mt-2 bg-slate-50 p-2 rounded">
+                            {lead.message}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-2">
+                            {new Date(lead.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="bookings" className="mt-4">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Calendar className="h-5 w-5 text-purple-600" />
+                    Your Bookings
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {bookings.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">
+                      No bookings yet. They will appear here when customers book your services.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {bookings.map((booking) => (
+                        <div key={booking.id} className="p-4 border rounded-lg">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="font-bold">{booking.customerName}</p>
+                              <p className="text-sm text-slate-600">{booking.service}</p>
+                              <p className="text-sm text-slate-500">
+                                {booking.date} at {booking.time}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <Badge className={`${
+                                booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                booking.status === 'confirmed' ? 'bg-blue-100 text-blue-800' :
+                                booking.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                'bg-red-100 text-red-800'
+                              }`}>
+                                {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                              </Badge>
+                              <p className="text-lg font-bold text-green-600 mt-2">
+                                N{booking.amount.toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="services" className="mt-4">
 
           {/* My Services */}
           <Card>
@@ -442,6 +646,8 @@ export default function VendorDashboard() {
               )}
             </CardContent>
           </Card>
+            </TabsContent>
+          </Tabs>
 
           {/* Add/Edit Service Modal */}
           {showAddService && (

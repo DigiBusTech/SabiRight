@@ -23,4 +23,3 @@ export const db = getFirestore(app);
 
 // App ID constant from original code
 export const FIREBASE_APP_ID = 'digital-citizen-v2';
-export const GEMINI_API_KEY = "AIzaSyDHS9rhr32rbszdm3Dtb9zecEGmgpi9HE4";
