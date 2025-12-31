@@ -7,13 +7,15 @@ interface AuthContextType {
   profile: any | null;
   loading: boolean;
   switchVendorMode: (mode: boolean) => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({ 
   user: null, 
   profile: null,
   loading: true,
-  switchVendorMode: async () => {} 
+  switchVendorMode: async () => {},
+  refreshProfile: async () => {}
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -50,6 +52,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  const refreshProfile = async () => {
+    if (!user) return;
+    const res = await fetch(`/api/profile/${user.uid}`);
+    if (res.ok) {
+      const data = await res.json();
+      setProfile(data);
+    }
+  };
+
   const switchVendorMode = async (mode: boolean) => {
     if (!user) return;
     const token = await user.getIdToken();
@@ -67,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, switchVendorMode }}>
+    <AuthContext.Provider value={{ user, profile, loading, switchVendorMode, refreshProfile }}>
       {!loading && children}
     </AuthContext.Provider>
   );

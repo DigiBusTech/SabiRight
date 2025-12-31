@@ -9,14 +9,28 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-const NIGERIAN_CITIES = [
-  "Lagos", "Abuja", "Port Harcourt", "Kano", "Ibadan", "Kaduna", 
-  "Benin City", "Enugu", "Onitsha", "Jos", "Calabar", "Warri", 
-  "Uyo", "Owerri", "Abeokuta"
-];
+const CITY_STATE_MAP: Record<string, string> = {
+  "Lagos": "Lagos",
+  "Abuja": "FCT",
+  "Port Harcourt": "Rivers",
+  "Kano": "Kano",
+  "Ibadan": "Oyo",
+  "Kaduna": "Kaduna",
+  "Benin City": "Edo",
+  "Enugu": "Enugu",
+  "Onitsha": "Anambra",
+  "Jos": "Plateau",
+  "Calabar": "Cross River",
+  "Warri": "Delta",
+  "Uyo": "Akwa Ibom",
+  "Owerri": "Imo",
+  "Abeokuta": "Ogun"
+};
+
+const NIGERIAN_CITIES = Object.keys(CITY_STATE_MAP);
 
 export default function Dashboard() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const userName = user?.displayName?.split(' ')[0] || "Citizen";
@@ -30,14 +44,16 @@ export default function Dashboard() {
     
     setIsSavingCity(true);
     try {
+      const state = CITY_STATE_MAP[city] || "";
       const res = await fetch(`/api/profile/${user.uid}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ city })
+        body: JSON.stringify({ city, state })
       });
       
       if (res.ok) {
         toast({ title: "City Updated", description: `Your city has been set to ${city}` });
+        await refreshProfile();
         queryClient.invalidateQueries({ queryKey: [`profile-${user.uid}`] });
       } else {
         toast({ title: "Error", description: "Failed to update city", variant: "destructive" });

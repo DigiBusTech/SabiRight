@@ -1299,6 +1299,36 @@ export class FirestoreStorage implements IStorage {
           }
         }
         await this.updateBookingStatus(dispute.bookingId, 'completed');
+      } else if (resolution === 'split') {
+        const escrow = await this.getEscrowByBookingId(dispute.bookingId);
+        if (escrow) {
+          const remainingFunds = parseFloat(escrow.fundedAmount || '0') - parseFloat(escrow.releasedAmount || '0');
+          if (remainingFunds > 0) {
+            const userShare = remainingFunds / 2;
+            const vendorShare = remainingFunds - userShare;
+            
+            await this.topUpWallet(
+              booking.userId,
+              userShare,
+              `SPL-U-${disputeId.substring(0, 8)}`,
+              `Dispute split refund for booking ${booking.id}`
+            );
+            
+            await this.topUpWallet(
+              booking.vendorId,
+              vendorShare,
+              `SPL-V-${disputeId.substring(0, 8)}`,
+              `Dispute split payout for booking ${booking.id}`
+            );
+            
+            await collections.escrowAccounts().doc(escrow.id).update({
+              status: 'split',
+              releasedAmount: escrow.fundedAmount,
+              releasedAt: new Date().toISOString()
+            });
+          }
+        }
+        await this.updateBookingStatus(dispute.bookingId, 'cancelled');
       }
     }
 

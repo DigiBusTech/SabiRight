@@ -333,8 +333,77 @@ export const insertCreditsSchema = createInsertSchema(credits).omit({
   renewalDate: true,
 });
 
+export const insertCouponSchema = createInsertSchema(coupons).omit({
+  id: true,
+  createdAt: true,
+  currentRedemptions: true,
+});
+
+export const insertWalletSchema = createInsertSchema(wallets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertWalletTransactionSchema = createInsertSchema(walletTransactions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertBookingSchema = createInsertSchema(bookings).omit({
+  id: true,
+  createdAt: true,
+  confirmedAt: true,
+  completedAt: true,
+});
+
+export const insertBookingMilestoneSchema = createInsertSchema(bookingMilestones).omit({
+  id: true,
+  completedAt: true,
+  releasedAt: true,
+});
+
+export const insertEscrowAccountSchema = createInsertSchema(escrowAccounts).omit({
+  id: true,
+  createdAt: true,
+  fundedAt: true,
+  releasedAt: true,
+});
+
+export const insertEscrowEventSchema = createInsertSchema(escrowEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertContractSchema = createInsertSchema(contracts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertDisputeSchema = createInsertSchema(disputes).omit({
+  id: true,
+  createdAt: true,
+  resolvedAt: true,
+});
+
+export const insertBookingMessageSchema = createInsertSchema(bookingMessages).omit({
+  id: true,
+  createdAt: true,
+  readAt: true,
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertCoupon = z.infer<typeof insertCouponSchema>;
+export type InsertWallet = z.infer<typeof insertWalletSchema>;
+export type InsertWalletTransaction = z.infer<typeof insertWalletTransactionSchema>;
+export type InsertBooking = z.infer<typeof insertBookingSchema>;
+export type InsertBookingMilestone = z.infer<typeof insertBookingMilestoneSchema>;
+export type InsertEscrowAccount = z.infer<typeof insertEscrowAccountSchema>;
+export type InsertEscrowEvent = z.infer<typeof insertEscrowEventSchema>;
+export type InsertContract = z.infer<typeof insertContractSchema>;
+export type InsertDispute = z.infer<typeof insertDisputeSchema>;
+export type InsertBookingMessage = z.infer<typeof insertBookingMessageSchema>;
 export type User = typeof users.$inferSelect;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type Plan = typeof plans.$inferSelect;

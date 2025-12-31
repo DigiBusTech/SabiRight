@@ -28,6 +28,60 @@ const adminAuth = async (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
+const userAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  const token = authHeader.substring(7);
+  const result = await verifyUserToken(token);
+  
+  if (!result.valid) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+  
+  const pathUserId = req.params.userId;
+  if (pathUserId && result.userId !== pathUserId) {
+    return res.status(403).json({ error: 'Access denied: User ID mismatch' });
+  }
+  
+  (req as any).userId = result.userId;
+  next();
+};
+
+const bookingParticipantAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  const token = authHeader.substring(7);
+  const result = await verifyUserToken(token);
+  
+  if (!result.valid) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+  
+  const bookingId = req.params.id;
+  if (!bookingId) {
+    return res.status(400).json({ error: 'Booking ID required' });
+  }
+  
+  const booking = await storage.getBookingById(bookingId);
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+  
+  if (result.userId !== booking.userId && result.userId !== booking.vendorId) {
+    return res.status(403).json({ error: 'Access denied: Not a booking participant' });
+  }
+  
+  (req as any).userId = result.userId;
+  (req as any).booking = booking;
+  next();
+};
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -1098,7 +1152,7 @@ export async function registerRoutes(
 
   // ===== Wallet API =====
   
-  app.get("/api/wallet/:userId", async (req, res) => {
+  app.get("/api/wallet/:userId", userAuth, async (req, res) => {
     const { userId } = req.params;
     const wallet = await storage.getWallet(userId);
     
@@ -1109,7 +1163,7 @@ export async function registerRoutes(
     res.json(wallet);
   });
 
-  app.post("/api/wallet/:userId/create", async (req, res) => {
+  app.post("/api/wallet/:userId/create", userAuth, async (req, res) => {
     const { userId } = req.params;
     const { currency } = req.body;
     
@@ -1117,7 +1171,7 @@ export async function registerRoutes(
     res.json(wallet);
   });
 
-  app.post("/api/wallet/:userId/topup", async (req, res) => {
+  app.post("/api/wallet/:userId/topup", userAuth, async (req, res) => {
     const { userId } = req.params;
     const { amount, reference, description } = req.body;
     
@@ -1149,7 +1203,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/wallet/:userId/transactions", async (req, res) => {
+  app.get("/api/wallet/:userId/transactions", userAuth, async (req, res) => {
     const { userId } = req.params;
     const { limit } = req.query;
     
@@ -1231,18 +1285,13 @@ export async function registerRoutes(
   });
 
   // Update booking status (vendor confirms, completes)
-  app.patch("/api/bookings/:id/status", async (req, res) => {
+  app.patch("/api/bookings/:id/status", bookingParticipantAuth, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     
     const validStatuses = ['requested', 'confirmed', 'in_progress', 'completed', 'cancelled'];
     if (!status || !validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Valid values: ${validStatuses.join(', ')}` });
-    }
-
-    const booking = await storage.getBookingById(id);
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
     }
 
     await storage.updateBookingStatus(id, status);
@@ -1253,17 +1302,14 @@ export async function registerRoutes(
   // ===== Escrow Management =====
 
   // Fund escrow (deduct from user wallet)
-  app.post("/api/bookings/:id/escrow/fund", async (req, res) => {
+  app.post("/api/bookings/:id/escrow/fund", bookingParticipantAuth, async (req, res) => {
     const { id } = req.params;
-    const { userId, amount } = req.body;
+    const { amount } = req.body;
+    const userId = (req as any).userId;
+    const booking = (req as any).booking;
     
-    if (!userId || !amount) {
-      return res.status(400).json({ error: 'userId and amount are required' });
-    }
-
-    const booking = await storage.getBookingById(id);
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
+    if (!amount) {
+      return res.status(400).json({ error: 'amount is required' });
     }
 
     if (booking.userId !== userId) {
@@ -1279,12 +1325,13 @@ export async function registerRoutes(
   });
 
   // Mark milestone as completed (vendor marks completion)
-  app.post("/api/bookings/:id/milestones/:milestoneId/complete", async (req, res) => {
+  app.post("/api/bookings/:id/milestones/:milestoneId/complete", bookingParticipantAuth, async (req, res) => {
     const { id, milestoneId } = req.params;
-    
-    const booking = await storage.getBookingById(id);
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
+    const userId = (req as any).userId;
+    const booking = (req as any).booking;
+
+    if (booking.vendorId !== userId) {
+      return res.status(403).json({ error: 'Only the vendor can mark milestones as completed' });
     }
 
     const milestone = await storage.getMilestoneById(milestoneId);
@@ -1298,13 +1345,13 @@ export async function registerRoutes(
   });
 
   // Release milestone funds to vendor
-  app.post("/api/bookings/:id/milestones/:milestoneId/release", async (req, res) => {
+  app.post("/api/bookings/:id/milestones/:milestoneId/release", bookingParticipantAuth, async (req, res) => {
     const { id, milestoneId } = req.params;
-    const { releasedBy } = req.body;
+    const userId = (req as any).userId;
+    const booking = (req as any).booking;
     
-    const booking = await storage.getBookingById(id);
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
+    if (booking.userId !== userId) {
+      return res.status(403).json({ error: 'Only the booking user can release milestone funds' });
     }
 
     const escrow = await storage.getEscrowByBookingId(id);
@@ -1321,11 +1368,24 @@ export async function registerRoutes(
       return res.status(400).json({ error: 'Milestone funds already released' });
     }
 
+    const milestoneAmount = parseFloat(milestone.amount || '0');
+    const fundedAmount = parseFloat(escrow.fundedAmount || '0');
+    const releasedAmount = parseFloat(escrow.releasedAmount || '0');
+    const availableInEscrow = fundedAmount - releasedAmount;
+
+    if (milestoneAmount > availableInEscrow) {
+      return res.status(400).json({ 
+        error: 'Insufficient escrow balance', 
+        required: milestoneAmount,
+        available: availableInEscrow
+      });
+    }
+
     const event = await storage.releaseEscrowMilestone(
       escrow.id,
       milestoneId,
       booking.vendorId,
-      releasedBy
+      userId
     );
 
     if (!event) {
@@ -1339,17 +1399,12 @@ export async function registerRoutes(
   // ===== Contracts =====
 
   // Create contract with terms
-  app.post("/api/bookings/:id/contract", async (req, res) => {
+  app.post("/api/bookings/:id/contract", bookingParticipantAuth, async (req, res) => {
     const { id } = req.params;
     const { title, terms } = req.body;
     
     if (!title || !terms) {
       return res.status(400).json({ error: 'title and terms are required' });
-    }
-
-    const booking = await storage.getBookingById(id);
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
     }
 
     const existing = await storage.getContractByBookingId(id);
@@ -1367,23 +1422,20 @@ export async function registerRoutes(
   });
 
   // Sign contract (user or vendor)
-  app.post("/api/bookings/:id/contract/sign", async (req, res) => {
+  app.post("/api/bookings/:id/contract/sign", bookingParticipantAuth, async (req, res) => {
     const { id } = req.params;
-    const { signerType, signerId } = req.body;
+    const { signerType } = req.body;
+    const userId = (req as any).userId;
+    const booking = (req as any).booking;
     
     if (!signerType || !['user', 'vendor'].includes(signerType)) {
       return res.status(400).json({ error: 'signerType must be "user" or "vendor"' });
     }
 
-    const booking = await storage.getBookingById(id);
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
-    }
-
-    if (signerType === 'user' && signerId !== booking.userId) {
+    if (signerType === 'user' && userId !== booking.userId) {
       return res.status(403).json({ error: 'Only the booking user can sign as user' });
     }
-    if (signerType === 'vendor' && signerId !== booking.vendorId) {
+    if (signerType === 'vendor' && userId !== booking.vendorId) {
       return res.status(403).json({ error: 'Only the vendor can sign as vendor' });
     }
 
@@ -1398,14 +1450,9 @@ export async function registerRoutes(
   // ===== Chat / Messages =====
 
   // Get booking chat messages
-  app.get("/api/bookings/:id/messages", async (req, res) => {
+  app.get("/api/bookings/:id/messages", bookingParticipantAuth, async (req, res) => {
     const { id } = req.params;
     const { limit } = req.query;
-    
-    const booking = await storage.getBookingById(id);
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
-    }
 
     const messages = await storage.getBookingMessages(
       id,
@@ -1416,21 +1463,13 @@ export async function registerRoutes(
   });
 
   // Send message
-  app.post("/api/bookings/:id/messages", async (req, res) => {
+  app.post("/api/bookings/:id/messages", bookingParticipantAuth, async (req, res) => {
     const { id } = req.params;
-    const { senderId, message, attachments, isAdminMessage } = req.body;
+    const { message, attachments } = req.body;
+    const senderId = (req as any).userId;
     
-    if (!senderId || !message) {
-      return res.status(400).json({ error: 'senderId and message are required' });
-    }
-
-    const booking = await storage.getBookingById(id);
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
-    }
-
-    if (!isAdminMessage && senderId !== booking.userId && senderId !== booking.vendorId) {
-      return res.status(403).json({ error: 'Only booking participants can send messages' });
+    if (!message) {
+      return res.status(400).json({ error: 'message is required' });
     }
 
     const newMessage = await storage.createBookingMessage({
@@ -1438,7 +1477,7 @@ export async function registerRoutes(
       senderId,
       message,
       attachments: attachments || [],
-      isAdminMessage: isAdminMessage || false
+      isAdminMessage: false
     });
 
     res.json(newMessage);
@@ -1447,21 +1486,13 @@ export async function registerRoutes(
   // ===== Disputes =====
 
   // Open dispute
-  app.post("/api/bookings/:id/dispute", async (req, res) => {
+  app.post("/api/bookings/:id/dispute", bookingParticipantAuth, async (req, res) => {
     const { id } = req.params;
-    const { openedBy, reason, description, evidence } = req.body;
+    const { reason, description, evidence } = req.body;
+    const openedBy = (req as any).userId;
     
-    if (!openedBy || !reason) {
-      return res.status(400).json({ error: 'openedBy and reason are required' });
-    }
-
-    const booking = await storage.getBookingById(id);
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
-    }
-
-    if (openedBy !== booking.userId && openedBy !== booking.vendorId) {
-      return res.status(403).json({ error: 'Only booking participants can open a dispute' });
+    if (!reason) {
+      return res.status(400).json({ error: 'reason is required' });
     }
 
     const existing = await storage.getDisputeByBookingId(id);
