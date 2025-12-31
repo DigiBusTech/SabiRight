@@ -252,14 +252,48 @@ export default function Home() {
         </div>
       </section>
 
+      {/* How It Works Section */}
+      <section className="py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-6">
+          <h2 className="text-4xl font-extrabold text-center mb-16">How SabiRight Works</h2>
+          <div className="grid md:grid-cols-4 gap-8">
+            {[
+              { step: "01", title: "Sign Up Free", desc: "Create your account in seconds using email or Google. No payment required to get started." },
+              { step: "02", title: "Get Verified", desc: "Complete KYC verification to unlock premium features and build trust in the marketplace." },
+              { step: "03", title: "Use Your Credits", desc: "Every account gets free daily credits. Use them for AI legal help, job searches, and more." },
+              { step: "04", title: "Connect & Grow", desc: "Find verified professionals, post jobs, join forums, and become part of a civic-minded community." }
+            ].map((item, i) => (
+              <motion.div 
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="text-center"
+              >
+                <div className="text-5xl font-black text-primary/20 mb-4">{item.step}</div>
+                <h4 className="text-xl font-bold mb-2">{item.title}</h4>
+                <p className="text-slate-600 text-sm">{item.desc}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* FAQ Section */}
       <section id="faq" className="py-24 bg-slate-50">
         <div className="max-w-3xl mx-auto px-6">
-          <h2 className="text-3xl font-bold text-center mb-12">Straight Answers.</h2>
+          <h2 className="text-3xl font-bold text-center mb-12">Frequently Asked Questions</h2>
           <div className="space-y-4">
             {[
-              { q: "How accurate is the AI Legal Guard?", a: "It cites specific sections of the 1999 Constitution and NPF Act. Informational only, not a substitute for a lawyer." },
-              { q: "Is the platform free to use?", a: "Core civic alerts and AI legal basics are free. Jobs and high-value marketplace matches use Credits." }
+              { q: "How accurate is the AI Legal Guard?", a: "SabiGuard uses Retrieval-Augmented Generation (RAG) to cite specific sections of the 1999 Constitution and NPF Act 2020. It provides accurate legal information but is not a substitute for professional legal advice in complex matters." },
+              { q: "Is the platform free to use?", a: "Yes! Core features including civic alerts, basic AI legal queries, and community forums are completely free. Premium features like unlimited AI queries, job matching, and priority marketplace placement use Credits which you can earn or purchase." },
+              { q: "What are Credits and how do I get them?", a: "Credits are your in-app currency for premium features. New users get 10 free credits daily. You can earn more by completing your profile, verifying your identity (KYC), referring friends, or purchasing credit packs." },
+              { q: "How does SabiMove help with traffic?", a: "SabiMove provides real-time traffic updates, checkpoint alerts, and AI-powered route optimization. Our 'Cloaked Routes' feature helps you navigate around known checkpoint hotspots while staying completely legal." },
+              { q: "How do I become a verified vendor?", a: "Go to your dashboard and apply for vendor status. You'll need to provide business documentation and complete KYC verification. Once approved, you can list services, receive leads, and accept bookings through SabiMarket." },
+              { q: "Is my data safe?", a: "Absolutely. We use Firebase Authentication and industry-standard encryption. Your personal data is never sold to third parties. Cloaked routes are processed locally and never stored on our servers." },
+              { q: "Can I use SabiRight outside Lagos?", a: "Yes! While we started in Lagos, Abuja, and Port Harcourt, SabiRight works nationwide. Traffic data is community-sourced, so coverage improves as more users join in your area." },
+              { q: "How do I contact support?", a: "You can reach us through the in-app help center, email support@sabiright.com, or join our community forum where our team actively responds to questions." }
             ].map((faq, i) => (
               <div key={i} className="bg-white border rounded-2xl overflow-hidden">
                 <button 
@@ -270,13 +304,50 @@ export default function Home() {
                   <ChevronDown className={`transform transition-transform ${openFaq === i ? "rotate-180" : ""}`} />
                 </button>
                 {openFaq === i && (
-                  <div className="p-6 pt-0 text-slate-600 border-t text-sm bg-slate-50/50 italic animate-in slide-in-from-top-2 fade-in duration-300">
+                  <div className="p-6 pt-0 text-slate-600 border-t text-sm bg-slate-50/50 animate-in slide-in-from-top-2 fade-in duration-300">
                     {faq.a}
                   </div>
                 )}
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Waitlist / CTA Section */}
+      <section className="py-24 bg-slate-950 text-white">
+        <div className="max-w-4xl mx-auto px-6 text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+          >
+            <h2 className="text-4xl md:text-5xl font-black mb-6">
+              Ready to Join <span className="text-gradient">SabiRight</span>?
+            </h2>
+            <p className="text-xl text-slate-400 mb-10 max-w-2xl mx-auto">
+              Be part of Nigeria's first AI-powered civic super-app. Get early access to new features, exclusive credits, and help shape the future of civic technology.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link href="/app">
+                <Button className="h-14 px-10 rounded-2xl text-lg font-bold shadow-xl hover:scale-105 transition-transform">
+                  Launch App Now <ArrowRight className="ml-2 h-5 w-5" />
+                </Button>
+              </Link>
+              <a 
+                href="https://forms.gle/waitlist" 
+                target="_blank" 
+                rel="noopener noreferrer"
+              >
+                <Button variant="outline" className="h-14 px-10 rounded-2xl text-lg font-bold border-white/20 text-white hover:bg-white/10">
+                  Join Waitlist
+                </Button>
+              </a>
+            </div>
+            <p className="text-sm text-slate-500 mt-6">
+              Over 1,000+ citizens already using SabiRight
+            </p>
+          </motion.div>
         </div>
       </section>
 

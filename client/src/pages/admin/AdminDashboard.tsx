@@ -72,6 +72,15 @@ export default function AdminDashboard() {
     }
   });
 
+  const { data: plans = [] } = useQuery({
+    queryKey: ['admin-plans'],
+    queryFn: async () => {
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/plans', { headers });
+      return res.ok ? res.json() : [];
+    }
+  });
+
   const saveSetting = useMutation({
     mutationFn: async ({ key, value, category, isSecret }: { key: string; value: string; category: string; isSecret?: boolean }) => {
       const headers = await getAdminHeaders();
@@ -175,8 +184,95 @@ export default function AdminDashboard() {
     }
   });
 
+  const toggleAdmin = useMutation({
+    mutationFn: async ({ userId, isAdmin }: { userId: string; isAdmin: boolean }) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/users/${userId}/toggle-admin`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ isAdmin })
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: "Updated", description: "User admin status updated" });
+    }
+  });
+
+  const deleteUser = useMutation({
+    mutationFn: async (userId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: "Deleted", description: "User deleted successfully" });
+    }
+  });
+
+  const createPlan = useMutation({
+    mutationFn: async (plan: any) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/plans', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(plan)
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-plans'] });
+      toast({ title: "Created", description: "Plan created successfully" });
+      setNewPlan({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '' });
+    }
+  });
+
+  const updatePlan = useMutation({
+    mutationFn: async ({ planId, updates }: { planId: string; updates: any }) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/plans/${planId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify(updates)
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-plans'] });
+      toast({ title: "Updated", description: "Plan updated successfully" });
+      setEditingPlan(null);
+    }
+  });
+
+  const deletePlan = useMutation({
+    mutationFn: async (planId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/plans/${planId}`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-plans'] });
+      toast({ title: "Deleted", description: "Plan deleted successfully" });
+    }
+  });
+
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [creditAmount, setCreditAmount] = useState("");
+  const [newPlan, setNewPlan] = useState({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '' });
+  const [editingPlan, setEditingPlan] = useState<any>(null);
 
   const getSetting = (key: string) => settings.find((s: any) => s.key === key)?.value || '';
 
@@ -251,9 +347,10 @@ export default function AdminDashboard() {
         </div>
 
         <Tabs defaultValue="settings" className="space-y-6">
-          <TabsList className="bg-white border">
+          <TabsList className="bg-white border flex-wrap">
             <TabsTrigger value="settings"><Settings className="h-4 w-4 mr-2" /> Settings</TabsTrigger>
             <TabsTrigger value="api-keys"><Key className="h-4 w-4 mr-2" /> API Keys</TabsTrigger>
+            <TabsTrigger value="plans"><CreditCard className="h-4 w-4 mr-2" /> Plans</TabsTrigger>
             <TabsTrigger value="payments"><CreditCard className="h-4 w-4 mr-2" /> Payments</TabsTrigger>
             <TabsTrigger value="users"><Users className="h-4 w-4 mr-2" /> Users</TabsTrigger>
             <TabsTrigger value="vendors"><Store className="h-4 w-4 mr-2" /> Vendors</TabsTrigger>
@@ -537,6 +634,143 @@ export default function AdminDashboard() {
             </Card>
           </TabsContent>
 
+          {/* Plans Tab */}
+          <TabsContent value="plans">
+            <div className="space-y-6">
+              {/* Create New Plan */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Create New Plan</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid md:grid-cols-3 gap-4">
+                    <Input
+                      placeholder="Plan Name"
+                      value={newPlan.name}
+                      onChange={(e) => setNewPlan({ ...newPlan, name: e.target.value })}
+                    />
+                    <select
+                      className="h-10 px-3 border rounded-md"
+                      value={newPlan.type}
+                      onChange={(e) => setNewPlan({ ...newPlan, type: e.target.value })}
+                    >
+                      <option value="free">Free</option>
+                      <option value="basic">Basic</option>
+                      <option value="pro">Pro</option>
+                      <option value="enterprise">Enterprise</option>
+                    </select>
+                    <select
+                      className="h-10 px-3 border rounded-md"
+                      value={newPlan.userType}
+                      onChange={(e) => setNewPlan({ ...newPlan, userType: e.target.value })}
+                    >
+                      <option value="user">User</option>
+                      <option value="vendor">Vendor</option>
+                    </select>
+                    <Input
+                      type="number"
+                      placeholder="Price (NGN)"
+                      value={newPlan.price}
+                      onChange={(e) => setNewPlan({ ...newPlan, price: parseInt(e.target.value) || 0 })}
+                    />
+                    <Input
+                      type="number"
+                      placeholder="Credits"
+                      value={newPlan.credits}
+                      onChange={(e) => setNewPlan({ ...newPlan, credits: parseInt(e.target.value) || 10 })}
+                    />
+                    <Input
+                      placeholder="Description"
+                      value={newPlan.description}
+                      onChange={(e) => setNewPlan({ ...newPlan, description: e.target.value })}
+                    />
+                  </div>
+                  <Button 
+                    className="mt-4" 
+                    onClick={() => createPlan.mutate(newPlan)}
+                    disabled={!newPlan.name}
+                  >
+                    Create Plan
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Existing Plans */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Existing Plans ({plans.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {plans.length === 0 ? (
+                    <p className="text-center py-8 text-slate-400">No plans created yet</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {plans.map((plan: any) => (
+                        <div key={plan.id} className="p-4 border rounded-lg">
+                          {editingPlan?.id === plan.id ? (
+                            <div className="space-y-3">
+                              <div className="grid md:grid-cols-3 gap-3">
+                                <Input
+                                  value={editingPlan.name}
+                                  onChange={(e) => setEditingPlan({ ...editingPlan, name: e.target.value })}
+                                />
+                                <Input
+                                  type="number"
+                                  value={editingPlan.price}
+                                  onChange={(e) => setEditingPlan({ ...editingPlan, price: parseInt(e.target.value) || 0 })}
+                                />
+                                <Input
+                                  type="number"
+                                  value={editingPlan.credits}
+                                  onChange={(e) => setEditingPlan({ ...editingPlan, credits: parseInt(e.target.value) || 0 })}
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" onClick={() => updatePlan.mutate({ 
+                                  planId: plan.id, 
+                                  updates: { 
+                                    name: editingPlan.name,
+                                    price: editingPlan.price,
+                                    credits: editingPlan.credits,
+                                    type: editingPlan.type,
+                                    userType: editingPlan.userType,
+                                    description: editingPlan.description
+                                  }
+                                })}>
+                                  Save
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => setEditingPlan(null)}>
+                                  Cancel
+                                </Button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-bold">{plan.name}</p>
+                                <p className="text-sm text-slate-500">
+                                  {plan.type} - {plan.userType} | NGN {plan.price || 0} | {plan.credits || 0} credits
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="outline" onClick={() => setEditingPlan(plan)}>
+                                  Edit
+                                </Button>
+                                <Button size="sm" variant="destructive" onClick={() => deletePlan.mutate(plan.id)}>
+                                  Delete
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
           {/* Payments Tab */}
           <TabsContent value="payments">
             <Card>
@@ -678,6 +912,28 @@ export default function AdminDashboard() {
                             <option value="free-vendor">Vendor Free</option>
                             <option value="pro-vendor">Vendor Pro</option>
                           </select>
+
+                          {/* Toggle Admin */}
+                          <Button
+                            size="sm"
+                            variant={user.isAdmin ? "destructive" : "outline"}
+                            onClick={() => toggleAdmin.mutate({ userId: user.userId, isAdmin: !user.isAdmin })}
+                          >
+                            {user.isAdmin ? 'Remove Admin' : 'Make Admin'}
+                          </Button>
+
+                          {/* Delete User */}
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this user?')) {
+                                deleteUser.mutate(user.userId);
+                              }
+                            }}
+                          >
+                            Delete
+                          </Button>
                         </div>
                       </div>
                     ))}

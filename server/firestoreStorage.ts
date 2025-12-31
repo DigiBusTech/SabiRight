@@ -365,6 +365,54 @@ export class FirestoreStorage implements IStorage {
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Plan));
   }
 
+  async createPlan(plan: any): Promise<Plan> {
+    const id = crypto.randomUUID();
+    const newPlan = { ...plan, id, createdAt: new Date().toISOString() };
+    await collections.plans().doc(id).set(newPlan);
+    return newPlan as Plan;
+  }
+
+  async updatePlan(planId: string, updates: any): Promise<Plan | undefined> {
+    const planRef = collections.plans().doc(planId);
+    const doc = await planRef.get();
+    if (!doc.exists) return undefined;
+    
+    await planRef.update({ ...updates, updatedAt: new Date().toISOString() });
+    const updated = await planRef.get();
+    return { id: updated.id, ...updated.data() } as Plan;
+  }
+
+  async deletePlan(planId: string): Promise<boolean> {
+    const planRef = collections.plans().doc(planId);
+    const doc = await planRef.get();
+    if (!doc.exists) return false;
+    
+    await planRef.delete();
+    return true;
+  }
+
+  async toggleUserAdmin(userId: string, isAdmin: boolean): Promise<boolean> {
+    try {
+      await collections.profiles().doc(userId).update({ isAdmin });
+      return true;
+    } catch (error) {
+      console.error('Failed to toggle user admin:', error);
+      return false;
+    }
+  }
+
+  async deleteUser(userId: string): Promise<boolean> {
+    try {
+      await collections.users().doc(userId).delete();
+      await collections.profiles().doc(userId).delete();
+      await collections.credits().doc(userId).delete();
+      return true;
+    } catch (error) {
+      console.error('Failed to delete user:', error);
+      return false;
+    }
+  }
+
   async getUserRoutes(userId: string): Promise<CloakedRoute[]> {
     const snapshot = await collections.routes().where('userId', '==', userId).get();
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CloakedRoute));

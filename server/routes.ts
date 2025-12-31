@@ -581,6 +581,83 @@ export async function registerRoutes(
     res.json({ success: true, subscription });
   });
 
+  // Admin: Toggle user admin status
+  app.post("/api/admin/users/:userId/toggle-admin", adminAuth, async (req, res) => {
+    const { userId } = req.params;
+    const { isAdmin } = req.body;
+    
+    const success = await storage.toggleUserAdmin(userId, isAdmin);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(500).json({ error: 'Failed to update user' });
+    }
+  });
+
+  // Admin: Delete user
+  app.delete("/api/admin/users/:userId", adminAuth, async (req, res) => {
+    const { userId } = req.params;
+    
+    const success = await storage.deleteUser(userId);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(500).json({ error: 'Failed to delete user' });
+    }
+  });
+
+  // Admin: Get all plans
+  app.get("/api/admin/plans", adminAuth, async (req, res) => {
+    const plans = await storage.getAllPlans();
+    res.json(plans);
+  });
+
+  // Admin: Create plan
+  app.post("/api/admin/plans", adminAuth, async (req, res) => {
+    const { name, type, userType, price, credits, features, description } = req.body;
+    
+    if (!name || !type) {
+      return res.status(400).json({ error: 'Name and type are required' });
+    }
+
+    const plan = await storage.createPlan({
+      name,
+      type,
+      userType: userType || 'user',
+      price: price || 0,
+      credits: credits || 10,
+      features: features || [],
+      description: description || ''
+    });
+
+    res.json(plan);
+  });
+
+  // Admin: Update plan
+  app.put("/api/admin/plans/:planId", adminAuth, async (req, res) => {
+    const { planId } = req.params;
+    const updates = req.body;
+
+    const plan = await storage.updatePlan(planId, updates);
+    if (plan) {
+      res.json(plan);
+    } else {
+      res.status(404).json({ error: 'Plan not found' });
+    }
+  });
+
+  // Admin: Delete plan
+  app.delete("/api/admin/plans/:planId", adminAuth, async (req, res) => {
+    const { planId } = req.params;
+    
+    const success = await storage.deletePlan(planId);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: 'Plan not found' });
+    }
+  });
+
   // Jobs API
   app.get("/api/jobs", async (req, res) => {
     try {
