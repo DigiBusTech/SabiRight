@@ -413,9 +413,35 @@ export class FirestoreStorage implements IStorage {
   }
 
   async getUserProfile(userId: string): Promise<UserProfile | undefined> {
-    const doc = await collections.profiles().doc(userId).get();
-    if (!doc.exists) return undefined;
-    return doc.data() as UserProfile;
+    // Check new profiles collection first
+    const profileDoc = await collections.profiles().doc(userId).get();
+    
+    // Also check old users collection for legacy data
+    const userDoc = await collections.users().doc(userId).get();
+    
+    if (!profileDoc.exists && !userDoc.exists) return undefined;
+    
+    // Merge data from both sources (profile takes priority, but include legacy fields)
+    const profileData = profileDoc.exists ? profileDoc.data() : {};
+    const userData = userDoc.exists ? userDoc.data() : {};
+    
+    // Map old format fields to new format
+    const merged = {
+      userId,
+      displayName: profileData?.displayName || userData?.name || userData?.username || null,
+      email: profileData?.email || userData?.email || null,
+      isVendor: profileData?.isVendor ?? userData?.isVendor ?? false,
+      isAdmin: profileData?.isAdmin ?? userData?.isAdmin ?? (userData?.role === 'admin'),
+      kycStatus: profileData?.kycStatus || (userData?.isVerified ? 'verified' : 'pending'),
+      kycDocument: profileData?.kycDocument || null,
+      kycSubmittedAt: profileData?.kycSubmittedAt || null,
+      kycVerifiedAt: profileData?.kycVerifiedAt || null,
+      vendorMode: profileData?.vendorMode ?? false,
+      createdAt: profileData?.createdAt || userData?.joinedAt || new Date(),
+      city: userData?.city || null,
+    };
+    
+    return merged as UserProfile;
   }
 
   async updateUserProfile(userId: string, profile: any): Promise<void> {

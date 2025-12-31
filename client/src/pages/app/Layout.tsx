@@ -46,6 +46,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
       setLocation("/");
   };
 
+  // Admin items come first if user is admin
+  const adminItems = profile?.isAdmin ? [
+    { icon: Settings, label: "Admin Dashboard", href: "/admin", isAdmin: true },
+  ] : [];
+
   const baseNavItems = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/app" },
     { icon: Scale, label: "SabiGuard", href: "/app/civic", description: "Legal First Aid" },
@@ -62,11 +67,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
     { icon: BarChart3, label: "Vendor Dashboard", href: "/app/vendor" },
   ] : [];
 
-  const adminItems = profile?.isAdmin ? [
-    { icon: Settings, label: "Admin Dashboard", href: "/admin" },
-  ] : [];
-
-  const navItems = [...baseNavItems, ...vendorItems, ...adminItems];
+  // Admin dashboard appears first in navigation for admin users
+  const navItems = [...adminItems, ...baseNavItems, ...vendorItems];
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
