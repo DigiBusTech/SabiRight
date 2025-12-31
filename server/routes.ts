@@ -1006,5 +1006,160 @@ export async function registerRoutes(
     });
   });
 
+  // ===== Coupons API (Admin) =====
+  
+  app.get("/api/admin/coupons", adminAuth, async (req, res) => {
+    const coupons = await storage.getAllCoupons();
+    res.json(coupons);
+  });
+
+  app.post("/api/admin/coupons", adminAuth, async (req, res) => {
+    const { code, discountType, discountValue, maxRedemptions, validFrom, validTo, isActive } = req.body;
+    
+    if (!code || !discountType || !discountValue) {
+      return res.status(400).json({ error: 'Code, discountType, and discountValue are required' });
+    }
+    
+    if (!['percentage', 'fixed'].includes(discountType)) {
+      return res.status(400).json({ error: 'discountType must be "percentage" or "fixed"' });
+    }
+
+    const existing = await storage.getCouponByCode(code);
+    if (existing) {
+      return res.status(409).json({ error: 'Coupon code already exists' });
+    }
+
+    const coupon = await storage.createCoupon({
+      code,
+      discountType,
+      discountValue: discountValue.toString(),
+      maxRedemptions: maxRedemptions || null,
+      validFrom: validFrom ? new Date(validFrom) : null,
+      validTo: validTo ? new Date(validTo) : null,
+      isActive: isActive !== false
+    });
+
+    res.json(coupon);
+  });
+
+  app.patch("/api/admin/coupons/:id", adminAuth, async (req, res) => {
+    const { id } = req.params;
+    const updates = req.body;
+    
+    if (updates.discountValue !== undefined) {
+      updates.discountValue = updates.discountValue.toString();
+    }
+    if (updates.validFrom) {
+      updates.validFrom = new Date(updates.validFrom);
+    }
+    if (updates.validTo) {
+      updates.validTo = new Date(updates.validTo);
+    }
+
+    const coupon = await storage.updateCoupon(id, updates);
+    if (!coupon) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+    res.json(coupon);
+  });
+
+  app.delete("/api/admin/coupons/:id", adminAuth, async (req, res) => {
+    const { id } = req.params;
+    const success = await storage.deleteCoupon(id);
+    if (!success) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+    res.json({ success: true });
+  });
+
+  app.post("/api/coupons/validate", async (req, res) => {
+    const { code } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({ error: 'Coupon code is required' });
+    }
+
+    const result = await storage.validateCoupon(code);
+    
+    if (!result.valid) {
+      return res.status(400).json({ valid: false, error: result.error });
+    }
+
+    res.json({
+      valid: true,
+      coupon: {
+        id: result.coupon!.id,
+        code: result.coupon!.code,
+        discountType: result.coupon!.discountType,
+        discountValue: result.coupon!.discountValue
+      }
+    });
+  });
+
+  // ===== Wallet API =====
+  
+  app.get("/api/wallet/:userId", async (req, res) => {
+    const { userId } = req.params;
+    const wallet = await storage.getWallet(userId);
+    
+    if (!wallet) {
+      return res.status(404).json({ error: 'Wallet not found' });
+    }
+    
+    res.json(wallet);
+  });
+
+  app.post("/api/wallet/:userId/create", async (req, res) => {
+    const { userId } = req.params;
+    const { currency } = req.body;
+    
+    const wallet = await storage.createWallet(userId, currency || 'NGN');
+    res.json(wallet);
+  });
+
+  app.post("/api/wallet/:userId/topup", async (req, res) => {
+    const { userId } = req.params;
+    const { amount, reference, description } = req.body;
+    
+    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Valid positive amount is required' });
+    }
+
+    let wallet = await storage.getWallet(userId);
+    if (!wallet) {
+      wallet = await storage.createWallet(userId);
+    }
+
+    try {
+      const transaction = await storage.topUpWallet(
+        userId,
+        parseFloat(amount),
+        reference,
+        description
+      );
+      
+      const updatedWallet = await storage.getWallet(userId);
+      res.json({
+        success: true,
+        transaction,
+        wallet: updatedWallet
+      });
+    } catch (error: any) {
+      res.status(400).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/wallet/:userId/transactions", async (req, res) => {
+    const { userId } = req.params;
+    const { limit } = req.query;
+    
+    const transactions = await storage.getWalletTransactions(
+      userId,
+      limit ? parseInt(limit as string) : 50
+    );
+    
+    res.json(transactions);
+  });
+
   return httpServer;
 }

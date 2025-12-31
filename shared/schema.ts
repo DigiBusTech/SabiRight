@@ -13,6 +13,8 @@ export const userProfiles = pgTable("user_profiles", {
   userId: varchar("user_id").primaryKey().references(() => users.id),
   email: text("email"),
   displayName: text("display_name"),
+  city: text("city"),
+  state: text("state"),
   isVendor: boolean("is_vendor").default(false),
   kycStatus: text("kyc_status").default("pending"), // 'pending', 'verified', 'rejected'
   kycDocument: text("kyc_document"),
@@ -123,6 +125,7 @@ export const events = pgTable("events", {
   date: text("date").notNull(),
   time: text("time").notNull(),
   location: text("location").notNull(),
+  city: text("city"),
   category: text("category").notNull(),
   organizer: text("organizer").notNull(),
   organizerId: varchar("organizer_id").references(() => users.id),
@@ -176,6 +179,141 @@ export const payments = pgTable("payments", {
   completedAt: timestamp("completed_at"),
 });
 
+// Coupons for subscriptions
+export const coupons = pgTable("coupons", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").notNull().unique(),
+  discountType: text("discount_type").notNull(), // 'percentage', 'fixed'
+  discountValue: numeric("discount_value", { precision: 10, scale: 2 }).notNull(),
+  maxRedemptions: integer("max_redemptions"),
+  currentRedemptions: integer("current_redemptions").default(0),
+  validFrom: timestamp("valid_from"),
+  validTo: timestamp("valid_to"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// User wallets
+export const wallets = pgTable("wallets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  balance: numeric("balance", { precision: 12, scale: 2 }).default("0"),
+  currency: text("currency").notNull().default("NGN"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Wallet transactions
+export const walletTransactions = pgTable("wallet_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  walletId: varchar("wallet_id").notNull().references(() => wallets.id),
+  type: text("type").notNull(), // 'deposit', 'withdrawal', 'escrow_fund', 'escrow_release', 'payment'
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  balanceBefore: numeric("balance_before", { precision: 12, scale: 2 }),
+  balanceAfter: numeric("balance_after", { precision: 12, scale: 2 }),
+  reference: text("reference"),
+  description: text("description"),
+  status: text("status").notNull().default("completed"), // 'pending', 'completed', 'failed'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Service bookings
+export const bookings = pgTable("bookings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceId: varchar("service_id").notNull().references(() => vendorServices.id),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  vendorId: varchar("vendor_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("requested"), // 'requested', 'confirmed', 'in_progress', 'completed', 'disputed', 'cancelled'
+  totalAmount: numeric("total_amount", { precision: 12, scale: 2 }).notNull(),
+  description: text("description"),
+  scheduledDate: timestamp("scheduled_date"),
+  requiresInitialPayment: boolean("requires_initial_payment").default(false),
+  initialPaymentPercent: integer("initial_payment_percent"),
+  createdAt: timestamp("created_at").defaultNow(),
+  confirmedAt: timestamp("confirmed_at"),
+  completedAt: timestamp("completed_at"),
+});
+
+// Booking milestones for staged payments
+export const bookingMilestones = pgTable("booking_milestones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bookingId: varchar("booking_id").notNull().references(() => bookings.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  amountPercent: integer("amount_percent").notNull(), // percentage of total
+  amount: numeric("amount", { precision: 12, scale: 2 }),
+  order: integer("order").notNull(),
+  status: text("status").notNull().default("pending"), // 'pending', 'in_progress', 'completed', 'released'
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  releasedAt: timestamp("released_at"),
+});
+
+// Escrow accounts for bookings
+export const escrowAccounts = pgTable("escrow_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bookingId: varchar("booking_id").notNull().references(() => bookings.id),
+  totalAmount: numeric("total_amount", { precision: 12, scale: 2 }).notNull(),
+  fundedAmount: numeric("funded_amount", { precision: 12, scale: 2 }).default("0"),
+  releasedAmount: numeric("released_amount", { precision: 12, scale: 2 }).default("0"),
+  status: text("status").notNull().default("pending"), // 'pending', 'funded', 'partial', 'released', 'disputed', 'refunded'
+  createdAt: timestamp("created_at").defaultNow(),
+  fundedAt: timestamp("funded_at"),
+  releasedAt: timestamp("released_at"),
+});
+
+// Escrow transaction events
+export const escrowEvents = pgTable("escrow_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  escrowId: varchar("escrow_id").notNull().references(() => escrowAccounts.id),
+  type: text("type").notNull(), // 'funded', 'milestone_released', 'full_released', 'refunded', 'disputed'
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  milestoneId: varchar("milestone_id").references(() => bookingMilestones.id),
+  description: text("description"),
+  performedBy: varchar("performed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Contracts for bookings
+export const contracts = pgTable("contracts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bookingId: varchar("booking_id").notNull().references(() => bookings.id),
+  title: text("title").notNull(),
+  terms: text("terms").notNull(),
+  vendorSignedAt: timestamp("vendor_signed_at"),
+  userSignedAt: timestamp("user_signed_at"),
+  status: text("status").notNull().default("pending"), // 'pending', 'vendor_signed', 'fully_signed', 'cancelled'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Disputes for bookings
+export const disputes = pgTable("disputes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bookingId: varchar("booking_id").notNull().references(() => bookings.id),
+  openedBy: varchar("opened_by").notNull().references(() => users.id),
+  reason: text("reason").notNull(),
+  description: text("description"),
+  evidence: jsonb("evidence").default([]), // array of {type, url, description}
+  status: text("status").notNull().default("open"), // 'open', 'under_review', 'resolved', 'closed'
+  resolution: text("resolution"), // 'user_favor', 'vendor_favor', 'split', 'cancelled'
+  resolutionNotes: text("resolution_notes"),
+  resolvedBy: varchar("resolved_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+});
+
+// Booking chat messages
+export const bookingMessages = pgTable("booking_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bookingId: varchar("booking_id").notNull().references(() => bookings.id),
+  senderId: varchar("sender_id").notNull().references(() => users.id),
+  message: text("message").notNull(),
+  isAdminMessage: boolean("is_admin_message").default(false),
+  attachments: jsonb("attachments").default([]),
+  createdAt: timestamp("created_at").defaultNow(),
+  readAt: timestamp("read_at"),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
@@ -211,3 +349,13 @@ export type Event = typeof events.$inferSelect;
 export type VendorService = typeof vendorServices.$inferSelect;
 export type AdminSetting = typeof adminSettings.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
+export type Coupon = typeof coupons.$inferSelect;
+export type Wallet = typeof wallets.$inferSelect;
+export type WalletTransaction = typeof walletTransactions.$inferSelect;
+export type Booking = typeof bookings.$inferSelect;
+export type BookingMilestone = typeof bookingMilestones.$inferSelect;
+export type EscrowAccount = typeof escrowAccounts.$inferSelect;
+export type EscrowEvent = typeof escrowEvents.$inferSelect;
+export type Contract = typeof contracts.$inferSelect;
+export type Dispute = typeof disputes.$inferSelect;
+export type BookingMessage = typeof bookingMessages.$inferSelect;

@@ -1,13 +1,19 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar, MapPin, Users, Clock, Plus, X } from "lucide-react";
+import { Calendar, MapPin, Users, Clock, Plus, X, Filter } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
+const NIGERIAN_CITIES = [
+  "Lagos", "Abuja", "Port Harcourt", "Kano", "Ibadan", "Kaduna", 
+  "Benin City", "Enugu", "Onitsha", "Jos", "Calabar", "Warri", 
+  "Uyo", "Owerri", "Abeokuta"
+];
 
 interface Event {
   id: string;
@@ -15,6 +21,7 @@ interface Event {
   date: string;
   time: string;
   location: string;
+  city?: string;
   category: string;
   description: string;
   attendees: number;
@@ -25,10 +32,11 @@ interface Event {
 }
 
 export default function Events() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCity, setSelectedCity] = useState<string>("");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newEvent, setNewEvent] = useState({
     title: "",
@@ -36,11 +44,13 @@ export default function Events() {
     date: "",
     time: "",
     location: "",
+    city: profile?.city || "Lagos",
     category: "Workshop",
     maxAttendees: ""
   });
 
   const categories = ["Workshop", "Civic Training", "Legal Aid", "Community Meeting", "Seminar"];
+  const userCity = profile?.city || "";
 
   const { data: events = [], isLoading } = useQuery({
     queryKey: ['events'],
@@ -63,7 +73,7 @@ export default function Events() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
       setShowCreateDialog(false);
-      setNewEvent({ title: "", description: "", date: "", time: "", location: "", category: "Workshop", maxAttendees: "" });
+      setNewEvent({ title: "", description: "", date: "", time: "", location: "", city: profile?.city || "Lagos", category: "Workshop", maxAttendees: "" });
       toast({ title: "Success", description: "Event created successfully!" });
     },
     onError: () => {
@@ -100,6 +110,7 @@ export default function Events() {
 
     createEventMutation.mutate({
       ...newEvent,
+      city: newEvent.city,
       organizer: user.displayName || "Anonymous",
       organizerId: user.uid,
       maxAttendees: newEvent.maxAttendees ? parseInt(newEvent.maxAttendees) : undefined
@@ -120,9 +131,35 @@ export default function Events() {
     registerMutation.mutate({ eventId: event.id, userId: user.uid });
   };
 
-  const filteredEvents = selectedCategory 
-    ? events.filter((e: Event) => e.category === selectedCategory)
-    : events;
+  const sortedAndFilteredEvents = useMemo(() => {
+    let filtered = events;
+    
+    if (selectedCategory) {
+      filtered = filtered.filter((e: Event) => e.category === selectedCategory);
+    }
+    
+    if (selectedCity) {
+      filtered = filtered.filter((e: Event) => 
+        e.city?.toLowerCase() === selectedCity.toLowerCase() ||
+        e.location?.toLowerCase().includes(selectedCity.toLowerCase())
+      );
+    }
+    
+    return filtered.sort((a: Event, b: Event) => {
+      const aInUserCity = userCity && (
+        a.city?.toLowerCase() === userCity.toLowerCase() ||
+        a.location?.toLowerCase().includes(userCity.toLowerCase())
+      );
+      const bInUserCity = userCity && (
+        b.city?.toLowerCase() === userCity.toLowerCase() ||
+        b.location?.toLowerCase().includes(userCity.toLowerCase())
+      );
+      
+      if (aInUserCity && !bInUserCity) return -1;
+      if (!aInUserCity && bInUserCity) return 1;
+      return 0;
+    });
+  }, [events, selectedCategory, selectedCity, userCity]);
 
   const isUserRegistered = (event: Event) => event.registeredBy?.includes(user?.uid || "");
 
@@ -189,13 +226,27 @@ export default function Events() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-bold mb-1">Location *</label>
-                  <Input
-                    value={newEvent.location}
-                    onChange={(e) => setNewEvent({...newEvent, location: e.target.value})}
-                    placeholder="e.g., Lagos Zone 1 Community Hall"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold mb-1">City *</label>
+                    <select
+                      value={newEvent.city}
+                      onChange={(e) => setNewEvent({...newEvent, city: e.target.value})}
+                      className="w-full border rounded-lg p-2 text-sm"
+                    >
+                      {NIGERIAN_CITIES.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1">Venue *</label>
+                    <Input
+                      value={newEvent.location}
+                      onChange={(e) => setNewEvent({...newEvent, location: e.target.value})}
+                      placeholder="e.g., Community Hall"
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -235,33 +286,63 @@ export default function Events() {
         </div>
       )}
 
-      {/* Category Filter */}
-      <div className="space-y-3">
-        <p className="text-sm font-bold text-slate-600 uppercase">Filter by Category</p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setSelectedCategory(null)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              selectedCategory === null
-                ? "bg-primary text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
+      {/* Filters */}
+      <div className="space-y-4">
+        {/* City Filter */}
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-slate-500" />
+            <span className="text-sm font-bold text-slate-600 uppercase">Filter by City</span>
+          </div>
+          <select
+            data-testid="filter-city-events"
+            value={selectedCity}
+            onChange={(e) => setSelectedCity(e.target.value)}
+            className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium bg-white focus:ring-2 ring-primary/20 outline-none"
           >
-            All Events
-          </button>
-          {categories.map((cat) => (
+            <option value="">All Cities</option>
+            {NIGERIAN_CITIES.map(city => (
+              <option key={city} value={city}>
+                {city} {city === userCity && "(Your City)"}
+              </option>
+            ))}
+          </select>
+          {userCity && (
+            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+              <MapPin className="h-3 w-3 mr-1" />
+              Your city: {userCity}
+            </Badge>
+          )}
+        </div>
+        
+        {/* Category Filter */}
+        <div className="space-y-3">
+          <p className="text-sm font-bold text-slate-600 uppercase">Filter by Category</p>
+          <div className="flex flex-wrap gap-2">
             <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
+              onClick={() => setSelectedCategory(null)}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                selectedCategory === cat
+                selectedCategory === null
                   ? "bg-primary text-white"
                   : "bg-slate-100 text-slate-700 hover:bg-slate-200"
               }`}
             >
-              {cat}
+              All Events
             </button>
-          ))}
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  selectedCategory === cat
+                    ? "bg-primary text-white"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -269,12 +350,12 @@ export default function Events() {
       <div className="grid gap-4">
         {isLoading ? (
           <div className="text-center py-10 text-slate-400">Loading events...</div>
-        ) : filteredEvents.length === 0 ? (
+        ) : sortedAndFilteredEvents.length === 0 ? (
           <div className="text-center py-10 text-slate-400">
-            No events found {selectedCategory && `in "${selectedCategory}"`}. Be the first to host one!
+            No events found {selectedCategory && `in "${selectedCategory}"`}{selectedCity && ` in ${selectedCity}`}. Be the first to host one!
           </div>
         ) : (
-          filteredEvents.map((event: Event) => (
+          sortedAndFilteredEvents.map((event: Event) => (
             <Card key={event.id} className="hover:border-primary/50 transition-all hover:shadow-md overflow-hidden">
               <CardContent className="p-6">
                 <div className="flex gap-6 items-start">

@@ -1,19 +1,53 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertTriangle, MapPin, Briefcase, Calendar, ChevronRight, ShieldCheck, TrendingUp, Scale, RefreshCw, Zap, Store, CreditCard, Users, FileCheck } from "lucide-react";
+import { AlertTriangle, MapPin, Briefcase, Calendar, ChevronRight, ShieldCheck, TrendingUp, Scale, RefreshCw, Zap, Store, CreditCard, Users, FileCheck, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MOCK_JOBS } from "@/lib/constants";
 import { Link } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+
+const NIGERIAN_CITIES = [
+  "Lagos", "Abuja", "Port Harcourt", "Kano", "Ibadan", "Kaduna", 
+  "Benin City", "Enugu", "Onitsha", "Jos", "Calabar", "Warri", 
+  "Uyo", "Owerri", "Abeokuta"
+];
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const userName = user?.displayName?.split(' ')[0] || "Citizen";
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedCity, setSelectedCity] = useState(profile?.city || "");
+  const [isSavingCity, setIsSavingCity] = useState(false);
+
+  const handleCityChange = async (city: string) => {
+    setSelectedCity(city);
+    if (!user?.uid || !city) return;
+    
+    setIsSavingCity(true);
+    try {
+      const res = await fetch(`/api/profile/${user.uid}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ city })
+      });
+      
+      if (res.ok) {
+        toast({ title: "City Updated", description: `Your city has been set to ${city}` });
+        queryClient.invalidateQueries({ queryKey: [`profile-${user.uid}`] });
+      } else {
+        toast({ title: "Error", description: "Failed to update city", variant: "destructive" });
+      }
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to update city", variant: "destructive" });
+    } finally {
+      setIsSavingCity(false);
+    }
+  };
 
   const { data: trafficCard, refetch: refetchTraffic } = useQuery({
     queryKey: [`traffic-card-${user?.uid}`],
@@ -116,6 +150,44 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* City Selection Card */}
+      <Card className="border-2 border-slate-200 shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-slate-700">
+            <MapPin className="h-4 w-4" /> Your Location
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-slate-600">Select your city to see local events, jobs, and services near you.</p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <select
+              data-testid="select-city"
+              value={selectedCity || profile?.city || ""}
+              onChange={(e) => handleCityChange(e.target.value)}
+              disabled={isSavingCity}
+              className="flex-1 p-3 rounded-lg border-2 border-slate-200 focus:border-primary focus:ring-2 ring-primary/20 outline-none text-sm font-medium bg-white disabled:opacity-50"
+            >
+              <option value="">Select your city</option>
+              {NIGERIAN_CITIES.map(city => (
+                <option key={city} value={city}>{city}</option>
+              ))}
+            </select>
+            {isSavingCity && (
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Saving...
+              </div>
+            )}
+            {(selectedCity || profile?.city) && !isSavingCity && (
+              <div className="flex items-center gap-2 text-sm text-green-600">
+                <Check className="h-4 w-4" />
+                <span className="font-medium">{selectedCity || profile?.city}</span>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Become a Vendor CTA - Only show if not already a vendor */}
       {!profile?.vendorMode && (

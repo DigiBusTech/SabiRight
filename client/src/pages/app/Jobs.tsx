@@ -1,16 +1,22 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Briefcase, Building2, MapPin, DollarSign, Clock, Search, Loader2, X, AlertCircle, Plus } from "lucide-react";
+import { Briefcase, Building2, MapPin, DollarSign, Clock, Search, Loader2, X, AlertCircle, Plus, Filter } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CreditDisplay } from "@/components/CreditDisplay";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
+
+const NIGERIAN_CITIES = [
+  "Lagos", "Abuja", "Port Harcourt", "Kano", "Ibadan", "Kaduna", 
+  "Benin City", "Enugu", "Onitsha", "Jos", "Calabar", "Warri", 
+  "Uyo", "Owerri", "Abeokuta"
+];
 
 interface Job {
   id: string;
@@ -27,7 +33,7 @@ interface Job {
 }
 
 export default function Jobs() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,21 +41,24 @@ export default function Jobs() {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   
   const [role, setRole] = useState("");
-  const [location, setLocation] = useState("Lagos");
+  const [location, setLocation] = useState(profile?.city || "Lagos");
   const [employmentType, setEmploymentType] = useState("");
   const [workMode, setWorkMode] = useState("");
+  const [cityFilter, setCityFilter] = useState<string>("");
   const [showPostJob, setShowPostJob] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [jobForm, setJobForm] = useState({
     title: "",
     company: "",
-    location: "Lagos",
+    location: profile?.city || "Lagos",
     type: "Full-time",
     workMode: "Onsite",
     salary: "",
     description: "",
     contact: ""
   });
+
+  const userCity = profile?.city || "";
 
   // Fetch credits
   const { data: credits, refetch: refetchCredits } = useQuery({
@@ -180,11 +189,23 @@ export default function Jobs() {
     }
   };
 
-  const filteredJobs = jobs.filter(job => {
-    if (employmentType && job.type !== employmentType) return false;
-    if (workMode && job.workMode !== workMode) return false;
-    return true;
-  });
+  const sortedAndFilteredJobs = useMemo(() => {
+    let filtered = jobs.filter(job => {
+      if (employmentType && job.type !== employmentType) return false;
+      if (workMode && job.workMode !== workMode) return false;
+      if (cityFilter && !job.location?.toLowerCase().includes(cityFilter.toLowerCase())) return false;
+      return true;
+    });
+    
+    return filtered.sort((a, b) => {
+      const aInUserCity = userCity && a.location?.toLowerCase().includes(userCity.toLowerCase());
+      const bInUserCity = userCity && b.location?.toLowerCase().includes(userCity.toLowerCase());
+      
+      if (aInUserCity && !bInUserCity) return -1;
+      if (!aInUserCity && bInUserCity) return 1;
+      return 0;
+    });
+  }, [jobs, employmentType, workMode, cityFilter, userCity]);
 
   return (
     <div className="space-y-8">
@@ -211,6 +232,33 @@ export default function Jobs() {
         </div>
       )}
 
+      {/* City Filter */}
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-slate-500" />
+          <span className="text-sm font-bold text-slate-600 uppercase">Filter by City</span>
+        </div>
+        <select
+          data-testid="filter-city-jobs"
+          value={cityFilter}
+          onChange={(e) => setCityFilter(e.target.value)}
+          className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium bg-white focus:ring-2 ring-primary/20 outline-none"
+        >
+          <option value="">All Cities</option>
+          {NIGERIAN_CITIES.map(city => (
+            <option key={city} value={city}>
+              {city} {city === userCity && "(Your City)"}
+            </option>
+          ))}
+        </select>
+        {userCity && (
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+            <MapPin className="h-3 w-3 mr-1" />
+            Your city: {userCity}
+          </Badge>
+        )}
+      </div>
+
       {/* Search Form */}
       <Card className="bg-blue-50 border-blue-100">
         <CardContent className="p-6">
@@ -226,12 +274,15 @@ export default function Jobs() {
                 </div>
                 <div className="space-y-2">
                     <label className="text-xs font-bold text-blue-800 uppercase">Location</label>
-                    <input 
-                        className="w-full p-2 rounded border border-blue-200 focus:ring-2 ring-blue-500 outline-none" 
-                        placeholder="e.g. Lagos"
+                    <select
+                        className="w-full p-2 rounded border border-blue-200 focus:ring-2 ring-blue-500 outline-none bg-white"
                         value={location}
                         onChange={e => setLocation(e.target.value)}
-                    />
+                    >
+                      {NIGERIAN_CITIES.map(city => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </select>
                 </div>
                 <div className="space-y-2">
                     <label className="text-xs font-bold text-blue-800 uppercase">Employment</label>
@@ -272,10 +323,10 @@ export default function Jobs() {
       <div className="grid gap-4">
         {loading ? (
             <div className="text-center py-10 text-slate-400">Loading jobs...</div>
-        ) : filteredJobs.length === 0 ? (
+        ) : sortedAndFilteredJobs.length === 0 ? (
             <div className="text-center py-10 text-slate-400">No jobs match your filters. Try adjusting them!</div>
         ) : (
-            filteredJobs.map((job) => (
+            sortedAndFilteredJobs.map((job) => (
             <Card 
               key={job.id} 
               className="hover:border-primary/50 transition-all cursor-pointer hover:shadow-md group relative overflow-hidden"

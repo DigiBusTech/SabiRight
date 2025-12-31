@@ -1,5 +1,5 @@
 import admin from 'firebase-admin';
-import { type User, type InsertUser, type Subscription, type Credits, type Plan, type CreditLog, type CloakedRoute, type TrafficAlert, type DashboardTrafficCard, type UserProfile, type VendorApplication, type Event, type VendorService, type AdminSetting, type Payment } from "@shared/schema";
+import { type User, type InsertUser, type Subscription, type Credits, type Plan, type CreditLog, type CloakedRoute, type TrafficAlert, type DashboardTrafficCard, type UserProfile, type VendorApplication, type Event, type VendorService, type AdminSetting, type Payment, type Coupon, type Wallet, type WalletTransaction } from "@shared/schema";
 import { type IStorage } from "./storage";
 
 const FIREBASE_APP_ID = 'digital-citizen-v2';
@@ -99,6 +99,9 @@ const collections = {
   jobs: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('jobs'),
   vendorLeads: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorLeads'),
   vendorBookings: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorBookings'),
+  coupons: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('coupons'),
+  wallets: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('wallets'),
+  walletTransactions: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('walletTransactions'),
 };
 
 export class FirestoreStorage implements IStorage {
@@ -157,6 +160,9 @@ export class FirestoreStorage implements IStorage {
     await this.ensureCollectionExists('routes', '_placeholder');
     await this.ensureCollectionExists('alerts', '_placeholder');
     await this.ensureCollectionExists('payments', '_placeholder');
+    await this.ensureCollectionExists('coupons', '_placeholder');
+    await this.ensureCollectionExists('wallets', '_placeholder');
+    await this.ensureCollectionExists('walletTransactions', '_placeholder');
   }
 
   private async ensureCollectionExists(collectionName: string, placeholderId: string): Promise<void> {
@@ -492,6 +498,8 @@ export class FirestoreStorage implements IStorage {
       userId,
       displayName: profileData?.displayName || userData?.name || userData?.username || null,
       email: profileData?.email || userData?.email || null,
+      city: profileData?.city || userData?.city || null,
+      state: profileData?.state || userData?.state || null,
       isVendor: profileData?.isVendor ?? userData?.isVendor ?? false,
       isAdmin: profileData?.isAdmin ?? userData?.isAdmin ?? (userData?.role === 'admin'),
       kycStatus: profileData?.kycStatus || (userData?.isVerified ? 'verified' : 'pending'),
@@ -500,7 +508,6 @@ export class FirestoreStorage implements IStorage {
       kycVerifiedAt: profileData?.kycVerifiedAt || null,
       vendorMode: profileData?.vendorMode ?? false,
       createdAt: profileData?.createdAt || userData?.joinedAt || new Date(),
-      city: userData?.city || null,
     };
     
     return merged as UserProfile;
@@ -717,6 +724,199 @@ export class FirestoreStorage implements IStorage {
       bookings: bookingsSnapshot.size,
       earnings
     };
+  }
+
+  async getAllCoupons(): Promise<Coupon[]> {
+    const snapshot = await collections.coupons().orderBy('createdAt', 'desc').get();
+    return snapshot.docs
+      .filter(doc => !doc.data()._isPlaceholder)
+      .map(doc => ({ id: doc.id, ...doc.data() } as Coupon));
+  }
+
+  async getCouponById(couponId: string): Promise<Coupon | undefined> {
+    const doc = await collections.coupons().doc(couponId).get();
+    return doc.exists && !doc.data()?._isPlaceholder ? { id: doc.id, ...doc.data() } as Coupon : undefined;
+  }
+
+  async getCouponByCode(code: string): Promise<Coupon | undefined> {
+    const snapshot = await collections.coupons().where('code', '==', code.toUpperCase()).limit(1).get();
+    if (snapshot.empty) return undefined;
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as Coupon;
+  }
+
+  async createCoupon(coupon: Omit<Coupon, 'id' | 'createdAt' | 'currentRedemptions'>): Promise<Coupon> {
+    const id = crypto.randomUUID();
+    const createdAt = new Date();
+    const newCoupon = { 
+      ...coupon, 
+      id, 
+      code: coupon.code.toUpperCase(),
+      currentRedemptions: 0,
+      createdAt
+    };
+    await collections.coupons().doc(id).set({
+      ...newCoupon,
+      createdAt: createdAt.toISOString()
+    });
+    return newCoupon as Coupon;
+  }
+
+  async updateCoupon(couponId: string, updates: Partial<Coupon>): Promise<Coupon | undefined> {
+    const couponRef = collections.coupons().doc(couponId);
+    const doc = await couponRef.get();
+    if (!doc.exists) return undefined;
+    
+    const updateData = { ...updates };
+    if (updateData.code) updateData.code = updateData.code.toUpperCase();
+    
+    await couponRef.update(updateData);
+    const updated = await couponRef.get();
+    return { id: updated.id, ...updated.data() } as Coupon;
+  }
+
+  async deleteCoupon(couponId: string): Promise<boolean> {
+    const couponRef = collections.coupons().doc(couponId);
+    const doc = await couponRef.get();
+    if (!doc.exists) return false;
+    
+    await couponRef.delete();
+    return true;
+  }
+
+  async validateCoupon(code: string): Promise<{ valid: boolean; coupon?: Coupon; error?: string }> {
+    const coupon = await this.getCouponByCode(code);
+    
+    if (!coupon) {
+      return { valid: false, error: 'Coupon not found' };
+    }
+    
+    if (!coupon.isActive) {
+      return { valid: false, error: 'Coupon is inactive' };
+    }
+    
+    const now = new Date();
+    if (coupon.validFrom && new Date(coupon.validFrom) > now) {
+      return { valid: false, error: 'Coupon is not yet valid' };
+    }
+    
+    if (coupon.validTo && new Date(coupon.validTo) < now) {
+      return { valid: false, error: 'Coupon has expired' };
+    }
+    
+    if (coupon.maxRedemptions && (coupon.currentRedemptions || 0) >= coupon.maxRedemptions) {
+      return { valid: false, error: 'Coupon has reached maximum redemptions' };
+    }
+    
+    return { valid: true, coupon };
+  }
+
+  async redeemCoupon(couponId: string): Promise<void> {
+    await collections.coupons().doc(couponId).update({
+      currentRedemptions: admin.firestore.FieldValue.increment(1)
+    });
+  }
+
+  async getWallet(userId: string): Promise<Wallet | undefined> {
+    const snapshot = await collections.wallets().where('userId', '==', userId).limit(1).get();
+    if (snapshot.empty) return undefined;
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as Wallet;
+  }
+
+  async createWallet(userId: string, currency: string = 'NGN'): Promise<Wallet> {
+    const existing = await this.getWallet(userId);
+    if (existing) return existing;
+    
+    const id = crypto.randomUUID();
+    const newWallet: any = {
+      id,
+      userId,
+      balance: '0',
+      currency,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    await collections.wallets().doc(id).set(newWallet);
+    return newWallet as Wallet;
+  }
+
+  async updateWalletBalance(walletId: string, newBalance: string): Promise<void> {
+    await collections.wallets().doc(walletId).update({
+      balance: newBalance,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  async topUpWallet(userId: string, amount: number, reference?: string, description?: string): Promise<WalletTransaction> {
+    const wallet = await this.getWallet(userId);
+    if (!wallet) {
+      throw new Error('Wallet not found');
+    }
+    
+    const balanceBefore = parseFloat(wallet.balance || '0');
+    const balanceAfter = balanceBefore + amount;
+    
+    await this.updateWalletBalance(wallet.id, balanceAfter.toFixed(2));
+    
+    const txId = crypto.randomUUID();
+    const transaction: any = {
+      id: txId,
+      walletId: wallet.id,
+      type: 'deposit',
+      amount: amount.toFixed(2),
+      balanceBefore: balanceBefore.toFixed(2),
+      balanceAfter: balanceAfter.toFixed(2),
+      reference: reference || `TOP-${Date.now()}`,
+      description: description || 'Wallet top-up',
+      status: 'completed',
+      createdAt: new Date().toISOString()
+    };
+    
+    await collections.walletTransactions().doc(txId).set(transaction);
+    return transaction as WalletTransaction;
+  }
+
+  async getWalletTransactions(userId: string, limit: number = 50): Promise<WalletTransaction[]> {
+    const wallet = await this.getWallet(userId);
+    if (!wallet) return [];
+    
+    const snapshot = await collections.walletTransactions()
+      .where('walletId', '==', wallet.id)
+      .orderBy('createdAt', 'desc')
+      .limit(limit)
+      .get();
+    
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WalletTransaction));
+  }
+
+  async deductFromWallet(userId: string, amount: number, type: string, reference?: string, description?: string): Promise<WalletTransaction | null> {
+    const wallet = await this.getWallet(userId);
+    if (!wallet) return null;
+    
+    const balanceBefore = parseFloat(wallet.balance || '0');
+    if (balanceBefore < amount) return null;
+    
+    const balanceAfter = balanceBefore - amount;
+    
+    await this.updateWalletBalance(wallet.id, balanceAfter.toFixed(2));
+    
+    const txId = crypto.randomUUID();
+    const transaction: any = {
+      id: txId,
+      walletId: wallet.id,
+      type,
+      amount: (-amount).toFixed(2),
+      balanceBefore: balanceBefore.toFixed(2),
+      balanceAfter: balanceAfter.toFixed(2),
+      reference: reference || `TXN-${Date.now()}`,
+      description: description || 'Wallet deduction',
+      status: 'completed',
+      createdAt: new Date().toISOString()
+    };
+    
+    await collections.walletTransactions().doc(txId).set(transaction);
+    return transaction as WalletTransaction;
   }
 }
 
