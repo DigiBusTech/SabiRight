@@ -456,6 +456,73 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  // Debug: Show Firestore structure and create sample data
+  app.get("/api/debug/firestore-status", async (req, res) => {
+    try {
+      const profiles = await storage.getAllUsers();
+      const vendorApps = await storage.getAllVendorApplications();
+      const plans = await storage.getAllPlans();
+      const events = await storage.getEvents();
+      const services = await storage.getVendorServices();
+      const jobs = await storage.getJobs(10);
+      
+      res.json({
+        message: "Firestore data location: artifacts > digital-citizen-v2 > [collection_name]",
+        collections: {
+          profiles: { count: profiles.length, path: "artifacts/digital-citizen-v2/profiles" },
+          vendorApplications: { count: vendorApps.length, path: "artifacts/digital-citizen-v2/vendorApplications" },
+          plans: { count: plans.length, path: "artifacts/digital-citizen-v2/plans" },
+          events: { count: events.length, path: "artifacts/digital-citizen-v2/events" },
+          vendorServices: { count: services.length, path: "artifacts/digital-citizen-v2/vendorServices" },
+          jobs: { count: jobs.length, path: "artifacts/digital-citizen-v2/jobs" },
+        },
+        sampleProfiles: profiles.slice(0, 3),
+        instructions: [
+          "1. Go to Firebase Console > Firestore Database",
+          "2. Click on 'artifacts' collection",
+          "3. Click on 'digital-citizen-v2' document",
+          "4. You will see subcollections: profiles, plans, credits, events, etc.",
+          "5. Click on 'profiles' to see user data"
+        ]
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Initialize sample data for testing
+  app.post("/api/debug/init-sample-data", async (req, res) => {
+    try {
+      // Create sample event
+      await storage.createEvent({
+        title: "Civic Rights Workshop",
+        description: "Learn about your rights as a Nigerian citizen",
+        location: "Lagos, Victoria Island",
+        date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        capacity: 100,
+        category: "workshop"
+      });
+
+      // Create sample job
+      await storage.createJob({
+        title: "Software Developer",
+        company: "Tech Lagos",
+        location: "Lagos",
+        type: "Full-time",
+        workMode: "Remote",
+        salary: "N500,000 - N800,000",
+        description: "Looking for an experienced developer",
+        contact: "jobs@techlagos.com",
+        source: "Sample Data",
+        isAiFetched: false
+      });
+
+      res.json({ success: true, message: "Sample data created. Check Firestore Console." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Admin: Set user as admin (bootstrap endpoint - uses setup key)
   app.post("/api/admin/setup/:userId", async (req, res) => {
     const { userId } = req.params;
