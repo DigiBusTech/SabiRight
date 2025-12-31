@@ -115,6 +115,7 @@ export class FirestoreStorage implements IStorage {
     if (settingsSnapshot.empty) {
       const defaults = [
         { key: 'google_maps_api_key', value: '', category: 'api_keys', isSecret: true },
+        { key: 'gemini_api_key', value: '', category: 'api_keys', isSecret: true },
         { key: 'stripe_enabled', value: 'true', category: 'payments', isSecret: false },
         { key: 'paystack_enabled', value: 'true', category: 'payments', isSecret: false },
         { key: 'flutterwave_enabled', value: 'true', category: 'payments', isSecret: false },
@@ -126,6 +127,58 @@ export class FirestoreStorage implements IStorage {
         batch.set(collections.adminSettings().doc(s.key), { ...s, updatedAt: new Date().toISOString() });
       });
       await batch.commit();
+    }
+
+    // Initialize empty placeholder documents to make collections visible in Firestore Console
+    await this.ensureCollectionExists('users', '_placeholder');
+    await this.ensureCollectionExists('profiles', '_placeholder');
+    await this.ensureCollectionExists('events', '_placeholder');
+    await this.ensureCollectionExists('jobs', '_placeholder');
+    await this.ensureCollectionExists('vendorServices', '_placeholder');
+    await this.ensureCollectionExists('vendorApplications', '_placeholder');
+    await this.ensureCollectionExists('vendorLeads', '_placeholder');
+    await this.ensureCollectionExists('vendorBookings', '_placeholder');
+    await this.ensureCollectionExists('subscriptions', '_placeholder');
+    await this.ensureCollectionExists('credits', '_placeholder');
+    await this.ensureCollectionExists('routes', '_placeholder');
+    await this.ensureCollectionExists('alerts', '_placeholder');
+    await this.ensureCollectionExists('payments', '_placeholder');
+  }
+
+  private async ensureCollectionExists(collectionName: string, placeholderId: string): Promise<void> {
+    const collRef = db.collection('artifacts').doc(FIREBASE_APP_ID).collection(collectionName);
+    const snapshot = await collRef.limit(1).get();
+    if (snapshot.empty) {
+      await collRef.doc(placeholderId).set({
+        _isPlaceholder: true,
+        _createdAt: new Date().toISOString(),
+        _note: 'This is a placeholder document to make the collection visible. It can be deleted once real data exists.'
+      });
+    }
+  }
+
+  async setUserAsAdmin(userId: string): Promise<boolean> {
+    try {
+      const profileRef = collections.profiles().doc(userId);
+      const doc = await profileRef.get();
+      
+      if (doc.exists) {
+        await profileRef.update({ isAdmin: true });
+      } else {
+        await profileRef.set({
+          userId,
+          isAdmin: true,
+          displayName: 'Admin User',
+          email: null,
+          isVendor: false,
+          kycStatus: 'verified',
+          createdAt: new Date(),
+        });
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to set user as admin:', error);
+      return false;
     }
   }
 

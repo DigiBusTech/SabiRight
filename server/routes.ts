@@ -456,6 +456,26 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  // Admin: Set user as admin (bootstrap endpoint - uses setup key)
+  app.post("/api/admin/setup/:userId", async (req, res) => {
+    const { userId } = req.params;
+    const { setupKey } = req.body;
+    
+    // Use a setup key from environment for initial admin setup
+    const validSetupKey = process.env.ADMIN_SETUP_KEY || 'sabiright-admin-setup-2024';
+    
+    if (setupKey !== validSetupKey) {
+      return res.status(403).json({ error: 'Invalid setup key' });
+    }
+    
+    const success = await storage.setUserAsAdmin(userId);
+    if (success) {
+      res.json({ success: true, message: 'User set as admin successfully' });
+    } else {
+      res.status(500).json({ error: 'Failed to set user as admin' });
+    }
+  });
+
   // Admin: Approve KYC
   app.post("/api/admin/kyc/:userId/approve", adminAuth, async (req, res) => {
     const { userId } = req.params;

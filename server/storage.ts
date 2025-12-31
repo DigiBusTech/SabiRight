@@ -79,6 +79,21 @@ export interface IStorage {
   // Admin User Management
   getAllUsers(): Promise<UserProfile[]>;
   getAllVendorApplications(): Promise<VendorApplication[]>;
+  setUserAsAdmin(userId: string): Promise<boolean>;
+
+  // Jobs
+  getJobs(limit?: number): Promise<any[]>;
+  createJob(job: any): Promise<any>;
+
+  // Vendor Analytics
+  getVendorStats(vendorId: string): Promise<any>;
+  getVendorLeads(vendorId: string): Promise<any[]>;
+  getVendorBookings(vendorId: string): Promise<any[]>;
+  createVendorLead(lead: any): Promise<any>;
+  createVendorBooking(booking: any): Promise<any>;
+
+  // Credits (extended)
+  setUserCredits(userId: string, totalCredits: number): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -667,6 +682,82 @@ export class MemStorage implements IStorage {
 
   async getAllVendorApplications(): Promise<VendorApplication[]> {
     return Array.from(this.vendorApplications.values());
+  }
+
+  async setUserAsAdmin(userId: string): Promise<boolean> {
+    const profile = this.userProfiles.get(userId);
+    if (profile) {
+      (profile as any).isAdmin = true;
+      this.userProfiles.set(userId, profile);
+    } else {
+      this.userProfiles.set(userId, {
+        id: randomUUID(),
+        userId,
+        displayName: 'Admin User',
+        email: null,
+        isVendor: false,
+        kycStatus: 'verified',
+        kycDocument: null,
+        kycSubmittedAt: null,
+        kycVerifiedAt: null,
+        vendorMode: false,
+        createdAt: new Date(),
+        isAdmin: true
+      } as any);
+    }
+    return true;
+  }
+
+  // Jobs
+  private jobs: Map<string, any> = new Map();
+
+  async getJobs(limit: number = 50): Promise<any[]> {
+    return Array.from(this.jobs.values()).slice(0, limit);
+  }
+
+  async createJob(job: any): Promise<any> {
+    const id = randomUUID();
+    const newJob = { ...job, id, postedAt: new Date() };
+    this.jobs.set(id, newJob);
+    return newJob;
+  }
+
+  // Vendor Analytics
+  async getVendorStats(vendorId: string): Promise<any> {
+    return { totalLeads: 0, totalBookings: 0, totalEarnings: 0, thisMonthLeads: 0, thisMonthBookings: 0, thisMonthEarnings: 0 };
+  }
+
+  async getVendorLeads(vendorId: string): Promise<any[]> {
+    return [];
+  }
+
+  async getVendorBookings(vendorId: string): Promise<any[]> {
+    return [];
+  }
+
+  async createVendorLead(lead: any): Promise<any> {
+    return { id: randomUUID(), ...lead, createdAt: new Date() };
+  }
+
+  async createVendorBooking(booking: any): Promise<any> {
+    return { id: randomUUID(), ...booking, createdAt: new Date() };
+  }
+
+  async setUserCredits(userId: string, totalCredits: number): Promise<void> {
+    const creditsRef = this.credits.get(userId);
+    if (creditsRef) {
+      creditsRef.totalCredits = totalCredits;
+      this.credits.set(userId, creditsRef);
+    } else {
+      this.credits.set(userId, {
+        id: randomUUID(),
+        userId,
+        totalCredits,
+        usedCredits: 0,
+        lastRefreshDate: new Date(),
+        renewalDate: null
+      });
+    }
   }
 }
 
