@@ -34,27 +34,32 @@ export function Navbar() {
     >
       <div className="max-w-7xl mx-auto px-6 h-full flex justify-between items-center">
         <Link href="/" className="flex items-center gap-2 group cursor-pointer">
-          <div className="bg-primary text-white w-9 h-9 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
+          <img 
+            src="/assets/sabiright-icon.png" 
+            alt="SabiRight" 
+            className="w-9 h-9 rounded-lg group-hover:scale-110 transition-transform"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
           <span className="text-xl font-bold tracking-tight text-slate-900">
-            Digital Citizen
+            SabiRight
           </span>
         </Link>
 
         {/* Desktop Menu */}
         <div className="hidden md:flex gap-8 font-semibold text-slate-600">
-          <button onClick={() => scrollToSection("problem")} className="hover:text-primary transition">
-            Solutions
-          </button>
-          <button onClick={() => scrollToSection("marketplace")} className="hover:text-primary transition">
-            Marketplace
+          <button onClick={() => scrollToSection("features")} className="hover:text-primary transition">
+            SabiGuard
           </button>
           <button onClick={() => scrollToSection("ai-agent")} className="hover:text-primary transition">
-            AI Guard
+            SabiMove
           </button>
-          <button onClick={() => scrollToSection("features")} className="hover:text-primary transition">
-            Pillars
+          <button onClick={() => scrollToSection("marketplace")} className="hover:text-primary transition">
+            SabiMarket
+          </button>
+          <button onClick={() => scrollToSection("problem")} className="hover:text-primary transition">
+            SabiSquare
           </button>
         </div>
 
@@ -78,14 +83,17 @@ export function Navbar() {
       {/* Mobile Menu */}
       {isMobileMenuOpen && (
         <div className="absolute top-20 left-0 w-full bg-white border-b shadow-lg p-6 flex flex-col gap-4 md:hidden">
-          <button onClick={() => scrollToSection("problem")} className="text-left font-semibold py-2">
-            Solutions
-          </button>
-          <button onClick={() => scrollToSection("marketplace")} className="text-left font-semibold py-2">
-            Marketplace
+          <button onClick={() => scrollToSection("features")} className="text-left font-semibold py-2">
+            SabiGuard
           </button>
           <button onClick={() => scrollToSection("ai-agent")} className="text-left font-semibold py-2">
-            AI Guard
+            SabiMove
+          </button>
+          <button onClick={() => scrollToSection("marketplace")} className="text-left font-semibold py-2">
+            SabiMarket
+          </button>
+          <button onClick={() => scrollToSection("problem")} className="text-left font-semibold py-2">
+            SabiSquare
           </button>
           <Link href="/app" className="inline-flex w-full">
             <Button className="w-full rounded-xl font-bold mt-2">Launch App</Button>
