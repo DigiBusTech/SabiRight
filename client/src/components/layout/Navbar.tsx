@@ -33,15 +33,13 @@ export function Navbar() {
       )}
     >
       <div className="max-w-7xl mx-auto px-6 h-full flex justify-between items-center">
-        <Link href="/">
-          <a className="flex items-center gap-2 group cursor-pointer">
-            <div className="bg-primary text-white w-9 h-9 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <span className="text-xl font-bold tracking-tight text-slate-900">
-              Digital Citizen
-            </span>
-          </a>
+        <Link href="/" className="flex items-center gap-2 group cursor-pointer">
+          <div className="bg-primary text-white w-9 h-9 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <span className="text-xl font-bold tracking-tight text-slate-900">
+            Digital Citizen
+          </span>
         </Link>
 
         {/* Desktop Menu */}
@@ -61,7 +59,7 @@ export function Navbar() {
         </div>
 
         <div className="hidden md:flex items-center gap-4">
-            <Link href="/app">
+            <Link href="/app" className="inline-flex">
               <Button className="rounded-xl font-bold shadow-lg hover:shadow-primary/20 transition-all">
                 Launch App
               </Button>
@@ -89,7 +87,7 @@ export function Navbar() {
           <button onClick={() => scrollToSection("ai-agent")} className="text-left font-semibold py-2">
             AI Guard
           </button>
-          <Link href="/app">
+          <Link href="/app" className="inline-flex w-full">
             <Button className="w-full rounded-xl font-bold mt-2">Launch App</Button>
           </Link>
         </div>

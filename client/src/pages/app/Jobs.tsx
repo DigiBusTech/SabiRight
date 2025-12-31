@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Briefcase, Building2, MapPin, DollarSign, Clock, Search, Loader2, X, AlertCircle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Briefcase, Building2, MapPin, DollarSign, Clock, Search, Loader2, X, AlertCircle, Plus } from "lucide-react";
 import { db, FIREBASE_APP_ID } from "@/lib/firebase";
 import { collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp } from "firebase/firestore";
 import { runGemini } from "@/lib/gemini";
@@ -39,6 +41,18 @@ export default function Jobs() {
   const [location, setLocation] = useState("Lagos");
   const [employmentType, setEmploymentType] = useState("");
   const [workMode, setWorkMode] = useState("");
+  const [showPostJob, setShowPostJob] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
+  const [jobForm, setJobForm] = useState({
+    title: "",
+    company: "",
+    location: "Lagos",
+    type: "Full-time",
+    workMode: "Onsite",
+    salary: "",
+    description: "",
+    contact: ""
+  });
 
   // Fetch credits
   const { data: credits, refetch: refetchCredits } = useQuery({
@@ -147,6 +161,34 @@ export default function Jobs() {
     }
   };
 
+  const handlePostJob = async () => {
+    if (!jobForm.title || !jobForm.company || !jobForm.description) {
+      toast({ title: "Error", description: "Please fill required fields", variant: "destructive" });
+      return;
+    }
+
+    setIsPosting(true);
+    try {
+      await addDoc(collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'jobs'), {
+        ...jobForm,
+        postedAt: serverTimestamp(),
+        source: 'User Posted',
+        postedBy: user?.uid
+      });
+
+      toast({ title: "Success", description: "Job posted successfully!" });
+      setShowPostJob(false);
+      setJobForm({
+        title: "", company: "", location: "Lagos", type: "Full-time",
+        workMode: "Onsite", salary: "", description: "", contact: ""
+      });
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to post job", variant: "destructive" });
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
   const filteredJobs = jobs.filter(job => {
     if (employmentType && job.type !== employmentType) return false;
     if (workMode && job.workMode !== workMode) return false;
@@ -162,8 +204,8 @@ export default function Jobs() {
         </div>
         <div className="flex gap-2">
           <CreditDisplay compact={true} />
-          <Button onClick={() => document.getElementById('search-form')?.scrollIntoView({behavior: 'smooth'})}>
-              Post a Job
+          <Button onClick={() => setShowPostJob(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Post a Job
           </Button>
         </div>
       </div>
@@ -356,6 +398,116 @@ export default function Jobs() {
               >
                 Apply Now
               </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Post Job Modal */}
+      {showPostJob && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-lg bg-white max-h-[90vh] overflow-y-auto">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold">Post a Job</h3>
+                <button onClick={() => setShowPostJob(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold mb-1">Job Title *</label>
+                  <Input
+                    value={jobForm.title}
+                    onChange={(e) => setJobForm({...jobForm, title: e.target.value})}
+                    placeholder="e.g., Senior Software Engineer"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold mb-1">Company Name *</label>
+                  <Input
+                    value={jobForm.company}
+                    onChange={(e) => setJobForm({...jobForm, company: e.target.value})}
+                    placeholder="Your company name"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold mb-1">Location</label>
+                    <Input
+                      value={jobForm.location}
+                      onChange={(e) => setJobForm({...jobForm, location: e.target.value})}
+                      placeholder="e.g., Lagos"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1">Salary Range</label>
+                    <Input
+                      value={jobForm.salary}
+                      onChange={(e) => setJobForm({...jobForm, salary: e.target.value})}
+                      placeholder="e.g., N500k - N800k"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold mb-1">Employment Type</label>
+                    <select
+                      value={jobForm.type}
+                      onChange={(e) => setJobForm({...jobForm, type: e.target.value})}
+                      className="w-full border rounded-lg p-2 text-sm"
+                    >
+                      <option value="Full-time">Full-time</option>
+                      <option value="Part-time">Part-time</option>
+                      <option value="Contract">Contract</option>
+                      <option value="Internship">Internship</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-1">Work Mode</label>
+                    <select
+                      value={jobForm.workMode}
+                      onChange={(e) => setJobForm({...jobForm, workMode: e.target.value})}
+                      className="w-full border rounded-lg p-2 text-sm"
+                    >
+                      <option value="Onsite">Onsite</option>
+                      <option value="Remote">Remote</option>
+                      <option value="Hybrid">Hybrid</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold mb-1">Job Description *</label>
+                  <Textarea
+                    value={jobForm.description}
+                    onChange={(e) => setJobForm({...jobForm, description: e.target.value})}
+                    placeholder="Describe the role, requirements, and responsibilities..."
+                    rows={5}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold mb-1">Contact (Email or URL)</label>
+                  <Input
+                    value={jobForm.contact}
+                    onChange={(e) => setJobForm({...jobForm, contact: e.target.value})}
+                    placeholder="hr@company.com or application URL"
+                  />
+                </div>
+
+                <Button 
+                  onClick={handlePostJob} 
+                  className="w-full bg-primary hover:bg-primary/90"
+                  disabled={isPosting}
+                >
+                  {isPosting ? 'Posting...' : 'Post Job'}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
