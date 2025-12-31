@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Store, FileCheck, TrendingUp, AlertCircle, ChevronRight, Plus, X, MapPin, Phone, Mail } from "lucide-react";
+import { Store, FileCheck, TrendingUp, AlertCircle, Plus, X, MapPin, Phone, Edit2, Trash2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -34,6 +34,7 @@ export default function VendorDashboard() {
   const queryClient = useQueryClient();
   const [isApplying, setIsApplying] = useState(false);
   const [showAddService, setShowAddService] = useState(false);
+  const [editingService, setEditingService] = useState<VendorService | null>(null);
   const [businessForm, setBusinessForm] = useState({
     businessName: "",
     serviceType: "",
@@ -99,6 +100,62 @@ export default function VendorDashboard() {
     }
   });
 
+  const updateServiceMutation = useMutation({
+    mutationFn: async ({ id, service }: { id: string; service: any }) => {
+      const res = await fetch(`/api/services/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(service)
+      });
+      if (!res.ok) throw new Error('Failed to update service');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-services'] });
+      setEditingService(null);
+      setServiceForm({
+        name: "", type: "Lawyer", specialization: "", description: "",
+        location: "", latitude: "", longitude: "", contactPhone: "", contactEmail: "", priceRange: ""
+      });
+      toast({ title: "Success", description: "Service updated!" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update service", variant: "destructive" });
+    }
+  });
+
+  const deleteServiceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/services/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete service');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-services'] });
+      toast({ title: "Success", description: "Service deleted!" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete service", variant: "destructive" });
+    }
+  });
+
+  const handleEditService = (service: VendorService) => {
+    setEditingService(service);
+    setServiceForm({
+      name: service.name,
+      type: service.type,
+      specialization: service.specialization || "",
+      description: service.description || "",
+      location: service.location,
+      latitude: service.latitude || "",
+      longitude: service.longitude || "",
+      contactPhone: service.contactPhone || "",
+      contactEmail: service.contactEmail || "",
+      priceRange: service.priceRange || ""
+    });
+    setShowAddService(true);
+  };
+
   const handleApplyAsVendor = async () => {
     if (!user?.uid || !businessForm.businessName || !businessForm.serviceType) {
       toast({ title: "Error", description: "Please fill all fields", variant: "destructive" });
@@ -130,25 +187,32 @@ export default function VendorDashboard() {
     }
   };
 
-  const handleCreateService = () => {
+  const handleCreateOrUpdateService = () => {
     if (!serviceForm.name || !serviceForm.type || !serviceForm.location) {
       toast({ title: "Error", description: "Please fill all required fields", variant: "destructive" });
       return;
     }
 
-    // Get current location if not provided
+    const submitService = (formData: any) => {
+      if (editingService) {
+        updateServiceMutation.mutate({ id: editingService.id, service: formData });
+      } else {
+        createServiceMutation.mutate(formData);
+      }
+    };
+
     if (!serviceForm.latitude || !serviceForm.longitude) {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
-            createServiceMutation.mutate({
+            submitService({
               ...serviceForm,
               latitude: position.coords.latitude.toString(),
               longitude: position.coords.longitude.toString()
             });
           },
           () => {
-            createServiceMutation.mutate({
+            submitService({
               ...serviceForm,
               latitude: "6.5244",
               longitude: "3.3792"
@@ -156,11 +220,20 @@ export default function VendorDashboard() {
           }
         );
       } else {
-        createServiceMutation.mutate(serviceForm);
+        submitService(serviceForm);
       }
     } else {
-      createServiceMutation.mutate(serviceForm);
+      submitService(serviceForm);
     }
+  };
+
+  const handleCloseModal = () => {
+    setShowAddService(false);
+    setEditingService(null);
+    setServiceForm({
+      name: "", type: "Lawyer", specialization: "", description: "",
+      location: "", latitude: "", longitude: "", contactPhone: "", contactEmail: "", priceRange: ""
+    });
   };
 
   return (
@@ -329,9 +402,29 @@ export default function VendorDashboard() {
                           <p className="text-sm text-slate-600">{service.type}</p>
                           <p className="text-xs text-slate-500">{service.specialization}</p>
                         </div>
-                        <Badge className={service.verified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
-                          {service.verified ? 'Verified' : 'Pending'}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge className={service.verified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                            {service.verified ? 'Verified' : 'Pending'}
+                          </Badge>
+                          <button
+                            onClick={() => handleEditService(service)}
+                            className="p-1.5 hover:bg-slate-100 rounded"
+                            data-testid={`btn-edit-service-${service.id}`}
+                          >
+                            <Edit2 className="h-4 w-4 text-slate-500" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this service?')) {
+                                deleteServiceMutation.mutate(service.id);
+                              }
+                            }}
+                            className="p-1.5 hover:bg-red-50 rounded"
+                            data-testid={`btn-delete-service-${service.id}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-3 flex gap-4 text-xs text-slate-500">
                         <span className="flex items-center gap-1">
@@ -350,14 +443,14 @@ export default function VendorDashboard() {
             </CardContent>
           </Card>
 
-          {/* Add Service Modal */}
+          {/* Add/Edit Service Modal */}
           {showAddService && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
               <Card className="w-full max-w-lg bg-white max-h-[90vh] overflow-y-auto">
                 <CardContent className="p-6">
                   <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-bold">Add Service Listing</h3>
-                    <button onClick={() => setShowAddService(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                    <h3 className="text-xl font-bold">{editingService ? 'Edit Service' : 'Add Service Listing'}</h3>
+                    <button onClick={handleCloseModal} className="p-2 hover:bg-slate-100 rounded-lg">
                       <X className="h-5 w-5" />
                     </button>
                   </div>
@@ -448,11 +541,13 @@ export default function VendorDashboard() {
                     </div>
 
                     <Button 
-                      onClick={handleCreateService} 
+                      onClick={handleCreateOrUpdateService} 
                       className="w-full bg-primary hover:bg-primary/90"
-                      disabled={createServiceMutation.isPending}
+                      disabled={createServiceMutation.isPending || updateServiceMutation.isPending}
                     >
-                      {createServiceMutation.isPending ? 'Creating...' : 'Create Service Listing'}
+                      {(createServiceMutation.isPending || updateServiceMutation.isPending) 
+                        ? (editingService ? 'Updating...' : 'Creating...') 
+                        : (editingService ? 'Update Service' : 'Create Service Listing')}
                     </Button>
                   </div>
                 </CardContent>

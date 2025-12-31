@@ -93,21 +93,29 @@ export default function TrafficAlerts() {
     }
   }, [fetchedAlerts]);
 
-  // Load Google Maps
+  // Load Google Maps with API key from server
   useEffect(() => {
-    if (!window.google && !document.querySelector('script[src*="maps.googleapis"]')) {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBrtOCOwXp8UloT0nDqzQDpZpHgtrJUQBs`;
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
-      
-      script.onload = () => {
+    const loadMapsAPI = async () => {
+      if (!window.google && !document.querySelector('script[src*="maps.googleapis"]')) {
+        try {
+          const res = await fetch('/api/settings/google_maps_api_key');
+          const apiKey = res.ok ? (await res.json()).value : '';
+          if (apiKey) {
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+            script.async = true;
+            script.defer = true;
+            document.head.appendChild(script);
+            script.onload = () => initMap();
+          }
+        } catch (e) {
+          console.error('Failed to load Google Maps API');
+        }
+      } else if (window.google) {
         initMap();
-      };
-    } else if (window.google) {
-      initMap();
-    }
+      }
+    };
+    loadMapsAPI();
   }, [selectedRoute]);
 
   const initMap = () => {
