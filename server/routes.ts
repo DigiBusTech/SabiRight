@@ -1161,5 +1161,350 @@ export async function registerRoutes(
     res.json(transactions);
   });
 
+  // ===== Booking System API =====
+
+  // Create a booking (user books vendor service)
+  app.post("/api/bookings", async (req, res) => {
+    const { serviceId, userId, vendorId, totalAmount, description, scheduledDate, milestones } = req.body;
+    
+    if (!serviceId || !userId || !vendorId || !totalAmount) {
+      return res.status(400).json({ error: 'Missing required fields: serviceId, userId, vendorId, totalAmount' });
+    }
+
+    const booking = await storage.createBooking({
+      serviceId,
+      userId,
+      vendorId,
+      totalAmount: totalAmount.toString(),
+      description,
+      scheduledDate: scheduledDate ? new Date(scheduledDate).toISOString() : null
+    });
+
+    if (milestones && Array.isArray(milestones)) {
+      let order = 1;
+      for (const milestone of milestones) {
+        const amount = (parseFloat(totalAmount) * (milestone.amountPercent / 100)).toFixed(2);
+        await storage.createMilestone({
+          bookingId: booking.id,
+          title: milestone.title,
+          description: milestone.description,
+          amountPercent: milestone.amountPercent,
+          amount,
+          order: order++,
+          dueDate: milestone.dueDate ? new Date(milestone.dueDate).toISOString() : null
+        });
+      }
+    }
+
+    await storage.createEscrowAccount({
+      bookingId: booking.id,
+      totalAmount: totalAmount.toString()
+    });
+
+    res.json(booking);
+  });
+
+  // Get user's bookings
+  app.get("/api/bookings/user/:userId", async (req, res) => {
+    const { userId } = req.params;
+    const bookings = await storage.getBookingsByUserId(userId);
+    res.json(bookings);
+  });
+
+  // Get vendor's bookings
+  app.get("/api/bookings/vendor/:vendorId", async (req, res) => {
+    const { vendorId } = req.params;
+    const bookings = await storage.getBookingsByVendorId(vendorId);
+    res.json(bookings);
+  });
+
+  // Get booking details with milestones, escrow, contract
+  app.get("/api/bookings/:id", async (req, res) => {
+    const { id } = req.params;
+    const details = await storage.getBookingDetails(id);
+    
+    if (!details.booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    
+    res.json(details);
+  });
+
+  // Update booking status (vendor confirms, completes)
+  app.patch("/api/bookings/:id/status", async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    
+    const validStatuses = ['requested', 'confirmed', 'in_progress', 'completed', 'cancelled'];
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Invalid status. Valid values: ${validStatuses.join(', ')}` });
+    }
+
+    const booking = await storage.getBookingById(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    await storage.updateBookingStatus(id, status);
+    const updated = await storage.getBookingById(id);
+    res.json(updated);
+  });
+
+  // ===== Escrow Management =====
+
+  // Fund escrow (deduct from user wallet)
+  app.post("/api/bookings/:id/escrow/fund", async (req, res) => {
+    const { id } = req.params;
+    const { userId, amount } = req.body;
+    
+    if (!userId || !amount) {
+      return res.status(400).json({ error: 'userId and amount are required' });
+    }
+
+    const booking = await storage.getBookingById(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    if (booking.userId !== userId) {
+      return res.status(403).json({ error: 'Only the booking user can fund the escrow' });
+    }
+
+    const escrow = await storage.fundEscrow(id, parseFloat(amount), userId);
+    if (!escrow) {
+      return res.status(400).json({ error: 'Failed to fund escrow. Check wallet balance.' });
+    }
+
+    res.json(escrow);
+  });
+
+  // Mark milestone as completed (vendor marks completion)
+  app.post("/api/bookings/:id/milestones/:milestoneId/complete", async (req, res) => {
+    const { id, milestoneId } = req.params;
+    
+    const booking = await storage.getBookingById(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    const milestone = await storage.getMilestoneById(milestoneId);
+    if (!milestone || milestone.bookingId !== id) {
+      return res.status(404).json({ error: 'Milestone not found for this booking' });
+    }
+
+    await storage.updateMilestoneStatus(milestoneId, 'completed');
+    const updated = await storage.getMilestoneById(milestoneId);
+    res.json(updated);
+  });
+
+  // Release milestone funds to vendor
+  app.post("/api/bookings/:id/milestones/:milestoneId/release", async (req, res) => {
+    const { id, milestoneId } = req.params;
+    const { releasedBy } = req.body;
+    
+    const booking = await storage.getBookingById(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    const escrow = await storage.getEscrowByBookingId(id);
+    if (!escrow) {
+      return res.status(404).json({ error: 'Escrow account not found' });
+    }
+
+    const milestone = await storage.getMilestoneById(milestoneId);
+    if (!milestone || milestone.bookingId !== id) {
+      return res.status(404).json({ error: 'Milestone not found for this booking' });
+    }
+
+    if (milestone.status === 'released') {
+      return res.status(400).json({ error: 'Milestone funds already released' });
+    }
+
+    const event = await storage.releaseEscrowMilestone(
+      escrow.id,
+      milestoneId,
+      booking.vendorId,
+      releasedBy
+    );
+
+    if (!event) {
+      return res.status(400).json({ error: 'Failed to release milestone funds' });
+    }
+
+    const updatedMilestone = await storage.getMilestoneById(milestoneId);
+    res.json({ milestone: updatedMilestone, event });
+  });
+
+  // ===== Contracts =====
+
+  // Create contract with terms
+  app.post("/api/bookings/:id/contract", async (req, res) => {
+    const { id } = req.params;
+    const { title, terms } = req.body;
+    
+    if (!title || !terms) {
+      return res.status(400).json({ error: 'title and terms are required' });
+    }
+
+    const booking = await storage.getBookingById(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    const existing = await storage.getContractByBookingId(id);
+    if (existing) {
+      return res.status(409).json({ error: 'Contract already exists for this booking' });
+    }
+
+    const contract = await storage.createContract({
+      bookingId: id,
+      title,
+      terms
+    });
+
+    res.json(contract);
+  });
+
+  // Sign contract (user or vendor)
+  app.post("/api/bookings/:id/contract/sign", async (req, res) => {
+    const { id } = req.params;
+    const { signerType, signerId } = req.body;
+    
+    if (!signerType || !['user', 'vendor'].includes(signerType)) {
+      return res.status(400).json({ error: 'signerType must be "user" or "vendor"' });
+    }
+
+    const booking = await storage.getBookingById(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    if (signerType === 'user' && signerId !== booking.userId) {
+      return res.status(403).json({ error: 'Only the booking user can sign as user' });
+    }
+    if (signerType === 'vendor' && signerId !== booking.vendorId) {
+      return res.status(403).json({ error: 'Only the vendor can sign as vendor' });
+    }
+
+    const contract = await storage.signContract(id, signerType);
+    if (!contract) {
+      return res.status(404).json({ error: 'Contract not found for this booking' });
+    }
+
+    res.json(contract);
+  });
+
+  // ===== Chat / Messages =====
+
+  // Get booking chat messages
+  app.get("/api/bookings/:id/messages", async (req, res) => {
+    const { id } = req.params;
+    const { limit } = req.query;
+    
+    const booking = await storage.getBookingById(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    const messages = await storage.getBookingMessages(
+      id,
+      limit ? parseInt(limit as string) : 100
+    );
+    
+    res.json(messages);
+  });
+
+  // Send message
+  app.post("/api/bookings/:id/messages", async (req, res) => {
+    const { id } = req.params;
+    const { senderId, message, attachments, isAdminMessage } = req.body;
+    
+    if (!senderId || !message) {
+      return res.status(400).json({ error: 'senderId and message are required' });
+    }
+
+    const booking = await storage.getBookingById(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    if (!isAdminMessage && senderId !== booking.userId && senderId !== booking.vendorId) {
+      return res.status(403).json({ error: 'Only booking participants can send messages' });
+    }
+
+    const newMessage = await storage.createBookingMessage({
+      bookingId: id,
+      senderId,
+      message,
+      attachments: attachments || [],
+      isAdminMessage: isAdminMessage || false
+    });
+
+    res.json(newMessage);
+  });
+
+  // ===== Disputes =====
+
+  // Open dispute
+  app.post("/api/bookings/:id/dispute", async (req, res) => {
+    const { id } = req.params;
+    const { openedBy, reason, description, evidence } = req.body;
+    
+    if (!openedBy || !reason) {
+      return res.status(400).json({ error: 'openedBy and reason are required' });
+    }
+
+    const booking = await storage.getBookingById(id);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+
+    if (openedBy !== booking.userId && openedBy !== booking.vendorId) {
+      return res.status(403).json({ error: 'Only booking participants can open a dispute' });
+    }
+
+    const existing = await storage.getDisputeByBookingId(id);
+    if (existing && existing.status !== 'resolved' && existing.status !== 'closed') {
+      return res.status(409).json({ error: 'Active dispute already exists for this booking' });
+    }
+
+    const dispute = await storage.createDispute({
+      bookingId: id,
+      openedBy,
+      reason,
+      description: description || '',
+      evidence: evidence || []
+    });
+
+    res.json(dispute);
+  });
+
+  // Admin: List all disputes
+  app.get("/api/admin/disputes", adminAuth, async (req, res) => {
+    const disputes = await storage.getAllDisputes();
+    res.json(disputes);
+  });
+
+  // Admin: Resolve dispute
+  app.patch("/api/admin/disputes/:id/resolve", adminAuth, async (req, res) => {
+    const { id } = req.params;
+    const { resolution, resolutionNotes } = req.body;
+    
+    const validResolutions = ['user_favor', 'vendor_favor', 'split', 'cancelled'];
+    if (!resolution || !validResolutions.includes(resolution)) {
+      return res.status(400).json({ error: `Invalid resolution. Valid values: ${validResolutions.join(', ')}` });
+    }
+
+    const adminId = (req as any).userId;
+    const dispute = await storage.resolveDispute(id, resolution, resolutionNotes || '', adminId);
+    
+    if (!dispute) {
+      return res.status(404).json({ error: 'Dispute not found' });
+    }
+
+    res.json(dispute);
+  });
+
   return httpServer;
 }

@@ -1,5 +1,5 @@
 import admin from 'firebase-admin';
-import { type User, type InsertUser, type Subscription, type Credits, type Plan, type CreditLog, type CloakedRoute, type TrafficAlert, type DashboardTrafficCard, type UserProfile, type VendorApplication, type Event, type VendorService, type AdminSetting, type Payment, type Coupon, type Wallet, type WalletTransaction } from "@shared/schema";
+import { type User, type InsertUser, type Subscription, type Credits, type Plan, type CreditLog, type CloakedRoute, type TrafficAlert, type DashboardTrafficCard, type UserProfile, type VendorApplication, type Event, type VendorService, type AdminSetting, type Payment, type Coupon, type Wallet, type WalletTransaction, type Booking, type BookingMilestone, type EscrowAccount, type EscrowEvent, type Contract, type Dispute, type BookingMessage } from "@shared/schema";
 import { type IStorage } from "./storage";
 
 const FIREBASE_APP_ID = 'digital-citizen-v2';
@@ -102,6 +102,13 @@ const collections = {
   coupons: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('coupons'),
   wallets: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('wallets'),
   walletTransactions: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('walletTransactions'),
+  bookings: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('bookings'),
+  bookingMilestones: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('bookingMilestones'),
+  escrowAccounts: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('escrowAccounts'),
+  escrowEvents: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('escrowEvents'),
+  contracts: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('contracts'),
+  disputes: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('disputes'),
+  bookingMessages: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('bookingMessages'),
 };
 
 export class FirestoreStorage implements IStorage {
@@ -917,6 +924,413 @@ export class FirestoreStorage implements IStorage {
     
     await collections.walletTransactions().doc(txId).set(transaction);
     return transaction as WalletTransaction;
+  }
+
+  // ===== Booking Methods =====
+
+  async createBooking(booking: any): Promise<Booking> {
+    const id = crypto.randomUUID();
+    const newBooking = {
+      ...booking,
+      id,
+      status: 'requested',
+      createdAt: new Date().toISOString()
+    };
+    await collections.bookings().doc(id).set(newBooking);
+    return newBooking as Booking;
+  }
+
+  async getBookingById(bookingId: string): Promise<Booking | undefined> {
+    const doc = await collections.bookings().doc(bookingId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } as Booking : undefined;
+  }
+
+  async getBookingsByUserId(userId: string): Promise<Booking[]> {
+    const snapshot = await collections.bookings()
+      .where('userId', '==', userId)
+      .orderBy('createdAt', 'desc')
+      .get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
+  }
+
+  async getBookingsByVendorId(vendorId: string): Promise<Booking[]> {
+    const snapshot = await collections.bookings()
+      .where('vendorId', '==', vendorId)
+      .orderBy('createdAt', 'desc')
+      .get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
+  }
+
+  async updateBookingStatus(bookingId: string, status: string): Promise<void> {
+    const updates: any = { status };
+    if (status === 'confirmed') updates.confirmedAt = new Date().toISOString();
+    if (status === 'completed') updates.completedAt = new Date().toISOString();
+    await collections.bookings().doc(bookingId).update(updates);
+  }
+
+  async getBookingDetails(bookingId: string): Promise<{
+    booking: Booking | undefined;
+    milestones: BookingMilestone[];
+    escrow: EscrowAccount | undefined;
+    contract: Contract | undefined;
+  }> {
+    const booking = await this.getBookingById(bookingId);
+    const milestones = await this.getMilestonesByBookingId(bookingId);
+    const escrow = await this.getEscrowByBookingId(bookingId);
+    const contract = await this.getContractByBookingId(bookingId);
+    return { booking, milestones, escrow, contract };
+  }
+
+  // ===== Milestone Methods =====
+
+  async createMilestone(milestone: any): Promise<BookingMilestone> {
+    const id = crypto.randomUUID();
+    const newMilestone = {
+      ...milestone,
+      id,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    await collections.bookingMilestones().doc(id).set(newMilestone);
+    return newMilestone as BookingMilestone;
+  }
+
+  async getMilestonesByBookingId(bookingId: string): Promise<BookingMilestone[]> {
+    const snapshot = await collections.bookingMilestones()
+      .where('bookingId', '==', bookingId)
+      .orderBy('order', 'asc')
+      .get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BookingMilestone));
+  }
+
+  async getMilestoneById(milestoneId: string): Promise<BookingMilestone | undefined> {
+    const doc = await collections.bookingMilestones().doc(milestoneId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } as BookingMilestone : undefined;
+  }
+
+  async updateMilestoneStatus(milestoneId: string, status: string): Promise<void> {
+    const updates: any = { status };
+    if (status === 'completed') updates.completedAt = new Date().toISOString();
+    if (status === 'released') updates.releasedAt = new Date().toISOString();
+    await collections.bookingMilestones().doc(milestoneId).update(updates);
+  }
+
+  // ===== Escrow Methods =====
+
+  async createEscrowAccount(escrow: any): Promise<EscrowAccount> {
+    const id = crypto.randomUUID();
+    const newEscrow = {
+      ...escrow,
+      id,
+      fundedAmount: '0',
+      releasedAmount: '0',
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    await collections.escrowAccounts().doc(id).set(newEscrow);
+    return newEscrow as EscrowAccount;
+  }
+
+  async getEscrowByBookingId(bookingId: string): Promise<EscrowAccount | undefined> {
+    const snapshot = await collections.escrowAccounts()
+      .where('bookingId', '==', bookingId)
+      .limit(1)
+      .get();
+    if (snapshot.empty) return undefined;
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as EscrowAccount;
+  }
+
+  async getEscrowById(escrowId: string): Promise<EscrowAccount | undefined> {
+    const doc = await collections.escrowAccounts().doc(escrowId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } as EscrowAccount : undefined;
+  }
+
+  async fundEscrow(bookingId: string, amount: number, userId: string): Promise<EscrowAccount | null> {
+    let escrow = await this.getEscrowByBookingId(bookingId);
+    if (!escrow) {
+      const booking = await this.getBookingById(bookingId);
+      if (!booking) return null;
+      escrow = await this.createEscrowAccount({
+        bookingId,
+        totalAmount: booking.totalAmount
+      });
+    }
+
+    const walletTx = await this.deductFromWallet(
+      userId,
+      amount,
+      'escrow_fund',
+      `ESC-${bookingId.substring(0, 8)}`,
+      `Escrow funding for booking ${bookingId}`
+    );
+    
+    if (!walletTx) return null;
+
+    const fundedAmount = parseFloat(escrow.fundedAmount || '0') + amount;
+    const totalAmount = parseFloat(escrow.totalAmount || '0');
+    const newStatus = fundedAmount >= totalAmount ? 'funded' : 'partial';
+
+    await collections.escrowAccounts().doc(escrow.id).update({
+      fundedAmount: fundedAmount.toFixed(2),
+      status: newStatus,
+      fundedAt: new Date().toISOString()
+    });
+
+    await this.createEscrowEvent({
+      escrowId: escrow.id,
+      type: 'funded',
+      amount: amount.toFixed(2),
+      performedBy: userId,
+      description: `Funded escrow with ${amount}`
+    });
+
+    return await this.getEscrowById(escrow.id) || null;
+  }
+
+  async releaseEscrowMilestone(escrowId: string, milestoneId: string, vendorId: string, adminId?: string): Promise<EscrowEvent | null> {
+    const escrow = await this.getEscrowById(escrowId);
+    if (!escrow) return null;
+
+    const milestone = await this.getMilestoneById(milestoneId);
+    if (!milestone) return null;
+
+    const amount = parseFloat(milestone.amount || '0');
+    if (amount <= 0) return null;
+
+    const vendorWallet = await this.getWallet(vendorId);
+    if (!vendorWallet) {
+      await this.createWallet(vendorId);
+    }
+
+    await this.topUpWallet(
+      vendorId,
+      amount,
+      `MLS-${milestoneId.substring(0, 8)}`,
+      `Milestone release: ${milestone.title}`
+    );
+
+    const releasedAmount = parseFloat(escrow.releasedAmount || '0') + amount;
+    const totalAmount = parseFloat(escrow.totalAmount || '0');
+    const newStatus = releasedAmount >= totalAmount ? 'released' : escrow.status;
+
+    await collections.escrowAccounts().doc(escrowId).update({
+      releasedAmount: releasedAmount.toFixed(2),
+      status: newStatus,
+      ...(newStatus === 'released' ? { releasedAt: new Date().toISOString() } : {})
+    });
+
+    await this.updateMilestoneStatus(milestoneId, 'released');
+
+    const event = await this.createEscrowEvent({
+      escrowId,
+      type: 'milestone_released',
+      amount: amount.toFixed(2),
+      milestoneId,
+      performedBy: adminId || vendorId,
+      description: `Released milestone: ${milestone.title}`
+    });
+
+    return event;
+  }
+
+  async createEscrowEvent(event: any): Promise<EscrowEvent> {
+    const id = crypto.randomUUID();
+    const newEvent = {
+      ...event,
+      id,
+      createdAt: new Date().toISOString()
+    };
+    await collections.escrowEvents().doc(id).set(newEvent);
+    return newEvent as EscrowEvent;
+  }
+
+  async getEscrowEvents(escrowId: string): Promise<EscrowEvent[]> {
+    const snapshot = await collections.escrowEvents()
+      .where('escrowId', '==', escrowId)
+      .orderBy('createdAt', 'desc')
+      .get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as EscrowEvent));
+  }
+
+  // ===== Contract Methods =====
+
+  async createContract(contract: any): Promise<Contract> {
+    const id = crypto.randomUUID();
+    const newContract = {
+      ...contract,
+      id,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+    await collections.contracts().doc(id).set(newContract);
+    return newContract as Contract;
+  }
+
+  async getContractByBookingId(bookingId: string): Promise<Contract | undefined> {
+    const snapshot = await collections.contracts()
+      .where('bookingId', '==', bookingId)
+      .limit(1)
+      .get();
+    if (snapshot.empty) return undefined;
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as Contract;
+  }
+
+  async getContractById(contractId: string): Promise<Contract | undefined> {
+    const doc = await collections.contracts().doc(contractId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } as Contract : undefined;
+  }
+
+  async signContract(bookingId: string, signerType: 'user' | 'vendor'): Promise<Contract | null> {
+    const contract = await this.getContractByBookingId(bookingId);
+    if (!contract) return null;
+
+    const updates: any = {};
+    if (signerType === 'user') {
+      updates.userSignedAt = new Date().toISOString();
+    } else {
+      updates.vendorSignedAt = new Date().toISOString();
+    }
+
+    const newContract = await this.getContractByBookingId(bookingId);
+    const vendorSigned = signerType === 'vendor' || newContract?.vendorSignedAt;
+    const userSigned = signerType === 'user' || newContract?.userSignedAt;
+
+    if (vendorSigned && userSigned) {
+      updates.status = 'fully_signed';
+    } else if (vendorSigned) {
+      updates.status = 'vendor_signed';
+    }
+
+    await collections.contracts().doc(contract.id).update(updates);
+    return await this.getContractById(contract.id) || null;
+  }
+
+  // ===== Dispute Methods =====
+
+  async createDispute(dispute: any): Promise<Dispute> {
+    const id = crypto.randomUUID();
+    const newDispute = {
+      ...dispute,
+      id,
+      status: 'open',
+      createdAt: new Date().toISOString()
+    };
+    await collections.disputes().doc(id).set(newDispute);
+
+    await this.updateBookingStatus(dispute.bookingId, 'disputed');
+
+    return newDispute as Dispute;
+  }
+
+  async getDisputeByBookingId(bookingId: string): Promise<Dispute | undefined> {
+    const snapshot = await collections.disputes()
+      .where('bookingId', '==', bookingId)
+      .limit(1)
+      .get();
+    if (snapshot.empty) return undefined;
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as Dispute;
+  }
+
+  async getDisputeById(disputeId: string): Promise<Dispute | undefined> {
+    const doc = await collections.disputes().doc(disputeId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } as Dispute : undefined;
+  }
+
+  async getAllDisputes(): Promise<Dispute[]> {
+    const snapshot = await collections.disputes()
+      .orderBy('createdAt', 'desc')
+      .get();
+    return snapshot.docs
+      .filter(doc => !doc.data()._isPlaceholder)
+      .map(doc => ({ id: doc.id, ...doc.data() } as Dispute));
+  }
+
+  async resolveDispute(disputeId: string, resolution: string, resolutionNotes: string, resolvedBy: string): Promise<Dispute | null> {
+    const dispute = await this.getDisputeById(disputeId);
+    if (!dispute) return null;
+
+    await collections.disputes().doc(disputeId).update({
+      status: 'resolved',
+      resolution,
+      resolutionNotes,
+      resolvedBy,
+      resolvedAt: new Date().toISOString()
+    });
+
+    const booking = await this.getBookingById(dispute.bookingId);
+    if (booking) {
+      if (resolution === 'user_favor') {
+        const escrow = await this.getEscrowByBookingId(dispute.bookingId);
+        if (escrow) {
+          const remainingFunds = parseFloat(escrow.fundedAmount || '0') - parseFloat(escrow.releasedAmount || '0');
+          if (remainingFunds > 0) {
+            await this.topUpWallet(
+              booking.userId,
+              remainingFunds,
+              `REF-${disputeId.substring(0, 8)}`,
+              `Dispute refund for booking ${booking.id}`
+            );
+            await collections.escrowAccounts().doc(escrow.id).update({
+              status: 'refunded',
+              releasedAmount: escrow.fundedAmount
+            });
+          }
+        }
+        await this.updateBookingStatus(dispute.bookingId, 'cancelled');
+      } else if (resolution === 'vendor_favor') {
+        const escrow = await this.getEscrowByBookingId(dispute.bookingId);
+        if (escrow) {
+          const remainingFunds = parseFloat(escrow.fundedAmount || '0') - parseFloat(escrow.releasedAmount || '0');
+          if (remainingFunds > 0) {
+            await this.topUpWallet(
+              booking.vendorId,
+              remainingFunds,
+              `REL-${disputeId.substring(0, 8)}`,
+              `Dispute resolution payout for booking ${booking.id}`
+            );
+            await collections.escrowAccounts().doc(escrow.id).update({
+              status: 'released',
+              releasedAmount: escrow.fundedAmount,
+              releasedAt: new Date().toISOString()
+            });
+          }
+        }
+        await this.updateBookingStatus(dispute.bookingId, 'completed');
+      }
+    }
+
+    return await this.getDisputeById(disputeId) || null;
+  }
+
+  // ===== Booking Messages Methods =====
+
+  async createBookingMessage(message: any): Promise<BookingMessage> {
+    const id = crypto.randomUUID();
+    const newMessage = {
+      ...message,
+      id,
+      createdAt: new Date().toISOString()
+    };
+    await collections.bookingMessages().doc(id).set(newMessage);
+    return newMessage as BookingMessage;
+  }
+
+  async getBookingMessages(bookingId: string, limit: number = 100): Promise<BookingMessage[]> {
+    const snapshot = await collections.bookingMessages()
+      .where('bookingId', '==', bookingId)
+      .orderBy('createdAt', 'asc')
+      .limit(limit)
+      .get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BookingMessage));
+  }
+
+  async markMessageAsRead(messageId: string): Promise<void> {
+    await collections.bookingMessages().doc(messageId).update({
+      readAt: new Date().toISOString()
+    });
   }
 }
 
