@@ -23,6 +23,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/context/AuthContext";
 import { auth } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
+import { Switch as UISwitch } from "@/components/ui/badge"; // Mocking a toggle for now or using raw button
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -31,7 +34,7 @@ interface AppLayoutProps {
 export default function AppLayout({ children }: AppLayoutProps) {
   const [location, setLocation] = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { user, loading } = useAuth();
+  const { user, profile, loading, switchVendorMode } = useAuth();
 
   // Protect Route
   if (!loading && !user) {
@@ -53,7 +56,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     { icon: Calendar, label: "Events", href: "/app/events" },
     { icon: AlertTriangle, label: "Traffic Alerts", href: "/app/traffic" },
     { icon: BadgeCheck, label: "KYC Verification", href: "/app/kyc" },
-    { icon: BarChart3, label: "Vendor Dashboard", href: "/app/vendor" },
+    ...(profile?.isVendor ? [{ icon: BarChart3, label: "Vendor Dashboard", href: "/app/vendor" }] : []),
     { icon: Zap, label: "Plans & Billing", href: "/app/plans" },
   ];
 
@@ -88,6 +91,18 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          {profile?.isVendor && (
+            <div className="flex items-center justify-between px-4 py-3 mb-4 bg-white/5 rounded-xl border border-white/10">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vendor Mode</span>
+                <span className="text-xs font-semibold text-white">{profile.vendorMode ? 'Active' : 'Off'}</span>
+              </div>
+              <Switch 
+                checked={profile.vendorMode} 
+                onCheckedChange={(checked) => switchVendorMode(checked)}
+              />
+            </div>
+          )}
           {navItems.map((item) => {
             const isActive = location === item.href;
             return (
