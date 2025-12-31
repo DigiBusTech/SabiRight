@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { dbStorage as storage } from "./dbStorage";
+import { firestoreStorage as storage } from "./firestoreStorage";
 
 export async function registerRoutes(
   httpServer: Server,
