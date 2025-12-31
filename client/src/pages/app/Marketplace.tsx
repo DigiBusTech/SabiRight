@@ -3,10 +3,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, MapPin, Star, Clock, TrendingUp, Phone, Mail, Navigation } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Search, MapPin, Star, Clock, TrendingUp, Phone, Mail, Navigation, Wallet, MessageCircle, Shield } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 
 interface ServiceProvider {
   id: string;
@@ -39,12 +42,37 @@ declare global {
 export default function Marketplace() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All Services");
   const [sortBy, setSortBy] = useState<"distance" | "time" | "rating">("time");
   const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [providersWithDistance, setProvidersWithDistance] = useState<ServiceProvider[]>([]);
+  
+  // Booking modal state
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [bookingProvider, setBookingProvider] = useState<ServiceProvider | null>(null);
+  const [bookingDescription, setBookingDescription] = useState("");
+  const [bookingAmount, setBookingAmount] = useState("");
+  const [bookingDate, setBookingDate] = useState("");
+  const [isCreatingBooking, setIsCreatingBooking] = useState(false);
+  
+  // Fetch wallet balance
+  const { data: wallet } = useQuery({
+    queryKey: ['wallet', user?.uid],
+    queryFn: async () => {
+      if (!user) return null;
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/wallet/${user.uid}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!user
+  });
 
   // Get user's current location
   useEffect(() => {
@@ -147,10 +175,104 @@ export default function Marketplace() {
   });
 
   const handleContact = (provider: ServiceProvider) => {
-    toast({
-      title: "Contact Initiated",
-      description: `Connecting you with ${provider.name}...`
-    });
+    if (!user) {
+      toast({ 
+        title: "Login Required", 
+        description: "Please log in to request services from vendors",
+        variant: "destructive"
+      });
+      setLocation("/login");
+      return;
+    }
+    setBookingProvider(provider);
+    setBookingDescription("");
+    setBookingAmount(provider.priceRange?.replace(/[^\d]/g, '') || "5000");
+    setBookingDate("");
+    setShowBookingModal(true);
+  };
+
+  const handleCreateBooking = async () => {
+    if (!user || !bookingProvider) return;
+    
+    const amount = parseFloat(bookingAmount);
+    if (!amount || amount <= 0) {
+      toast({ title: "Invalid amount", description: "Please enter a valid amount", variant: "destructive" });
+      return;
+    }
+    
+    if (!bookingDescription.trim()) {
+      toast({ title: "Description required", description: "Please describe what you need", variant: "destructive" });
+      return;
+    }
+    
+    setIsCreatingBooking(true);
+    try {
+      const token = await user.getIdToken();
+      
+      // Create booking
+      const bookingRes = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          serviceId: bookingProvider.id,
+          userId: user.uid,
+          vendorId: bookingProvider.vendorId,
+          totalAmount: amount,
+          description: bookingDescription,
+          scheduledDate: bookingDate || null,
+          milestones: [
+            { title: "Initial Payment", description: "Deposit to start work", amountPercent: 50 },
+            { title: "Final Payment", description: "Upon completion", amountPercent: 50 }
+          ]
+        })
+      });
+      
+      if (!bookingRes.ok) {
+        const error = await bookingRes.json();
+        throw new Error(error.error || 'Failed to create booking');
+      }
+      
+      const booking = await bookingRes.json();
+      
+      // Fund escrow if wallet has balance
+      if (wallet && parseFloat(wallet.balance) >= amount) {
+        try {
+          await fetch(`/api/bookings/${booking.id}/escrow/fund`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ amount })
+          });
+          toast({ title: "Escrow Funded", description: "Your payment is secured in escrow" });
+        } catch (e) {
+          toast({ title: "Booking Created", description: "Please fund the escrow from the booking page" });
+        }
+      }
+      
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['wallet'] });
+      
+      setShowBookingModal(false);
+      setSelectedProvider(null);
+      
+      toast({ 
+        title: "Booking Created!", 
+        description: `Your booking with ${bookingProvider.name} has been created. You can now chat and track progress.`
+      });
+      
+      // Navigate to booking detail
+      setLocation(`/app/bookings/${booking.id}`);
+      
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message || "Failed to create booking", variant: "destructive" });
+    } finally {
+      setIsCreatingBooking(false);
+    }
   };
 
   return (
@@ -412,9 +534,143 @@ export default function Marketplace() {
                   handleContact(selectedProvider);
                   setSelectedProvider(null);
                 }}
+                data-testid="button-request-service-modal"
               >
                 Request Service from {selectedProvider.name}
               </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Booking Modal */}
+      {showBookingModal && bookingProvider && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-lg bg-white rounded-lg shadow-xl">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Book Service</h2>
+                  <p className="text-sm text-slate-500 mt-1">Request service from {bookingProvider.name}</p>
+                </div>
+                <button 
+                  onClick={() => setShowBookingModal(false)}
+                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                  data-testid="button-close-booking-modal"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Escrow Info Banner */}
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                <div className="flex items-start gap-3">
+                  <Shield className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div>
+                    <p className="font-semibold text-green-800">Secure Escrow Protection</p>
+                    <p className="text-sm text-green-700 mt-1">
+                      Your payment is held securely in escrow until milestones are completed. 
+                      Chat directly with the vendor and request refunds if needed.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Wallet Balance */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="h-5 w-5 text-blue-600" />
+                    <span className="font-semibold text-blue-800">Wallet Balance</span>
+                  </div>
+                  <span className="text-lg font-bold text-blue-900">
+                    ₦{parseFloat(wallet?.balance || '0').toLocaleString()}
+                  </span>
+                </div>
+                {parseFloat(wallet?.balance || '0') < parseFloat(bookingAmount || '0') && (
+                  <p className="text-xs text-blue-700 mt-2">
+                    Insufficient balance. <a href="/app/wallet" className="underline font-semibold">Top up wallet</a> to auto-fund escrow.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="description">What do you need? *</Label>
+                  <Textarea 
+                    id="description"
+                    placeholder="Describe the service you need in detail..."
+                    value={bookingDescription}
+                    onChange={(e) => setBookingDescription(e.target.value)}
+                    className="mt-1"
+                    rows={3}
+                    data-testid="input-booking-description"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="amount">Total Amount (₦) *</Label>
+                    <Input 
+                      id="amount"
+                      type="number"
+                      placeholder="e.g. 50000"
+                      value={bookingAmount}
+                      onChange={(e) => setBookingAmount(e.target.value)}
+                      className="mt-1"
+                      data-testid="input-booking-amount"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="date">Preferred Date</Label>
+                    <Input 
+                      id="date"
+                      type="date"
+                      value={bookingDate}
+                      onChange={(e) => setBookingDate(e.target.value)}
+                      className="mt-1"
+                      data-testid="input-booking-date"
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <p className="text-sm font-semibold text-slate-700 mb-2">What happens next?</p>
+                  <div className="space-y-2 text-sm text-slate-600">
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-4 w-4 text-primary" />
+                      <span>Chat with the vendor to discuss details</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Wallet className="h-4 w-4 text-green-600" />
+                      <span>Fund escrow to secure your booking</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-4 w-4 text-blue-600" />
+                      <span>Milestones released as work completes</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => setShowBookingModal(false)}
+                  data-testid="button-cancel-booking"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  className="flex-1 bg-primary hover:bg-primary/90 text-white font-bold"
+                  onClick={handleCreateBooking}
+                  disabled={isCreatingBooking || !bookingDescription.trim() || !bookingAmount}
+                  data-testid="button-create-booking"
+                >
+                  {isCreatingBooking ? "Creating..." : "Create Booking"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

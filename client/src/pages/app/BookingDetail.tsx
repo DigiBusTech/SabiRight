@@ -137,8 +137,11 @@ export default function BookingDetail() {
   const { data, isLoading, error } = useQuery<BookingData>({
     queryKey: ["booking-detail", bookingId],
     queryFn: async () => {
-      if (!bookingId) throw new Error("No booking ID");
-      const res = await fetch(`/api/bookings/${bookingId}`);
+      if (!bookingId || !user) throw new Error("No booking ID");
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/bookings/${bookingId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       if (!res.ok) throw new Error("Failed to fetch booking");
       return res.json();
     },
@@ -148,8 +151,11 @@ export default function BookingDetail() {
   const { data: messages = [], refetch: refetchMessages } = useQuery<Message[]>({
     queryKey: ["booking-messages", bookingId],
     queryFn: async () => {
-      if (!bookingId) return [];
-      const res = await fetch(`/api/bookings/${bookingId}/messages`);
+      if (!bookingId || !user) return [];
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/bookings/${bookingId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       if (!res.ok) return [];
       return res.json();
     },
