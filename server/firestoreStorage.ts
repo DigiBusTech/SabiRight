@@ -4,12 +4,30 @@ import { type IStorage } from "./storage";
 
 const FIREBASE_APP_ID = 'digital-citizen-v2';
 
-if (!admin.apps || admin.apps.length === 0) {
-  admin.initializeApp({
+function initializeFirebase() {
+  if (admin.apps && admin.apps.length > 0) {
+    return admin.app();
+  }
+  
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!serviceAccountJson) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT environment variable is not set');
+  }
+  
+  let serviceAccount;
+  try {
+    serviceAccount = JSON.parse(serviceAccountJson);
+  } catch (e) {
+    throw new Error('Failed to parse FIREBASE_SERVICE_ACCOUNT JSON');
+  }
+  
+  return admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
     projectId: 'legal-13d13',
   });
 }
 
+initializeFirebase();
 const db = admin.firestore();
 
 const collections = {
