@@ -52,9 +52,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const switchVendorMode = async (mode: boolean) => {
     if (!user) return;
-    const res = await fetch(`/api/vendor/mode/${user.uid}`, {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/vendor/self/mode', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({ vendorMode: mode })
     });
     if (res.ok) {

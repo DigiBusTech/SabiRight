@@ -4,6 +4,20 @@ import { type IStorage } from "./storage";
 
 const FIREBASE_APP_ID = 'digital-citizen-v2';
 
+export async function verifyUserToken(idToken: string): Promise<{ 
+  valid: boolean; 
+  userId?: string; 
+  error?: 'invalid_token';
+}> {
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    return { valid: true, userId: decodedToken.uid };
+  } catch (error) {
+    console.error('User auth: Token verification failed', error);
+    return { valid: false, error: 'invalid_token' };
+  }
+}
+
 export async function verifyAdminToken(idToken: string): Promise<{ 
   valid: boolean; 
   userId?: string; 
@@ -518,7 +532,12 @@ export class FirestoreStorage implements IStorage {
   }
 
   async switchVendorMode(userId: string, vendorMode: boolean): Promise<void> {
-    await collections.profiles().doc(userId).update({ vendorMode });
+    const docRef = collections.profiles().doc(userId);
+    const doc = await docRef.get();
+    if (!doc.exists) {
+      throw new Error(`Profile not found for user ${userId}`);
+    }
+    await docRef.update({ vendorMode });
   }
 
   async getDashboardTraffic(userId: string): Promise<DashboardTrafficCard | undefined> {

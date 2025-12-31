@@ -60,7 +60,9 @@ interface VendorBooking {
 const SERVICE_TYPES = ["Lawyer", "Plumber", "Electrician", "Health Professional", "Mover", "Real Estate Agent", "Cleaner", "Other"];
 
 export default function VendorDashboard() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading } = useAuth();
+  
+  const profileLoaded = !loading && profile !== null;
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isApplying, setIsApplying] = useState(false);
@@ -92,7 +94,7 @@ export default function VendorDashboard() {
       const res = await fetch(`/api/vendor/application/${user.uid}`);
       return res.ok ? res.json() : null;
     },
-    enabled: !!user?.uid,
+    enabled: !!user?.uid && profileLoaded && profile?.vendorMode !== true,
   });
 
   // Check if user is approved vendor - prioritize profile.vendorMode over application status
@@ -303,6 +305,17 @@ export default function VendorDashboard() {
     });
   };
 
+  if (!profileLoaded) {
+    return (
+      <div className="flex items-center justify-center min-h-[200px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+          <p className="text-sm text-slate-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 pb-20">
       <div>
@@ -310,35 +323,8 @@ export default function VendorDashboard() {
         <p className="text-slate-500 mt-1">Manage your business and services</p>
       </div>
 
-      {/* Application Status - Check vendorMode first, then application status */}
-      {profile?.vendorMode === true ? (
-        <Card className="border-green-200 bg-green-50">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <FileCheck className="h-5 w-5 text-green-600" />
-              Vendor Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="p-4 bg-white rounded-lg border border-green-200">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-bold">{application?.businessName || profile?.displayName || 'Your Business'}</span>
-                <Badge className="bg-green-100 text-green-800 border-green-300">
-                  APPROVED
-                </Badge>
-              </div>
-              <p className="text-sm text-slate-600 mb-2">{application?.serviceType || 'Verified Vendor'}</p>
-            </div>
-            <div className="p-3 bg-green-100 border border-green-200 rounded-lg flex items-start gap-3">
-              <FileCheck className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-bold text-green-800">Approved!</p>
-                <p className="text-xs text-green-700">You can now list services and access vendor tools</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ) : application?.status === 'approved' ? (
+      {/* Application Status - Check if approved vendor first */}
+      {isApprovedVendor ? (
         <Card className="border-green-200 bg-green-50">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">

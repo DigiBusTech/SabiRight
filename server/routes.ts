@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { firestoreStorage as storage, verifyAdminToken } from "./firestoreStorage";
+import { firestoreStorage as storage, verifyAdminToken, verifyUserToken } from "./firestoreStorage";
 
 const adminAuth = async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -276,17 +276,55 @@ export async function registerRoutes(
     res.json(application || {});
   });
 
-  app.patch("/api/vendor/mode/:userId", async (req, res) => {
+  app.patch("/api/vendor/mode/:userId", adminAuth, async (req, res) => {
     const { userId } = req.params;
     const { vendorMode } = req.body;
 
-    const profile = await storage.getUserProfile(userId);
-    if (!profile?.isVendor) {
-      return res.status(403).json({ error: 'Not approved as vendor' });
+    try {
+      await storage.switchVendorMode(userId, vendorMode);
+      res.json({ success: true, vendorMode });
+    } catch (error: any) {
+      if (error.message?.includes('Profile not found')) {
+        return res.status(404).json({ error: 'User profile not found' });
+      }
+      throw error;
+    }
+  });
+
+  app.patch("/api/vendor/self/mode", async (req, res) => {
+    const { vendorMode } = req.body;
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const token = authHeader.substring(7);
+    const result = await verifyUserToken(token);
+    if (!result.valid || !result.userId) {
+      return res.status(401).json({ error: 'Invalid token' });
     }
 
-    await storage.switchVendorMode(userId, vendorMode);
-    res.json({ success: true, vendorMode });
+    const userId = result.userId;
+    const profile = await storage.getUserProfile(userId);
+    if (!profile) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+    if (!profile.vendorMode) {
+      return res.status(400).json({ error: 'Not an approved vendor' });
+    }
+    if (vendorMode === true) {
+      return res.status(403).json({ error: 'Cannot self-approve as vendor. Contact admin.' });
+    }
+
+    try {
+      await storage.switchVendorMode(userId, vendorMode);
+      res.json({ success: true, vendorMode });
+    } catch (error: any) {
+      if (error.message?.includes('Profile not found')) {
+        return res.status(404).json({ error: 'User profile not found' });
+      }
+      throw error;
+    }
   });
 
   // Dashboard Traffic
