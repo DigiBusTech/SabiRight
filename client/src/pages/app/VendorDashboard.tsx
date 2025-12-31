@@ -95,6 +95,8 @@ export default function VendorDashboard() {
     enabled: !!user?.uid,
   });
 
+  const isApprovedVendor = application?.status === 'approved' || profile?.vendorMode === true;
+
   const { data: services = [] } = useQuery({
     queryKey: ['my-services', user?.uid],
     queryFn: async () => {
@@ -104,7 +106,7 @@ export default function VendorDashboard() {
       const allServices = await res.json();
       return allServices.filter((s: VendorService) => s.vendorId === user.uid);
     },
-    enabled: !!user?.uid && application?.status === 'approved',
+    enabled: !!user?.uid && isApprovedVendor,
   });
 
   const { data: vendorStats } = useQuery<VendorStats>({
@@ -115,7 +117,7 @@ export default function VendorDashboard() {
       if (!res.ok) return { totalLeads: 0, totalBookings: 0, totalEarnings: 0, thisMonthLeads: 0, thisMonthBookings: 0, thisMonthEarnings: 0 };
       return res.json();
     },
-    enabled: !!user?.uid && application?.status === 'approved',
+    enabled: !!user?.uid && isApprovedVendor,
   });
 
   const { data: leads = [] } = useQuery<VendorLead[]>({
@@ -126,7 +128,7 @@ export default function VendorDashboard() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!user?.uid && application?.status === 'approved',
+    enabled: !!user?.uid && isApprovedVendor,
   });
 
   const { data: bookings = [] } = useQuery<VendorBooking[]>({
@@ -137,7 +139,7 @@ export default function VendorDashboard() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!user?.uid && application?.status === 'approved',
+    enabled: !!user?.uid && isApprovedVendor,
   });
 
   const createServiceMutation = useMutation({
@@ -308,7 +310,34 @@ export default function VendorDashboard() {
       </div>
 
       {/* Application Status */}
-      {application ? (
+      {isApprovedVendor ? (
+        <Card className="border-green-200 bg-green-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-green-600" />
+              Vendor Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="p-4 bg-white rounded-lg border border-green-200">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold">{application?.businessName || profile?.displayName || 'Your Business'}</span>
+                <Badge className="bg-green-100 text-green-800 border-green-300">
+                  APPROVED
+                </Badge>
+              </div>
+              <p className="text-sm text-slate-600 mb-2">{application?.serviceType || 'Verified Vendor'}</p>
+            </div>
+            <div className="p-3 bg-green-100 border border-green-200 rounded-lg flex items-start gap-3">
+              <FileCheck className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-green-800">Approved!</p>
+                <p className="text-xs text-green-700">You can now list services and access vendor tools</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : application ? (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
@@ -321,9 +350,7 @@ export default function VendorDashboard() {
               <div className="flex items-center justify-between mb-2">
                 <span className="font-bold">{application.businessName}</span>
                 <Badge className={`${
-                  application.status === 'approved'
-                    ? 'bg-green-100 text-green-800 border-green-300'
-                    : application.status === 'pending'
+                  application.status === 'pending'
                     ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
                     : 'bg-red-100 text-red-800 border-red-300'
                 }`}>
@@ -342,16 +369,6 @@ export default function VendorDashboard() {
                 <div>
                   <p className="text-sm font-bold text-yellow-800">Pending Review</p>
                   <p className="text-xs text-yellow-700">Admin will review your KYC and business documents</p>
-                </div>
-              </div>
-            )}
-
-            {application.status === 'approved' && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-bold text-green-800">Approved!</p>
-                  <p className="text-xs text-green-700">You can now list services and access vendor tools</p>
                 </div>
               </div>
             )}
@@ -414,7 +431,7 @@ export default function VendorDashboard() {
       )}
 
       {/* Vendor Stats and Services */}
-      {application?.status === 'approved' && (
+      {isApprovedVendor && (
         <>
           {/* Stats Overview */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
