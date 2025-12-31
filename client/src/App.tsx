@@ -17,6 +17,8 @@ import PlanManagement from "@/pages/app/PlanManagement";
 import TrafficAlerts from "@/pages/app/TrafficAlerts";
 import KYCVerification from "@/pages/app/KYC";
 import VendorDashboard from "@/pages/app/VendorDashboard";
+import Wallet from "@/pages/app/Wallet";
+import Bookings from "@/pages/app/Bookings";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import Login from "@/pages/auth/Login";
 
@@ -56,6 +58,12 @@ function Router() {
       </Route>
       <Route path="/app/vendor">
         <AppLayout><VendorDashboard /></AppLayout>
+      </Route>
+      <Route path="/app/wallet">
+        <AppLayout><Wallet /></AppLayout>
+      </Route>
+      <Route path="/app/bookings">
+        <AppLayout><Bookings /></AppLayout>
       </Route>
       <Route path="/admin" component={AdminDashboard} />
 
