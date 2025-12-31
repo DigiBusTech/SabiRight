@@ -201,6 +201,23 @@ export default function AdminDashboard() {
     }
   });
 
+  const toggleVendor = useMutation({
+    mutationFn: async ({ userId, vendorMode }: { userId: string; vendorMode: boolean }) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/vendor/mode/${userId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ vendorMode })
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: "Updated", description: "User vendor status updated" });
+    }
+  });
+
   const deleteUser = useMutation({
     mutationFn: async (userId: string) => {
       const headers = await getAdminHeaders();
@@ -927,6 +944,16 @@ export default function AdminDashboard() {
                             <option value="free-vendor">Vendor Free</option>
                             <option value="pro-vendor">Vendor Pro</option>
                           </select>
+
+                          {/* Toggle Vendor */}
+                          <Button
+                            size="sm"
+                            variant={user.vendorMode ? "default" : "outline"}
+                            className={user.vendorMode ? "bg-purple-600 hover:bg-purple-700" : ""}
+                            onClick={() => toggleVendor.mutate({ userId: user.userId, vendorMode: !user.vendorMode })}
+                          >
+                            {user.vendorMode ? 'Remove Vendor' : 'Make Vendor'}
+                          </Button>
 
                           {/* Toggle Admin */}
                           <Button

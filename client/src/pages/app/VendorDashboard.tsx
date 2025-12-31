@@ -95,7 +95,8 @@ export default function VendorDashboard() {
     enabled: !!user?.uid,
   });
 
-  const isApprovedVendor = application?.status === 'approved' || profile?.vendorMode === true;
+  // Check if user is approved vendor - prioritize profile.vendorMode over application status
+  const isApprovedVendor = profile?.vendorMode === true || application?.status === 'approved';
 
   const { data: services = [] } = useQuery({
     queryKey: ['my-services', user?.uid],
@@ -309,8 +310,35 @@ export default function VendorDashboard() {
         <p className="text-slate-500 mt-1">Manage your business and services</p>
       </div>
 
-      {/* Application Status */}
-      {isApprovedVendor ? (
+      {/* Application Status - Check vendorMode first, then application status */}
+      {profile?.vendorMode === true ? (
+        <Card className="border-green-200 bg-green-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-green-600" />
+              Vendor Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="p-4 bg-white rounded-lg border border-green-200">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-bold">{application?.businessName || profile?.displayName || 'Your Business'}</span>
+                <Badge className="bg-green-100 text-green-800 border-green-300">
+                  APPROVED
+                </Badge>
+              </div>
+              <p className="text-sm text-slate-600 mb-2">{application?.serviceType || 'Verified Vendor'}</p>
+            </div>
+            <div className="p-3 bg-green-100 border border-green-200 rounded-lg flex items-start gap-3">
+              <FileCheck className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-green-800">Approved!</p>
+                <p className="text-xs text-green-700">You can now list services and access vendor tools</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : application?.status === 'approved' ? (
         <Card className="border-green-200 bg-green-50">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
