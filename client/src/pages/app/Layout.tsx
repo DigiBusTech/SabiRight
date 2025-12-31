@@ -46,19 +46,27 @@ export default function AppLayout({ children }: AppLayoutProps) {
       setLocation("/");
   };
 
-  const navItems = [
+  const baseNavItems = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/app" },
-    { icon: Scale, label: "Civic Guard", href: "/app/civic" },
-    { icon: Store, label: "Marketplace", href: "/app/marketplace" },
-    { icon: Briefcase, label: "Jobs", href: "/app/jobs" },
-    { icon: Users, label: "Forum", href: "/app/forum" },
+    { icon: Scale, label: "SabiGuard", href: "/app/civic", description: "Legal First Aid" },
+    { icon: AlertTriangle, label: "SabiMove", href: "/app/traffic", description: "Smart Traffic" },
+    { icon: Briefcase, label: "SabiWork", href: "/app/jobs", description: "Jobs & Careers" },
+    { icon: Store, label: "SabiMarket", href: "/app/marketplace", description: "Find Pros" },
+    { icon: Users, label: "SabiSquare", href: "/app/forum", description: "Community" },
     { icon: Calendar, label: "Events", href: "/app/events" },
-    { icon: AlertTriangle, label: "Traffic Alerts", href: "/app/traffic" },
     { icon: BadgeCheck, label: "KYC Verification", href: "/app/kyc" },
-    { icon: BarChart3, label: "Vendor Dashboard", href: "/app/vendor" },
     { icon: Zap, label: "Plans & Billing", href: "/app/plans" },
-    { icon: Settings, label: "Admin Dashboard", href: "/admin" },
   ];
+
+  const vendorItems = profile?.isVendor ? [
+    { icon: BarChart3, label: "Vendor Dashboard", href: "/app/vendor" },
+  ] : [];
+
+  const adminItems = profile?.isAdmin ? [
+    { icon: Settings, label: "Admin Dashboard", href: "/admin" },
+  ] : [];
+
+  const navItems = [...baseNavItems, ...vendorItems, ...adminItems];
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
@@ -78,10 +86,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
         )}
       >
         <div className="p-6 flex items-center gap-3 border-b border-slate-800">
-          <div className="bg-primary text-white p-1.5 rounded-lg">
-            <ShieldCheck className="h-5 w-5" />
-          </div>
-          <span className="font-bold text-lg tracking-tight">Digital Citizen</span>
+          <img 
+            src="/assets/sabiright-icon.png" 
+            alt="SabiRight" 
+            className="h-8 w-8 rounded-lg"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+          <span className="font-bold text-lg tracking-tight">SabiRight</span>
           <button 
             className="md:hidden ml-auto text-slate-400"
             onClick={() => setIsSidebarOpen(false)}

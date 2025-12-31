@@ -399,9 +399,9 @@ export class FirestoreStorage implements IStorage {
   async updateDashboardTraffic(userId: string, location: string, status: string, description: string): Promise<void> {
     await collections.dashboardTraffic().doc(userId).set({
       userId,
-      location,
-      status,
-      description,
+      location: location || '',
+      status: status || 'unknown',
+      description: description || '',
       lastUpdate: new Date().toISOString(),
     });
   }
