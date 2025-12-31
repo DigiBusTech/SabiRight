@@ -25,11 +25,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setUser(user);
       if (user) {
-        const res = await fetch(`/api/profile/${user.uid}`);
-        if (res.ok) {
-          const data = await res.json();
-          setProfile(data);
+        let res = await fetch(`/api/profile/${user.uid}`);
+        let data = res.ok ? await res.json() : null;
+        
+        if (!data || !data.userId) {
+          res = await fetch(`/api/profile/${user.uid}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: user.email,
+              displayName: user.displayName || user.email?.split('@')[0]
+            })
+          });
+          data = res.ok ? await res.json() : null;
         }
+        
+        setProfile(data);
       } else {
         setProfile(null);
       }

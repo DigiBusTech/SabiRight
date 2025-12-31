@@ -4,6 +4,43 @@ import { type IStorage } from "./storage";
 
 const FIREBASE_APP_ID = 'digital-citizen-v2';
 
+export async function verifyAdminToken(idToken: string): Promise<{ 
+  valid: boolean; 
+  userId?: string; 
+  isAdmin?: boolean;
+  error?: 'invalid_token' | 'no_profile' | 'not_admin';
+}> {
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const userId = decodedToken.uid;
+    
+    const profileDoc = await admin.firestore()
+      .collection('artifacts')
+      .doc(FIREBASE_APP_ID)
+      .collection('profiles')
+      .doc(userId)
+      .get();
+    
+    if (!profileDoc.exists) {
+      console.log(`Admin auth: No profile found for user ${userId}`);
+      return { valid: false, userId, isAdmin: false, error: 'no_profile' };
+    }
+    
+    const profile = profileDoc.data();
+    const isAdmin = profile?.isAdmin === true;
+    
+    if (!isAdmin) {
+      console.log(`Admin auth: User ${userId} is not an admin`);
+      return { valid: false, userId, isAdmin: false, error: 'not_admin' };
+    }
+    
+    return { valid: true, userId, isAdmin: true };
+  } catch (error) {
+    console.error('Admin auth: Token verification failed', error);
+    return { valid: false, error: 'invalid_token' };
+  }
+}
+
 function initializeFirebase() {
   if (admin.apps && admin.apps.length > 0) {
     return admin.app();
@@ -212,6 +249,34 @@ export class FirestoreStorage implements IStorage {
     await collections.credits().doc(userId).update({
       totalCredits: admin.firestore.FieldValue.increment(dailyAmount),
       lastRefreshDate: new Date(),
+    });
+  }
+
+  async setUserCredits(userId: string, totalCredits: number): Promise<void> {
+    const creditsRef = collections.credits().doc(userId);
+    const doc = await creditsRef.get();
+    
+    if (!doc.exists) {
+      await creditsRef.set({
+        id: crypto.randomUUID(),
+        userId,
+        totalCredits,
+        usedCredits: 0,
+        lastRefreshDate: new Date(),
+        renewalDate: null,
+      });
+    } else {
+      await creditsRef.update({ totalCredits });
+    }
+    
+    await collections.creditLogs().add({
+      id: crypto.randomUUID(),
+      userId,
+      amount: totalCredits,
+      action: 'admin_set',
+      feature: 'admin_adjustment',
+      description: 'Admin set total credits',
+      createdAt: new Date(),
     });
   }
 

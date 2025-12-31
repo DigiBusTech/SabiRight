@@ -1,6 +1,32 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { firestoreStorage as storage } from "./firestoreStorage";
+import { firestoreStorage as storage, verifyAdminToken } from "./firestoreStorage";
+
+const adminAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  const token = authHeader.substring(7);
+  const result = await verifyAdminToken(token);
+  
+  if (!result.valid) {
+    if (result.error === 'invalid_token') {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    if (result.error === 'no_profile') {
+      return res.status(401).json({ error: 'User profile not found' });
+    }
+    if (result.error === 'not_admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    return res.status(401).json({ error: 'Authentication failed' });
+  }
+  
+  (req as any).userId = result.userId;
+  next();
+};
 
 export async function registerRoutes(
   httpServer: Server,
@@ -197,6 +223,30 @@ export async function registerRoutes(
     res.json(profile || {});
   });
 
+  app.post("/api/profile/:userId", async (req, res) => {
+    const { userId } = req.params;
+    const { email, displayName } = req.body;
+    
+    const existingProfile = await storage.getUserProfile(userId);
+    if (existingProfile && existingProfile.userId) {
+      return res.json(existingProfile);
+    }
+    
+    await storage.createUser({ id: userId, username: displayName || email || userId, password: '' } as any);
+    await storage.updateUserProfile(userId, {
+      userId,
+      email: email || null,
+      displayName: displayName || null,
+      isVendor: false,
+      kycStatus: 'pending',
+      vendorMode: false,
+      createdAt: new Date()
+    });
+    
+    const newProfile = await storage.getUserProfile(userId);
+    res.json(newProfile);
+  });
+
   app.patch("/api/profile/:userId", async (req, res) => {
     const { userId } = req.params;
     await storage.updateUserProfile(userId, req.body);
@@ -335,20 +385,24 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  // Admin Settings
-  app.get("/api/admin/settings", async (req, res) => {
+  // Admin Settings - protected routes
+  app.get("/api/admin/settings", adminAuth, async (req, res) => {
     const { category } = req.query;
     const settings = await storage.getAdminSettings(category as string | undefined);
-    res.json(settings);
+    const filteredSettings = settings.map((s: any) => ({
+      ...s,
+      value: s.isSecret ? '••••••••' : s.value
+    }));
+    res.json(filteredSettings);
   });
 
-  app.get("/api/admin/setting/:key", async (req, res) => {
+  app.get("/api/admin/setting/:key", adminAuth, async (req, res) => {
     const { key } = req.params;
     const setting = await storage.getAdminSetting(key);
     res.json(setting || {});
   });
 
-  app.post("/api/admin/settings", async (req, res) => {
+  app.post("/api/admin/settings", adminAuth, async (req, res) => {
     const { key, value, category, isSecret } = req.body;
     
     if (!key || !category) {
@@ -359,27 +413,120 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  // Admin User Management
-  app.get("/api/admin/users", async (req, res) => {
+  // Admin User Management - protected routes
+  app.get("/api/admin/users", adminAuth, async (req, res) => {
     const users = await storage.getAllUsers();
     res.json(users);
   });
 
-  app.get("/api/admin/vendor-applications", async (req, res) => {
+  app.get("/api/admin/vendor-applications", adminAuth, async (req, res) => {
     const applications = await storage.getAllVendorApplications();
     res.json(applications);
   });
 
-  app.post("/api/admin/vendor/:userId/approve", async (req, res) => {
+  app.post("/api/admin/vendor/:userId/approve", adminAuth, async (req, res) => {
     const { userId } = req.params;
     await storage.approveVendorApplication(userId);
     res.json({ success: true });
   });
 
-  app.post("/api/admin/vendor/:userId/reject", async (req, res) => {
+  app.post("/api/admin/vendor/:userId/reject", adminAuth, async (req, res) => {
     const { userId } = req.params;
     await storage.rejectVendorApplication(userId);
     res.json({ success: true });
+  });
+
+  // Admin: Update user profile
+  app.patch("/api/admin/users/:userId", adminAuth, async (req, res) => {
+    const { userId } = req.params;
+    await storage.updateUserProfile(userId, req.body);
+    res.json({ success: true });
+  });
+
+  // Admin: Update user credits
+  app.patch("/api/admin/users/:userId/credits", adminAuth, async (req, res) => {
+    const { userId } = req.params;
+    const { totalCredits } = req.body;
+    
+    if (totalCredits === undefined || isNaN(parseInt(totalCredits))) {
+      return res.status(400).json({ error: 'Valid totalCredits required' });
+    }
+    
+    await storage.setUserCredits(userId, parseInt(totalCredits));
+    res.json({ success: true });
+  });
+
+  // Admin: Approve KYC
+  app.post("/api/admin/kyc/:userId/approve", adminAuth, async (req, res) => {
+    const { userId } = req.params;
+    await storage.updateUserKYC(userId, 'verified');
+    res.json({ success: true });
+  });
+
+  // Admin: Reject KYC
+  app.post("/api/admin/kyc/:userId/reject", adminAuth, async (req, res) => {
+    const { userId } = req.params;
+    await storage.updateUserKYC(userId, 'rejected');
+    res.json({ success: true });
+  });
+
+  // Admin: Assign plan to user
+  app.post("/api/admin/users/:userId/plan", adminAuth, async (req, res) => {
+    const { userId } = req.params;
+    const { planId } = req.body;
+    
+    const plan = await storage.getPlanById(planId);
+    if (!plan) {
+      return res.status(404).json({ error: 'Plan not found' });
+    }
+
+    const existing = await storage.getUserPlan(userId);
+    if (existing?.id) {
+      await storage.updateSubscriptionStatus(existing.id, 'cancelled');
+    }
+
+    const subscription = await storage.createSubscription({
+      userId,
+      planId,
+      status: 'active'
+    });
+
+    res.json({ success: true, subscription });
+  });
+
+  // Jobs API
+  app.get("/api/jobs", async (req, res) => {
+    try {
+      const jobs = await storage.getVendorServices();
+      res.json(jobs);
+    } catch (err) {
+      res.json([]);
+    }
+  });
+
+  app.post("/api/jobs", async (req, res) => {
+    const { title, company, location, type, workMode, salary, description, contact, postedBy } = req.body;
+    
+    if (!title || !company || !location) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const job = {
+      id: crypto.randomUUID(),
+      title,
+      company,
+      location,
+      type: type || 'Full-time',
+      workMode: workMode || 'Onsite',
+      salary,
+      description,
+      contact,
+      postedBy,
+      postedAt: new Date(),
+      source: 'User Posted'
+    };
+
+    res.json(job);
   });
 
   // Payments

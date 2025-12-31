@@ -11,17 +11,29 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/context/AuthContext";
+import { auth } from "@/lib/firebase";
+
+const getAdminHeaders = async () => {
+  const token = await auth.currentUser?.getIdToken();
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': token ? `Bearer ${token}` : ''
+  };
+};
 
 export default function AdminDashboard() {
   const { toast } = useToast();
+  const { profile } = useAuth();
   const queryClient = useQueryClient();
   const [showSecrets, setShowSecrets] = useState(false);
 
-  // Fetch admin data
+  // Fetch admin data with auth headers
   const { data: settings = [] } = useQuery({
     queryKey: ['admin-settings'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/settings');
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/settings', { headers });
       return res.ok ? res.json() : [];
     }
   });
@@ -29,7 +41,8 @@ export default function AdminDashboard() {
   const { data: users = [] } = useQuery({
     queryKey: ['admin-users'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/users');
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/users', { headers });
       return res.ok ? res.json() : [];
     }
   });
@@ -37,7 +50,8 @@ export default function AdminDashboard() {
   const { data: vendorApps = [] } = useQuery({
     queryKey: ['admin-vendor-apps'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/vendor-applications');
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/vendor-applications', { headers });
       return res.ok ? res.json() : [];
     }
   });
@@ -60,9 +74,10 @@ export default function AdminDashboard() {
 
   const saveSetting = useMutation({
     mutationFn: async ({ key, value, category, isSecret }: { key: string; value: string; category: string; isSecret?: boolean }) => {
+      const headers = await getAdminHeaders();
       const res = await fetch('/api/admin/settings', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ key, value, category, isSecret })
       });
       if (!res.ok) throw new Error('Failed to save');
@@ -76,7 +91,8 @@ export default function AdminDashboard() {
 
   const approveVendor = useMutation({
     mutationFn: async (userId: string) => {
-      const res = await fetch(`/api/admin/vendor/${userId}/approve`, { method: 'POST' });
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/vendor/${userId}/approve`, { method: 'POST', headers });
       if (!res.ok) throw new Error('Failed');
       return res.json();
     },
@@ -88,7 +104,8 @@ export default function AdminDashboard() {
 
   const rejectVendor = useMutation({
     mutationFn: async (userId: string) => {
-      const res = await fetch(`/api/admin/vendor/${userId}/reject`, { method: 'POST' });
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/vendor/${userId}/reject`, { method: 'POST', headers });
       if (!res.ok) throw new Error('Failed');
       return res.json();
     },
@@ -97,6 +114,69 @@ export default function AdminDashboard() {
       toast({ title: "Rejected", description: "Vendor application rejected" });
     }
   });
+
+  const approveKYC = useMutation({
+    mutationFn: async (userId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/kyc/${userId}/approve`, { method: 'POST', headers });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: "Approved", description: "KYC verification approved" });
+    }
+  });
+
+  const rejectKYC = useMutation({
+    mutationFn: async (userId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/kyc/${userId}/reject`, { method: 'POST', headers });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: "Rejected", description: "KYC verification rejected" });
+    }
+  });
+
+  const updateCredits = useMutation({
+    mutationFn: async ({ userId, totalCredits }: { userId: string; totalCredits: number }) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/users/${userId}/credits`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ totalCredits })
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: "Updated", description: "User credits updated" });
+    }
+  });
+
+  const assignPlan = useMutation({
+    mutationFn: async ({ userId, planId }: { userId: string; planId: string }) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/users/${userId}/plan`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ planId })
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: "Assigned", description: "Plan assigned to user" });
+    }
+  });
+
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [creditAmount, setCreditAmount] = useState("");
 
   const getSetting = (key: string) => settings.find((s: any) => s.key === key)?.value || '';
 
@@ -375,6 +455,84 @@ export default function AdminDashboard() {
                     </div>
                   </div>
                 </div>
+
+                {/* AI Configuration Section */}
+                <div className="border-t pt-6 mt-6">
+                  <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+                    <Briefcase className="h-5 w-5 text-indigo-500" />
+                    AI Configuration
+                  </h3>
+                  
+                  {/* Primary AI Selection */}
+                  <div className="p-4 bg-indigo-50 rounded-lg mb-4">
+                    <p className="font-bold mb-2">Primary AI Provider</p>
+                    <div className="flex items-center gap-4">
+                      <button
+                        onClick={() => saveSetting.mutate({ key: 'primary_ai', value: 'gemini', category: 'ai' })}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                          getSetting('primary_ai') === 'gemini' || !getSetting('primary_ai')
+                            ? 'bg-indigo-600 text-white' 
+                            : 'bg-white border'
+                        }`}
+                      >
+                        Google Gemini
+                      </button>
+                      <button
+                        onClick={() => saveSetting.mutate({ key: 'primary_ai', value: 'chatgpt', category: 'ai' })}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                          getSetting('primary_ai') === 'chatgpt' 
+                            ? 'bg-indigo-600 text-white' 
+                            : 'bg-white border'
+                        }`}
+                      >
+                        OpenAI ChatGPT
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                      Select which AI to use for Civic Guard, Jobs, and other AI features
+                    </p>
+                  </div>
+
+                  {/* Gemini API Key */}
+                  <div className="p-4 border rounded-lg mb-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Shield className="h-5 w-5 text-blue-500" />
+                      <p className="font-bold">Google Gemini API (Civic Guard & Jobs)</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        type={showSecrets ? "text" : "password"}
+                        value={localSettings['gemini_api_key'] ?? getSetting('gemini_api_key')}
+                        onChange={(e) => handleSettingChange('gemini_api_key', e.target.value)}
+                        placeholder="Enter Gemini API Key"
+                        className="flex-1"
+                      />
+                      <Button onClick={() => handleSaveSetting('gemini_api_key', 'ai', true)}>
+                        <Save className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* ChatGPT API Key */}
+                  <div className="p-4 border rounded-lg">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Briefcase className="h-5 w-5 text-green-500" />
+                      <p className="font-bold">OpenAI ChatGPT API</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        type={showSecrets ? "text" : "password"}
+                        value={localSettings['chatgpt_api_key'] ?? getSetting('chatgpt_api_key')}
+                        onChange={(e) => handleSettingChange('chatgpt_api_key', e.target.value)}
+                        placeholder="Enter OpenAI API Key (sk-...)"
+                        className="flex-1"
+                      />
+                      <Button onClick={() => handleSaveSetting('chatgpt_api_key', 'ai', true)}>
+                        <Save className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -427,20 +585,99 @@ export default function AdminDashboard() {
                 {users.length === 0 ? (
                   <p className="text-center py-8 text-slate-400">No users registered yet</p>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {users.map((user: any) => (
-                      <div key={user.userId} className="p-4 border rounded-lg flex items-center justify-between">
-                        <div>
-                          <p className="font-bold">{user.displayName || 'Unknown'}</p>
-                          <p className="text-sm text-slate-500">{user.email}</p>
+                      <div key={user.userId} className="p-4 border rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-bold">{user.displayName || 'Unknown'}</p>
+                            <p className="text-sm text-slate-500">{user.email}</p>
+                            <p className="text-xs text-slate-400">ID: {user.userId}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge className={
+                              user.kycStatus === 'verified' ? 'bg-green-100 text-green-800' : 
+                              user.kycStatus === 'rejected' ? 'bg-red-100 text-red-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }>
+                              KYC: {user.kycStatus || 'pending'}
+                            </Badge>
+                            {user.isVendor && (
+                              <Badge className="bg-purple-100 text-purple-800">Vendor</Badge>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Badge className={user.kycStatus === 'verified' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
-                            KYC: {user.kycStatus || 'pending'}
-                          </Badge>
-                          {user.isVendor && (
-                            <Badge className="bg-purple-100 text-purple-800">Vendor</Badge>
+                        
+                        {/* User Actions */}
+                        <div className="mt-4 pt-4 border-t flex flex-wrap gap-2 items-center">
+                          {/* KYC Actions */}
+                          {user.kycStatus === 'pending' && (
+                            <>
+                              <Button 
+                                size="sm" 
+                                className="bg-green-600 hover:bg-green-700"
+                                onClick={() => approveKYC.mutate(user.userId)}
+                              >
+                                <CheckCircle2 className="h-4 w-4 mr-1" /> Verify KYC
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="destructive"
+                                onClick={() => rejectKYC.mutate(user.userId)}
+                              >
+                                <XCircle className="h-4 w-4 mr-1" /> Reject KYC
+                              </Button>
+                            </>
                           )}
+                          
+                          {/* Credits Management */}
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              placeholder="Credits"
+                              className="w-24 h-8"
+                              value={selectedUser === user.userId ? creditAmount : ''}
+                              onChange={(e) => {
+                                setSelectedUser(user.userId);
+                                setCreditAmount(e.target.value);
+                              }}
+                            />
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => {
+                                if (creditAmount) {
+                                  updateCredits.mutate({ 
+                                    userId: user.userId, 
+                                    totalCredits: parseInt(creditAmount) 
+                                  });
+                                  setCreditAmount('');
+                                  setSelectedUser(null);
+                                }
+                              }}
+                            >
+                              Set Credits
+                            </Button>
+                          </div>
+
+                          {/* Plan Assignment */}
+                          <select 
+                            className="h-8 px-2 border rounded text-sm"
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                assignPlan.mutate({ userId: user.userId, planId: e.target.value });
+                                e.target.value = '';
+                              }
+                            }}
+                            defaultValue=""
+                          >
+                            <option value="">Assign Plan...</option>
+                            <option value="free-user">Free</option>
+                            <option value="basic-user">Basic</option>
+                            <option value="pro-user">Pro</option>
+                            <option value="free-vendor">Vendor Free</option>
+                            <option value="pro-vendor">Vendor Pro</option>
+                          </select>
                         </div>
                       </div>
                     ))}

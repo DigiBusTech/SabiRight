@@ -62,6 +62,9 @@ async function seedData() {
     { key: 'stripe_api_key', value: '', category: 'api_keys', isSecret: true },
     { key: 'paystack_api_key', value: '', category: 'api_keys', isSecret: true },
     { key: 'flutterwave_api_key', value: '', category: 'api_keys', isSecret: true },
+    { key: 'gemini_api_key', value: '', category: 'ai', isSecret: true },
+    { key: 'chatgpt_api_key', value: '', category: 'ai', isSecret: true },
+    { key: 'primary_ai', value: 'gemini', category: 'ai', isSecret: false },
   ];
 
   for (const setting of settings) {
@@ -86,9 +89,9 @@ async function seedData() {
 
   // Seed User Profiles
   const profiles = [
-    { userId: 'admin-001', email: 'admin@digitalcitizen.ng', displayName: 'Admin User', isVendor: false, kycStatus: 'verified', vendorMode: false, createdAt: new Date() },
-    { userId: 'user-001', email: 'user@example.com', displayName: 'Test User', isVendor: false, kycStatus: 'pending', vendorMode: false, createdAt: new Date() },
-    { userId: 'vendor-001', email: 'vendor@example.com', displayName: 'Vendor Test', isVendor: true, kycStatus: 'verified', vendorMode: true, createdAt: new Date() },
+    { userId: 'admin-001', email: 'admin@digitalcitizen.ng', displayName: 'Admin User', isVendor: false, kycStatus: 'verified', vendorMode: false, isAdmin: true, createdAt: new Date() },
+    { userId: 'user-001', email: 'user@example.com', displayName: 'Test User', isVendor: false, kycStatus: 'pending', vendorMode: false, isAdmin: false, createdAt: new Date() },
+    { userId: 'vendor-001', email: 'vendor@example.com', displayName: 'Vendor Test', isVendor: true, kycStatus: 'verified', vendorMode: true, isAdmin: false, createdAt: new Date() },
   ];
 
   for (const profile of profiles) {
