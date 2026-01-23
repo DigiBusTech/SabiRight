@@ -42,6 +42,18 @@ export default function Payment() {
   const [selectedMethod, setSelectedMethod] = useState<string>('');
   const [useWalletBalance, setUseWalletBalance] = useState(false);
 
+  // Debug: Log payment parameters
+  useEffect(() => {
+    console.log('Payment Page Parameters:', {
+      paymentType,
+      amount,
+      credits,
+      planId,
+      rawAmount: searchParams.get('amount'),
+      location
+    });
+  }, [paymentType, amount, credits, planId]);
+
   // Load Paystack inline script
   useEffect(() => {
     const script = document.createElement('script');
@@ -69,14 +81,23 @@ export default function Payment() {
     enabled: !!user?.uid
   });
 
-  // Fetch payment settings from admin
+  // Fetch payment settings from admin (both payments and api_keys)
   const { data: paymentSettings } = useQuery({
     queryKey: ['payment-settings'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/settings?category=payments');
-      if (!res.ok) return {};
-      const settings = await res.json();
-      return settings.reduce((acc: any, setting: any) => {
+      // Fetch both payments and api_keys categories
+      const [paymentsRes, apiKeysRes] = await Promise.all([
+        fetch('/api/admin/settings?category=payments'),
+        fetch('/api/admin/settings?category=api_keys')
+      ]);
+      
+      const paymentsSettings = paymentsRes.ok ? await paymentsRes.json() : [];
+      const apiKeysSettings = apiKeysRes.ok ? await apiKeysRes.json() : [];
+      
+      // Combine both settings
+      const allSettings = [...paymentsSettings, ...apiKeysSettings];
+      
+      return allSettings.reduce((acc: any, setting: any) => {
         acc[setting.key] = setting.value;
         return acc;
       }, {});
@@ -365,13 +386,30 @@ export default function Payment() {
 
   if (!amount || amount <= 0) {
     return (
-      <div className="space-y-6 pb-20">
+      <div className="space-y-6 pb-20 max-w-2xl mx-auto">
         <Card>
-          <CardContent className="pt-6 text-center">
-            <p className="text-slate-500">Invalid payment amount</p>
-            <Button onClick={() => navigate('/app/dashboard')} className="mt-4">
-              Go to Dashboard
-            </Button>
+          <CardHeader>
+            <CardTitle className="text-red-600">Invalid Payment Amount</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-slate-600">The payment amount is missing or invalid.</p>
+            <div className="bg-slate-100 p-4 rounded-lg text-sm">
+              <p className="font-bold mb-2">Debug Information:</p>
+              <p>Amount: {searchParams.get('amount') || 'Not provided'}</p>
+              <p>Type: {paymentType}</p>
+              <p>Credits: {credits || 'N/A'}</p>
+              <p>Plan ID: {planId || 'N/A'}</p>
+            </div>
+            <p className="text-sm text-slate-500">Please go back and try again. Make sure to enter a valid amount.</p>
+            <div className="flex gap-2">
+              <Button onClick={() => navigate(-1)} variant="outline">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Go Back
+              </Button>
+              <Button onClick={() => navigate('/app/dashboard')}>
+                Go to Dashboard
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
