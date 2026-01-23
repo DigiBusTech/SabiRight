@@ -772,7 +772,6 @@ export async function registerRoutes(
   // Admin: Delete plan
   app.delete("/api/admin/plans/:planId", adminAuth, async (req, res) => {
     const { planId } = req.params;
-    
     const success = await storage.deletePlan(planId);
     if (success) {
       res.json({ success: true });
@@ -781,7 +780,77 @@ export async function registerRoutes(
     }
   });
 
-  // Jobs API
+  // Credit Packages API
+  app.get("/api/admin/credit-packages", adminAuth, async (req, res) => {
+    const packages = await storage.getCreditPackages();
+    res.json(packages);
+  });
+
+  app.post("/api/admin/credit-packages", adminAuth, async (req, res) => {
+    const packageData = req.body;
+    const newPackage = await storage.createCreditPackage(packageData);
+    res.json(newPackage);
+  });
+
+  app.put("/api/admin/credit-packages/:packageId", adminAuth, async (req, res) => {
+    const { packageId } = req.params;
+    const updates = req.body;
+    const updated = await storage.updateCreditPackage(packageId, updates);
+    res.json(updated);
+  });
+
+  app.delete("/api/admin/credit-packages/:packageId", adminAuth, async (req, res) => {
+    const { packageId } = req.params;
+    const success = await storage.deleteCreditPackage(packageId);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: 'Package not found' });
+    }
+  });
+
+  // Payment Methods API
+  app.get("/api/admin/payment-methods", adminAuth, async (req, res) => {
+    const methods = await storage.getPaymentMethods();
+    res.json(methods);
+  });
+
+  app.post("/api/admin/payment-methods", adminAuth, async (req, res) => {
+    const methodData = req.body;
+    const newMethod = await storage.createPaymentMethod(methodData);
+    res.json(newMethod);
+  });
+
+  app.put("/api/admin/payment-methods/:methodId", adminAuth, async (req, res) => {
+    const { methodId } = req.params;
+    const updates = req.body;
+    const updated = await storage.updatePaymentMethod(methodId, updates);
+    res.json(updated);
+  });
+
+  app.delete("/api/admin/payment-methods/:methodId", adminAuth, async (req, res) => {
+    const { methodId } = req.params;
+    const success = await storage.deletePaymentMethod(methodId);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ error: 'Payment method not found' });
+    }
+  });
+
+  // Public endpoint for active payment methods (no auth required)
+  app.get("/api/payment-methods", async (req, res) => {
+    const methods = await storage.getActivePaymentMethods();
+    res.json(methods);
+  });
+
+  // Public endpoint for credit packages (no auth required)
+  app.get("/api/credit-packages", async (req, res) => {
+    const packages = await storage.getCreditPackages();
+    res.json(packages);
+  });
+
+  // Jobs APIs API
   app.get("/api/jobs", async (req, res) => {
     try {
       const jobs = await storage.getJobs(50);

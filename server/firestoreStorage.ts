@@ -88,6 +88,8 @@ const collections = {
   credits: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('credits'),
   creditLogs: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('creditLogs'),
   plans: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('plans'),
+  creditPackages: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('creditPackages'),
+  paymentMethods: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('paymentMethods'),
   routes: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('routes'),
   alerts: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('alerts'),
   vendorApplications: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorApplications'),
@@ -427,6 +429,71 @@ export class FirestoreStorage implements IStorage {
     if (!doc.exists) return false;
     
     await planRef.delete();
+    return true;
+  }
+
+  // Credit Packages
+  async getCreditPackages(): Promise<any[]> {
+    const snapshot = await collections.creditPackages().get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async createCreditPackage(packageData: any): Promise<any> {
+    const docRef = await collections.creditPackages().add({
+      ...packageData,
+      createdAt: new Date().toISOString()
+    });
+    return { id: docRef.id, ...packageData };
+  }
+
+  async updateCreditPackage(packageId: string, updates: any): Promise<any> {
+    const packageRef = collections.creditPackages().doc(packageId);
+    await packageRef.update(updates);
+    const doc = await packageRef.get();
+    return { id: doc.id, ...doc.data() };
+  }
+
+  async deleteCreditPackage(packageId: string): Promise<boolean> {
+    const packageRef = collections.creditPackages().doc(packageId);
+    const doc = await packageRef.get();
+    if (!doc.exists) return false;
+    
+    await packageRef.delete();
+    return true;
+  }
+
+  // Payment Methods
+  async getPaymentMethods(): Promise<any[]> {
+    const snapshot = await collections.paymentMethods().get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async getActivePaymentMethods(): Promise<any[]> {
+    const snapshot = await collections.paymentMethods().where('active', '==', true).get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async createPaymentMethod(methodData: any): Promise<any> {
+    const docRef = await collections.paymentMethods().add({
+      ...methodData,
+      createdAt: new Date().toISOString()
+    });
+    return { id: docRef.id, ...methodData };
+  }
+
+  async updatePaymentMethod(methodId: string, updates: any): Promise<any> {
+    const methodRef = collections.paymentMethods().doc(methodId);
+    await methodRef.update(updates);
+    const doc = await methodRef.get();
+    return { id: doc.id, ...doc.data() };
+  }
+
+  async deletePaymentMethod(methodId: string): Promise<boolean> {
+    const methodRef = collections.paymentMethods().doc(methodId);
+    const doc = await methodRef.get();
+    if (!doc.exists) return false;
+    
+    await methodRef.delete();
     return true;
   }
 

@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { 
   Settings, Users, CreditCard, MapPin, Calendar, Briefcase, Store, 
-  Shield, Key, CheckCircle2, XCircle, Eye, EyeOff, Save, Bell, Mail, Trash2, Plus, Edit, Building2
+  Shield, Key, CheckCircle2, XCircle, Eye, EyeOff, Save, Bell, Mail, Trash2, Plus, Edit, Building2, Coins
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -81,6 +81,24 @@ export default function AdminDashboard() {
     queryFn: async () => {
       const headers = await getAdminHeaders();
       const res = await fetch('/api/admin/plans', { headers });
+      return res.ok ? res.json() : [];
+    }
+  });
+
+  const { data: creditPackages = [] } = useQuery({
+    queryKey: ['admin-credit-packages'],
+    queryFn: async () => {
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/credit-packages', { headers });
+      return res.ok ? res.json() : [];
+    }
+  });
+
+  const { data: paymentMethods = [] } = useQuery({
+    queryKey: ['admin-payment-methods'],
+    queryFn: async () => {
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/payment-methods', { headers });
       return res.ok ? res.json() : [];
     }
   });
@@ -290,6 +308,95 @@ export default function AdminDashboard() {
     }
   });
 
+  // Credit Package Mutations
+  const createCreditPackage = useMutation({
+    mutationFn: async (packageData: any) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/credit-packages', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(packageData)
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-credit-packages'] });
+      toast({ title: "Success", description: "Credit package created" });
+      setShowNewPackageForm(false);
+      setNewCreditPackage({ name: '', credits: 0, price: 0, bonus: 0, description: '', popular: false });
+    }
+  });
+
+  const deleteCreditPackage = useMutation({
+    mutationFn: async (packageId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/credit-packages/${packageId}`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-credit-packages'] });
+      toast({ title: "Deleted", description: "Package deleted successfully" });
+    }
+  });
+
+  // Payment Method Mutations
+  const createPaymentMethod = useMutation({
+    mutationFn: async (methodData: any) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/payment-methods', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(methodData)
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+      toast({ title: "Success", description: "Payment method created" });
+      setShowNewPaymentMethodForm(false);
+      setNewPaymentMethod({ name: '', type: 'manual', description: '', instructions: '', active: true, fields: [] });
+    }
+  });
+
+  const deletePaymentMethod = useMutation({
+    mutationFn: async (methodId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/payment-methods/${methodId}`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+      toast({ title: "Deleted", description: "Payment method deleted successfully" });
+    }
+  });
+
+  const togglePaymentMethod = useMutation({
+    mutationFn: async ({ methodId, active }: { methodId: string; active: boolean }) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/payment-methods/${methodId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ active })
+      });
+      if (!res.ok) throw new Error('Failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+      toast({ title: "Updated", description: "Payment method status updated" });
+    }
+  });
+
   const approvePayment = useMutation({
     mutationFn: async (paymentId: string) => {
       const headers = await getAdminHeaders();
@@ -327,6 +434,30 @@ export default function AdminDashboard() {
   const [creditAmount, setCreditAmount] = useState("");
   const [newPlan, setNewPlan] = useState({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '' });
   const [editingPlan, setEditingPlan] = useState<any>(null);
+  
+  // Credit package states
+  const [showNewPackageForm, setShowNewPackageForm] = useState(false);
+  const [newCreditPackage, setNewCreditPackage] = useState({ 
+    name: '', 
+    credits: 0, 
+    price: 0, 
+    bonus: 0, 
+    description: '', 
+    popular: false 
+  });
+  const [editingPackage, setEditingPackage] = useState<any>(null);
+  
+  // Payment method states
+  const [showNewPaymentMethodForm, setShowNewPaymentMethodForm] = useState(false);
+  const [newPaymentMethod, setNewPaymentMethod] = useState({
+    name: '',
+    type: 'manual',
+    description: '',
+    instructions: '',
+    active: true,
+    fields: [] as Array<{ name: string; type: 'text' | 'file'; required: boolean; placeholder: string }>
+  });
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState<any>(null);
 
   const [editingTemplate, setEditingTemplate] = useState<any>(null);
   const [newTemplate, setNewTemplate] = useState({
@@ -553,7 +684,9 @@ export default function AdminDashboard() {
               <TabsTrigger value="settings" className="text-xs md:text-sm whitespace-nowrap"><Settings className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Settings</span><span className="sm:hidden">Set</span></TabsTrigger>
               <TabsTrigger value="api-keys" className="text-xs md:text-sm whitespace-nowrap"><Key className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">API Keys</span><span className="sm:hidden">API</span></TabsTrigger>
               <TabsTrigger value="plans" className="text-xs md:text-sm whitespace-nowrap"><CreditCard className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Plans</TabsTrigger>
-              <TabsTrigger value="payments" className="text-xs md:text-sm whitespace-nowrap"><CreditCard className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Payments</span><span className="sm:hidden">Pay</span></TabsTrigger>
+              <TabsTrigger value="credits" className="text-xs md:text-sm whitespace-nowrap"><Coins className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Credits</span><span className="sm:hidden">Cred</span></TabsTrigger>
+              <TabsTrigger value="payment-methods" className="text-xs md:text-sm whitespace-nowrap"><Building2 className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Payment Methods</span><span className="sm:hidden">Pay</span></TabsTrigger>
+              <TabsTrigger value="payments" className="text-xs md:text-sm whitespace-nowrap"><CreditCard className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Transactions</span><span className="sm:hidden">Trans</span></TabsTrigger>
               <TabsTrigger value="users" className="text-xs md:text-sm whitespace-nowrap"><Users className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /> Users</TabsTrigger>
               <TabsTrigger value="vendors" className="text-xs md:text-sm whitespace-nowrap"><Store className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Vendors</span><span className="sm:hidden">Vend</span></TabsTrigger>
               <TabsTrigger value="notifications" className="text-xs md:text-sm whitespace-nowrap" data-testid="tab-notifications"><Bell className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Notifications</span><span className="sm:hidden">Notif</span></TabsTrigger>
