@@ -6,6 +6,7 @@ import { Check, X, Zap } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 
 interface Plan {
   id: string;
@@ -23,6 +24,7 @@ interface Plan {
 export default function PlanManagement() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [userType, setUserType] = useState<'user' | 'vendor'>('user');
   const [currentPlan, setCurrentPlan] = useState<any>(null);
 
@@ -54,30 +56,38 @@ export default function PlanManagement() {
     }
   }, [subscription]);
 
-  const handleUpgrade = async (planId: string) => {
+  const handleUpgrade = async (plan: Plan) => {
     if (!user?.uid) {
-      toast({ title: "Error", description: "User not found" });
+      toast({ title: "Error", description: "Please log in to subscribe" });
+      navigate('/auth/login');
       return;
     }
 
-    try {
-      const res = await fetch('/api/subscription/upgrade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.uid, planId })
-      });
+    // Navigate to payment page with plan details
+    const amount = parseFloat(plan.price || '0');
+    if (amount > 0) {
+      navigate(`/app/payment?type=subscription&planId=${plan.id}&amount=${amount}`);
+    } else {
+      // Free plan - subscribe directly
+      try {
+        const res = await fetch('/api/subscription/upgrade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.uid, planId: plan.id })
+        });
 
-      if (!res.ok) throw new Error('Failed to upgrade plan');
+        if (!res.ok) throw new Error('Failed to upgrade plan');
 
-      const data = await res.json();
-      toast({ title: "Success", description: data.message });
-      setCurrentPlan(data.subscription);
-    } catch (err) {
-      toast({ 
-        title: "Error", 
-        description: "Failed to upgrade plan",
-        variant: "destructive"
-      });
+        const data = await res.json();
+        toast({ title: "Success", description: data.message });
+        setCurrentPlan(data.subscription);
+      } catch (err) {
+        toast({ 
+          title: "Error", 
+          description: "Failed to upgrade plan",
+          variant: "destructive"
+        });
+      }
     }
   };
 
@@ -192,7 +202,7 @@ export default function PlanManagement() {
                   </Button>
                 ) : (
                   <Button 
-                    onClick={() => handleUpgrade(plan.id)}
+                    onClick={() => handleUpgrade(plan)}
                     className={`w-full ${
                       isFree 
                         ? 'bg-slate-200 hover:bg-slate-300 text-slate-900' 

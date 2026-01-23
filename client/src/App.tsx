@@ -24,6 +24,8 @@ import AdminDashboard from "@/pages/admin/AdminDashboard";
 import Login from "@/pages/auth/Login";
 import Settings from "@/pages/app/Settings";
 import Notifications from "@/pages/app/Notifications";
+import Credits from "@/pages/app/Credits";
+import Payment from "@/pages/app/Payment";
 
 function Router() {
   return (
@@ -76,6 +78,12 @@ function Router() {
       </Route>
       <Route path="/app/notifications">
         <AppLayout><Notifications /></AppLayout>
+      </Route>
+      <Route path="/app/credits">
+        <AppLayout><Credits /></AppLayout>
+      </Route>
+      <Route path="/app/payment">
+        <AppLayout><Payment /></AppLayout>
       </Route>
       <Route path="/admin" component={AdminDashboard} />
 

@@ -1,0 +1,203 @@
+import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Coins, Zap, CheckCircle2 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+
+interface CreditPlan {
+  id: string;
+  name: string;
+  credits: number;
+  price: number;
+  currency: string;
+  bonus?: number;
+  popular?: boolean;
+  features: string[];
+}
+
+export default function Credits() {
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+
+  // Fetch available credit plans from admin settings
+  const { data: creditPlans = [] } = useQuery<CreditPlan[]>({
+    queryKey: ['credit-plans'],
+    queryFn: async () => {
+      const res = await fetch('/api/plans?type=credit');
+      if (!res.ok) {
+        // Return default plans if API fails
+        return [
+          {
+            id: 'basic',
+            name: 'Starter Pack',
+            credits: 50,
+            price: 2000,
+            currency: 'NGN',
+            features: ['50 AI queries', 'Basic support', 'Valid for 30 days']
+          },
+          {
+            id: 'popular',
+            name: 'Popular Pack',
+            credits: 150,
+            price: 5000,
+            currency: 'NGN',
+            bonus: 20,
+            popular: true,
+            features: ['150 AI queries', '+20 bonus credits', 'Priority support', 'Valid for 30 days']
+          },
+          {
+            id: 'premium',
+            name: 'Premium Pack',
+            credits: 300,
+            price: 9000,
+            currency: 'NGN',
+            bonus: 50,
+            features: ['300 AI queries', '+50 bonus credits', 'Premium support', 'Valid for 60 days']
+          },
+          {
+            id: 'enterprise',
+            name: 'Enterprise Pack',
+            credits: 1000,
+            price: 25000,
+            currency: 'NGN',
+            bonus: 200,
+            features: ['1000 AI queries', '+200 bonus credits', '24/7 support', 'Valid for 90 days']
+          }
+        ];
+      }
+      return res.json();
+    }
+  });
+
+  const handlePurchase = (plan: CreditPlan) => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to purchase credits",
+        variant: "destructive"
+      });
+      navigate('/auth/login');
+      return;
+    }
+
+    // Navigate to payment page with plan details
+    navigate(`/app/payment?type=credit_purchase&planId=${plan.id}&amount=${plan.price}&credits=${plan.credits + (plan.bonus || 0)}`);
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-NG", {
+      style: "currency",
+      currency: "NGN",
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  return (
+    <div className="space-y-6 pb-20">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Coins className="h-7 w-7 text-amber-500" />
+            Get More Credits
+          </h2>
+          <p className="text-slate-500 text-sm md:text-base mt-1">
+            Purchase credits to access AI-powered features and services
+          </p>
+        </div>
+      </div>
+
+      {/* Credit Plans Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {creditPlans.map((plan) => (
+          <Card 
+            key={plan.id} 
+            className={`relative ${plan.popular ? 'border-2 border-amber-500 shadow-lg' : 'border-2 border-slate-200'}`}
+          >
+            {plan.popular && (
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <Badge className="bg-amber-500 text-white">
+                  <Zap className="h-3 w-3 mr-1" />
+                  Most Popular
+                </Badge>
+              </div>
+            )}
+            
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">{plan.name}</CardTitle>
+              <div className="mt-2">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-3xl font-bold">{formatCurrency(plan.price)}</span>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge variant="outline" className="text-amber-600 border-amber-300">
+                    {plan.credits} Credits
+                  </Badge>
+                  {plan.bonus && (
+                    <Badge className="bg-green-100 text-green-700 border-green-300">
+                      +{plan.bonus} Bonus
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              <ul className="space-y-2">
+                {plan.features.map((feature, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                    <span>{feature}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <Button 
+                onClick={() => handlePurchase(plan)}
+                className={`w-full ${plan.popular ? 'bg-amber-500 hover:bg-amber-600' : ''}`}
+              >
+                Purchase Now
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* How Credits Work */}
+      <Card className="border-2 border-blue-200 bg-blue-50/50">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Zap className="h-5 w-5 text-blue-600" />
+            How Credits Work
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+            <p><strong>AI Legal Queries:</strong> Each SabiDoctor AI query costs 1 credit</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+            <p><strong>Job Applications:</strong> Apply to premium jobs for 2 credits each</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+            <p><strong>Marketplace Listings:</strong> Feature your listing for 5 credits</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+            <p><strong>Earn Free Credits:</strong> Get credits by posting content, receiving likes, and referrals</p>
+          </div>
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+            <p><strong>No Expiry:</strong> Credits remain valid as long as your account is active</p>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

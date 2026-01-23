@@ -1142,6 +1142,56 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  // Pay with wallet balance
+  app.post("/api/payments/wallet-payment", userAuth, async (req, res) => {
+    try {
+      const { userId, amount, type, planId, credits } = req.body;
+      
+      if (!userId || !amount || !type) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      // Get wallet and check balance
+      const wallet = await storage.getWallet(userId);
+      if (!wallet) {
+        return res.status(404).json({ error: 'Wallet not found' });
+      }
+
+      const balance = parseFloat(wallet.balance);
+      if (balance < amount) {
+        return res.status(400).json({ error: 'Insufficient wallet balance' });
+      }
+
+      // Deduct from wallet
+      await storage.deductFromWallet(
+        userId,
+        amount,
+        type,
+        `WALLET-PAY-${Date.now()}`,
+        `Payment for ${type.replace('_', ' ')}`
+      );
+
+      // Process based on type
+      if (type === 'credit_purchase' && credits) {
+        // Add credits to user
+        const currentCredits = await storage.getUserCredits(userId);
+        await storage.setUserCredits(userId, currentCredits + credits);
+      } else if (type === 'subscription' && planId) {
+        // Activate subscription
+        await storage.createSubscription(userId, planId);
+      }
+
+      res.json({ 
+        success: true,
+        message: 'Payment successful',
+        newBalance: (balance - amount).toFixed(2)
+      });
+    } catch (error: any) {
+      console.error('Wallet payment error:', error);
+      res.status(500).json({ error: error.message || 'Payment failed' });
+    }
+  });
+
   // Admin: Approve manual payment
   app.post("/api/admin/payments/:paymentId/approve", adminAuth, async (req, res) => {
     try {

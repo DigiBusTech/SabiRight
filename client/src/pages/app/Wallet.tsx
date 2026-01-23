@@ -7,6 +7,7 @@ import { Wallet as WalletIcon, Plus, ArrowDownLeft, ArrowUpRight, Loader2, Refre
 import { useAuth } from "@/context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 
 const QUICK_AMOUNTS = [1000, 5000, 10000, 25000];
 
@@ -94,41 +95,16 @@ export default function Wallet() {
     },
   });
 
+  const [, navigate] = useLocation();
+
   const topUpMutation = useMutation({
     mutationFn: async (amount: number) => {
-      if (!user?.uid) throw new Error("Not authenticated");
-      const headers = await getAuthHeaders();
-      
-      // Create a pending payment instead of directly crediting wallet
-      const res = await fetch(`/api/payments/initiate`, {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          userId: user.uid,
-          amount,
-          currency: 'NGN',
-          provider: 'bank_transfer',
-          type: 'wallet_topup',
-          description: `Wallet top-up - NGN ${amount}`,
-          metadata: {
-            reference: `TOPUP-${Date.now()}`
-          }
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to initiate payment");
-      }
-      return res.json();
+      // Navigate to payment page instead of directly initiating
+      navigate(`/app/payment?type=wallet_topup&amount=${amount}`);
+      return { success: true };
     },
     onSuccess: () => {
-      toast({ 
-        title: "Payment Initiated", 
-        description: "Your payment request has been submitted. Please complete the bank transfer and wait for admin approval.",
-        duration: 5000
-      });
       setTopUpAmount("");
-      refetchPendingPayments();
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });

@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { 
   Settings, Users, CreditCard, MapPin, Calendar, Briefcase, Store, 
-  Shield, Key, CheckCircle2, XCircle, Eye, EyeOff, Save, Bell, Mail, Trash2, Plus, Edit
+  Shield, Key, CheckCircle2, XCircle, Eye, EyeOff, Save, Bell, Mail, Trash2, Plus, Edit, Building2
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -597,6 +597,55 @@ export default function AdminDashboard() {
                         ? 'Payments are processed automatically via payment gateways'
                         : 'Admin manually confirms payments after verification'}
                     </p>
+                  </div>
+
+                  {/* Bank Transfer Details */}
+                  <div className="p-4 border rounded-lg">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Building2 className="h-5 w-5 text-green-600" />
+                      <p className="font-bold">Bank Transfer Details</p>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-3">Configure bank account details for manual payments</p>
+                    <div className="space-y-3">
+                      <div>
+                        <Label htmlFor="bank_name" className="text-xs">Bank Name</Label>
+                        <Input
+                          id="bank_name"
+                          value={localSettings['bank_name'] ?? getSetting('bank_name')}
+                          onChange={(e) => handleSettingChange('bank_name', e.target.value)}
+                          placeholder="e.g., GTBank"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="account_number" className="text-xs">Account Number</Label>
+                        <Input
+                          id="account_number"
+                          value={localSettings['account_number'] ?? getSetting('account_number')}
+                          onChange={(e) => handleSettingChange('account_number', e.target.value)}
+                          placeholder="e.g., 0123456789"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="account_name" className="text-xs">Account Name</Label>
+                        <Input
+                          id="account_name"
+                          value={localSettings['account_name'] ?? getSetting('account_name')}
+                          onChange={(e) => handleSettingChange('account_name', e.target.value)}
+                          placeholder="e.g., SabiRight Technologies"
+                        />
+                      </div>
+                      <Button 
+                        onClick={() => {
+                          handleSaveSetting('bank_name', 'bank_details', false);
+                          handleSaveSetting('account_number', 'bank_details', false);
+                          handleSaveSetting('account_name', 'bank_details', false);
+                        }}
+                        className="w-full"
+                      >
+                        <Save className="h-4 w-4 mr-2" />
+                        Save Bank Details
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>
