@@ -921,13 +921,15 @@ export class FirestoreStorage implements IStorage {
     const wallet = await this.getWallet(userId);
     if (!wallet) return [];
     
+    // Fetch without orderBy to avoid index requirement, then sort in memory
     const snapshot = await collections.walletTransactions()
       .where('walletId', '==', wallet.id)
-      .orderBy('createdAt', 'desc')
-      .limit(limit)
       .get();
     
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as WalletTransaction));
+    return snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as WalletTransaction))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, limit);
   }
 
   async deductFromWallet(userId: string, amount: number, type: string, reference?: string, description?: string): Promise<WalletTransaction | null> {
