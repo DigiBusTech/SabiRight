@@ -78,6 +78,16 @@ export default function Payment() {
     }
   });
 
+  // Fetch active payment methods from admin
+  const { data: paymentMethods = [] } = useQuery({
+    queryKey: ['payment-methods'],
+    queryFn: async () => {
+      const res = await fetch('/api/payment-methods');
+      if (!res.ok) return [];
+      return res.json();
+    }
+  });
+
   const paymentMode = paymentSettings?.payment_mode || 'automatic';
   const stripeEnabled = paymentSettings?.stripe_enabled === 'true';
   const paystackEnabled = paymentSettings?.paystack_enabled === 'true';
@@ -325,7 +335,7 @@ export default function Payment() {
           <CardContent>
             <RadioGroup value={selectedMethod} onValueChange={setSelectedMethod}>
               <div className="space-y-3">
-                {/* Paystack */}
+                {/* Automatic Gateways */}
                 {paystackEnabled && (
                   <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-slate-50">
                     <RadioGroupItem value="paystack" />
@@ -338,7 +348,6 @@ export default function Payment() {
                   </label>
                 )}
 
-                {/* Stripe */}
                 {stripeEnabled && (
                   <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-slate-50">
                     <RadioGroupItem value="stripe" />
@@ -351,7 +360,6 @@ export default function Payment() {
                   </label>
                 )}
 
-                {/* Flutterwave */}
                 {flutterwaveEnabled && (
                   <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-slate-50">
                     <RadioGroupItem value="flutterwave" />
@@ -364,20 +372,63 @@ export default function Payment() {
                   </label>
                 )}
 
-                {/* Bank Transfer (Manual) */}
-                <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-slate-50">
-                  <RadioGroupItem value="bank_transfer" />
-                  <Building2 className="h-5 w-5 text-green-600" />
-                  <div className="flex-1">
-                    <p className="font-bold">Bank Transfer</p>
-                    <p className="text-xs text-slate-500">Direct bank transfer - Manual verification</p>
-                  </div>
-                  <Badge variant="outline">1-24 hrs</Badge>
-                </label>
+                {/* Dynamic Manual Payment Methods from Admin */}
+                {paymentMethods.map((method: any) => (
+                  <label key={method.id} className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-slate-50">
+                    <RadioGroupItem value={method.id} />
+                    <Building2 className="h-5 w-5 text-green-600" />
+                    <div className="flex-1">
+                      <p className="font-bold">{method.name}</p>
+                      <p className="text-xs text-slate-500">{method.description}</p>
+                    </div>
+                    <Badge variant="outline">Manual</Badge>
+                  </label>
+                ))}
               </div>
             </RadioGroup>
 
-            {/* Bank Transfer Instructions */}
+            {/* Dynamic Payment Method Instructions and Custom Fields */}
+            {selectedMethod && paymentMethods.find((m: any) => m.id === selectedMethod) && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                {(() => {
+                  const method = paymentMethods.find((m: any) => m.id === selectedMethod);
+                  return (
+                    <>
+                      <p className="font-bold text-sm mb-2">📋 Payment Instructions:</p>
+                      <p className="text-sm whitespace-pre-wrap mb-3">{method.instructions}</p>
+                      
+                      {/* Custom Fields */}
+                      {method.fields && method.fields.length > 0 && (
+                        <div className="space-y-2 mt-3">
+                          <p className="font-bold text-sm">Required Information:</p>
+                          {method.fields.map((field: any, idx: number) => (
+                            <div key={idx}>
+                              <Label>{field.name} {field.required && '*'}</Label>
+                              {field.type === 'file' ? (
+                                <Input type="file" required={field.required} className="mt-1" />
+                              ) : (
+                                <Input 
+                                  type="text" 
+                                  placeholder={field.placeholder} 
+                                  required={field.required}
+                                  className="mt-1"
+                                />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <p className="text-xs text-blue-700 mt-3">
+                        ⏳ Your payment will be verified and credited after admin approval.
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Legacy Bank Transfer Instructions (for backward compatibility) */}
             {selectedMethod === 'bank_transfer' && bankDetails && (
               <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <p className="font-bold text-sm mb-2">📋 Bank Transfer Instructions:</p>

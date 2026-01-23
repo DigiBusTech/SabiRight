@@ -24,11 +24,11 @@ export default function Credits() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  // Fetch available credit plans from admin settings
+  // Fetch available credit packages from admin settings
   const { data: creditPlans = [] } = useQuery<CreditPlan[]>({
-    queryKey: ['credit-plans'],
+    queryKey: ['credit-packages'],
     queryFn: async () => {
-      const res = await fetch('/api/plans?type=credit');
+      const res = await fetch('/api/credit-packages');
       if (!res.ok) {
         // Return default plans if API fails
         return [
@@ -70,7 +70,17 @@ export default function Credits() {
           }
         ];
       }
-      return res.json();
+      const packages = await res.json();
+      // Map packages to include features array and currency
+      return packages.map((pkg: any) => ({
+        ...pkg,
+        currency: 'NGN',
+        features: [
+          `${pkg.credits} credits`,
+          pkg.bonus > 0 ? `+${pkg.bonus} bonus credits` : null,
+          pkg.description || 'Full platform access'
+        ].filter(Boolean)
+      }));
     }
   });
 
