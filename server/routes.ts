@@ -1142,6 +1142,76 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
+  // Admin: Approve manual payment
+  app.post("/api/admin/payments/:paymentId/approve", adminAuth, async (req, res) => {
+    try {
+      const { paymentId } = req.params;
+      
+      // Get payment details
+      const payment = await storage.getPaymentById(paymentId);
+      if (!payment) {
+        return res.status(404).json({ error: 'Payment not found' });
+      }
+      
+      if (payment.status !== 'pending') {
+        return res.status(400).json({ error: 'Payment is not pending' });
+      }
+      
+      // Update payment status to completed
+      await storage.updatePaymentStatus(paymentId, 'completed');
+      
+      // Credit user based on payment type
+      if (payment.type === 'wallet_topup') {
+        await storage.topUpWallet(
+          payment.userId, 
+          payment.amount, 
+          payment.providerRef || paymentId,
+          `Wallet top-up - ${payment.description || 'Manual approval'}`
+        );
+      } else if (payment.type === 'credit_purchase' && payment.metadata?.credits) {
+        const userCredits = await storage.getUserCredits(payment.userId);
+        const currentTotal = userCredits?.totalCredits || 0;
+        await storage.setUserCredits(payment.userId, currentTotal + payment.metadata.credits);
+      }
+      
+      res.json({ success: true, message: 'Payment approved and credited' });
+    } catch (error) {
+      console.error('Error approving payment:', error);
+      res.status(500).json({ error: 'Failed to approve payment' });
+    }
+  });
+
+  // Admin: Reject manual payment
+  app.post("/api/admin/payments/:paymentId/reject", adminAuth, async (req, res) => {
+    try {
+      const { paymentId } = req.params;
+      const { reason } = req.body;
+      
+      // Get payment details
+      const payment = await storage.getPaymentById(paymentId);
+      if (!payment) {
+        return res.status(404).json({ error: 'Payment not found' });
+      }
+      
+      if (payment.status !== 'pending') {
+        return res.status(400).json({ error: 'Payment is not pending' });
+      }
+      
+      // Update payment status to failed
+      await storage.updatePaymentStatus(paymentId, 'failed');
+      
+      // Store rejection reason
+      if (reason) {
+        await storage.updatePayment(paymentId, { rejectionReason: reason });
+      }
+      
+      res.json({ success: true, message: 'Payment rejected' });
+    } catch (error) {
+      console.error('Error rejecting payment:', error);
+      res.status(500).json({ error: 'Failed to reject payment' });
+    }
+  });
+
   // Subscriptions
   app.get("/api/subscription/:userId", async (req, res) => {
     const { userId } = req.params;

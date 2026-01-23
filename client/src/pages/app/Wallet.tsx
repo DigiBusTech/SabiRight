@@ -65,6 +65,18 @@ export default function Wallet() {
     enabled: !!user?.uid && !!wallet,
   });
 
+  const { data: pendingPayments = [], refetch: refetchPendingPayments } = useQuery({
+    queryKey: [`pending-payments-${user?.uid}`],
+    queryFn: async () => {
+      if (!user?.uid) return [];
+      const res = await fetch(`/api/payments?userId=${user.uid}`);
+      if (!res.ok) return [];
+      const allPayments = await res.json();
+      return allPayments.filter((p: any) => p.status === 'pending');
+    },
+    enabled: !!user?.uid,
+  });
+
   const createWalletMutation = useMutation({
     mutationFn: async () => {
       if (!user?.uid) throw new Error("Not authenticated");
@@ -86,23 +98,37 @@ export default function Wallet() {
     mutationFn: async (amount: number) => {
       if (!user?.uid) throw new Error("Not authenticated");
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/wallet/${user.uid}/topup`, {
+      
+      // Create a pending payment instead of directly crediting wallet
+      const res = await fetch(`/api/payments/initiate`, {
         method: "POST",
         headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ 
+          userId: user.uid,
+          amount,
+          currency: 'NGN',
+          provider: 'bank_transfer',
+          type: 'wallet_topup',
+          description: `Wallet top-up - NGN ${amount}`,
+          metadata: {
+            reference: `TOPUP-${Date.now()}`
+          }
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to top up");
+        throw new Error(data.error || "Failed to initiate payment");
       }
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Success", description: "Wallet topped up successfully!" });
+      toast({ 
+        title: "Payment Initiated", 
+        description: "Your payment request has been submitted. Please complete the bank transfer and wait for admin approval.",
+        duration: 5000
+      });
       setTopUpAmount("");
-      refetchWallet();
-      refetchTransactions();
-      queryClient.invalidateQueries({ queryKey: [`wallet-${user?.uid}`] });
+      refetchPendingPayments();
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -278,6 +304,53 @@ export default function Wallet() {
           </div>
         </CardContent>
       </Card>
+
+      {pendingPayments.length > 0 && (
+        <Card className="border-2 border-yellow-200 bg-yellow-50/50 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg font-bold flex items-center gap-2">
+              <div className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+              Pending Payments
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {pendingPayments.map((payment: any) => (
+                <div key={payment.id} className="p-4 bg-white rounded-lg border border-yellow-200">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="font-bold text-sm">{payment.type.replace('_', ' ').toUpperCase()}</p>
+                      <p className="text-xs text-slate-500">{payment.description}</p>
+                    </div>
+                    <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                      Pending Approval
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                    <p className="text-xs text-slate-500">
+                      Ref: {payment.metadata?.reference || payment.id}
+                    </p>
+                    <p className="font-bold text-lg">{payment.currency} {payment.amount}</p>
+                  </div>
+                  <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                    <p className="text-xs font-medium text-blue-900 mb-1">📋 Payment Instructions:</p>
+                    <p className="text-xs text-blue-800">
+                      Transfer <strong>{payment.currency} {payment.amount}</strong> to:<br />
+                      <strong>Bank:</strong> GTBank<br />
+                      <strong>Account:</strong> 0123456789<br />
+                      <strong>Name:</strong> SabiRight Technologies<br />
+                      <strong>Reference:</strong> {payment.metadata?.reference || payment.id}
+                    </p>
+                    <p className="text-xs text-blue-700 mt-2">
+                      ⏳ Your payment will be credited after admin verification.
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-2 border-slate-200 shadow-sm">
         <CardHeader className="pb-2">

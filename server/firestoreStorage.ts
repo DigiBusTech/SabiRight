@@ -670,15 +670,29 @@ export class FirestoreStorage implements IStorage {
 
   async createPayment(payment: any): Promise<Payment> {
     const id = crypto.randomUUID();
-    const newPayment = { ...payment, id, createdAt: new Date().toISOString() };
+    const newPayment = { 
+      ...payment, 
+      id, 
+      status: payment.status || 'pending',
+      createdAt: new Date().toISOString() 
+    };
     await collections.payments().doc(id).set(newPayment);
     return newPayment as Payment;
+  }
+
+  async getPaymentById(paymentId: string): Promise<Payment | null> {
+    const doc = await collections.payments().doc(paymentId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } as Payment : null;
   }
 
   async updatePaymentStatus(paymentId: string, status: string, providerRef?: string): Promise<void> {
     const update: any = { status };
     if (providerRef) update.providerRef = providerRef;
     await collections.payments().doc(paymentId).update(update);
+  }
+
+  async updatePayment(paymentId: string, updates: any): Promise<void> {
+    await collections.payments().doc(paymentId).update(updates);
   }
 
   async getAllUsers(): Promise<UserProfile[]> {

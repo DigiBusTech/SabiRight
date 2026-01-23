@@ -290,6 +290,39 @@ export default function AdminDashboard() {
     }
   });
 
+  const approvePayment = useMutation({
+    mutationFn: async (paymentId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/payments/${paymentId}/approve`, {
+        method: 'POST',
+        headers
+      });
+      if (!res.ok) throw new Error('Failed to approve payment');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+      toast({ title: "Approved", description: "Payment approved and credited" });
+    }
+  });
+
+  const rejectPayment = useMutation({
+    mutationFn: async ({ paymentId, reason }: { paymentId: string; reason?: string }) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/payments/${paymentId}/reject`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ reason })
+      });
+      if (!res.ok) throw new Error('Failed to reject payment');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-payments'] });
+      toast({ title: "Rejected", description: "Payment rejected" });
+    }
+  });
+
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [creditAmount, setCreditAmount] = useState("");
   const [newPlan, setNewPlan] = useState({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '' });
@@ -956,23 +989,66 @@ export default function AdminDashboard() {
                 ) : (
                   <div className="space-y-3">
                     {payments.map((payment: any) => (
-                      <div key={payment.id} className="p-3 md:p-4 border rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div>
-                          <p className="font-bold text-sm">{payment.type}</p>
-                          <p className="text-xs md:text-sm text-slate-500">{payment.description}</p>
-                          <p className="text-[10px] md:text-xs text-slate-400">
-                            {new Date(payment.createdAt).toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="text-left sm:text-right flex sm:flex-col items-center sm:items-end gap-2 sm:gap-0">
-                          <p className="font-bold text-base md:text-lg">{payment.currency} {payment.amount}</p>
-                          <Badge className={
-                            payment.status === 'completed' ? 'bg-green-100 text-green-800' :
-                            payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }>
-                            {payment.status}
-                          </Badge>
+                      <div key={payment.id} className="p-3 md:p-4 border rounded-lg">
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-bold text-sm">{payment.type}</p>
+                              <Badge className={
+                                payment.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                payment.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-red-100 text-red-800'
+                              }>
+                                {payment.status}
+                              </Badge>
+                            </div>
+                            <p className="text-xs md:text-sm text-slate-500">{payment.description}</p>
+                            <p className="text-[10px] md:text-xs text-slate-400 mt-1">
+                              {new Date(payment.createdAt).toLocaleString()}
+                            </p>
+                            {payment.metadata && (
+                              <div className="mt-2 text-xs text-slate-600">
+                                {payment.metadata.credits && <p>Credits: {payment.metadata.credits}</p>}
+                                {payment.metadata.reference && <p>Ref: {payment.metadata.reference}</p>}
+                              </div>
+                            )}
+                            {payment.rejectionReason && (
+                              <p className="mt-2 text-xs text-red-600">Reason: {payment.rejectionReason}</p>
+                            )}
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <p className="font-bold text-base md:text-lg">{payment.currency} {payment.amount}</p>
+                            {payment.status === 'pending' && (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  className="bg-green-600 hover:bg-green-700"
+                                  onClick={() => {
+                                    if (confirm(`Approve payment of ${payment.currency} ${payment.amount} for ${payment.type}?`)) {
+                                      approvePayment.mutate(payment.id);
+                                    }
+                                  }}
+                                >
+                                  <CheckCircle2 className="h-4 w-4 mr-1" />
+                                  Approve
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => {
+                                    const reason = prompt('Rejection reason (optional):');
+                                    if (reason !== null) {
+                                      rejectPayment.mutate({ paymentId: payment.id, reason });
+                                    }
+                                  }}
+                                >
+                                  <XCircle className="h-4 w-4 mr-1" />
+                                  Reject
+                                </Button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))}
