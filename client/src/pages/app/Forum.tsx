@@ -28,6 +28,9 @@ interface Post {
     upvotes: number;
     downvotes: number;
     flagged?: boolean;
+    flagCount?: number;
+    flaggedBy?: string[];
+    shadowedForReview?: boolean;
     comments: Comment[];
     upvotedBy?: string[];
     timestamp: any;
@@ -69,6 +72,9 @@ export default function Forum() {
               downvotes: 0,
               comments: [],
               flagged: false,
+              flagCount: 0,
+              flaggedBy: [],
+              shadowedForReview: false,
               upvotedBy: [],
               timestamp: serverTimestamp()
           });
@@ -130,11 +136,40 @@ export default function Forum() {
 
   const handleFlag = async (postId: string) => {
       if (!user) return;
+      
+      // Check if user already flagged this post
+      const post = posts.find(p => p.id === postId);
+      if (post?.flaggedBy?.includes(user.uid)) {
+          toast({ title: "Already Flagged", description: "You have already flagged this post." });
+          return;
+      }
+      
       if (!confirm("Flag this post as inappropriate?")) return;
       
-      const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', postId);
-      await updateDoc(postRef, { flagged: true });
-      toast({ title: "Flagged", description: "Post has been reported for review." });
+      try {
+          const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', postId);
+          
+          // Add user to flaggedBy array and increment flagCount
+          await updateDoc(postRef, {
+              flaggedBy: arrayUnion(user.uid),
+              flagCount: increment(1)
+          });
+          
+          // Check if we need to shadow the post (10+ flags)
+          const currentFlagCount = (post?.flagCount || 0) + 1;
+          if (currentFlagCount >= 10) {
+              await updateDoc(postRef, {
+                  shadowedForReview: true,
+                  flagged: true
+              });
+              toast({ title: "Post Shadowed", description: "This post has been hidden for admin review due to multiple flags." });
+          } else {
+              toast({ title: "Flagged", description: `Post has been reported for review. (${currentFlagCount}/10 flags)` });
+          }
+      } catch (err) {
+          console.error("Error flagging post", err);
+          toast({ title: "Error", description: "Failed to flag post.", variant: "destructive" });
+      }
   };
 
   const handleDelete = async (postId: string) => {
@@ -192,7 +227,9 @@ export default function Forum() {
       </Card>
 
       <div className="grid gap-4">
-        {posts.map((post) => (
+        {posts
+          .filter(post => !post.shadowedForReview) // Hide shadowed posts from regular users
+          .map((post) => (
           <Card key={post.id} className={cn("transition-colors", post.flagged ? "bg-red-50 border-red-100" : "hover:border-primary/50")}>
             <CardContent className="p-6">
               <div className="flex gap-4">

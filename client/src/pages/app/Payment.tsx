@@ -128,20 +128,35 @@ export default function Payment() {
     }
   });
 
-  const paymentMode = paymentSettings?.payment_mode || 'automatic';
-  // Handle both string and boolean values for enabled flags
-  const stripeEnabled = paymentSettings?.stripe_enabled === 'true' || paymentSettings?.stripe_enabled === true;
-  const paystackEnabled = paymentSettings?.paystack_enabled === 'true' || paymentSettings?.paystack_enabled === true;
-  const flutterwaveEnabled = paymentSettings?.flutterwave_enabled === 'true' || paymentSettings?.flutterwave_enabled === true;
+  // Parse enabled flags - handle string, boolean, or missing values
+  const parseEnabled = (value: any): boolean => {
+    if (value === true || value === 'true' || value === '1') return true;
+    return false;
+  };
+
+  const stripeEnabled = parseEnabled(paymentSettings?.stripe_enabled);
+  const paystackEnabled = parseEnabled(paymentSettings?.paystack_enabled);
+  const flutterwaveEnabled = parseEnabled(paymentSettings?.flutterwave_enabled);
+
+  // Count total active payment methods
+  const totalActiveMethods = (
+    (stripeEnabled ? 1 : 0) +
+    (paystackEnabled ? 1 : 0) +
+    (flutterwaveEnabled ? 1 : 0) +
+    paymentMethods.length
+  );
 
   // Debug: Log payment settings and methods
   useEffect(() => {
-    console.log('Payment Settings:', paymentSettings);
-    console.log('Stripe Enabled:', stripeEnabled);
-    console.log('Paystack Enabled:', paystackEnabled);
-    console.log('Flutterwave Enabled:', flutterwaveEnabled);
-    console.log('Payment Methods:', paymentMethods);
-  }, [paymentSettings, paymentMethods, stripeEnabled, paystackEnabled, flutterwaveEnabled]);
+    console.log('=== PAYMENT PAGE DEBUG ===');
+    console.log('Raw Payment Settings:', paymentSettings);
+    console.log('Stripe Enabled:', stripeEnabled, '(raw:', paymentSettings?.stripe_enabled, ')');
+    console.log('Paystack Enabled:', paystackEnabled, '(raw:', paymentSettings?.paystack_enabled, ')');
+    console.log('Flutterwave Enabled:', flutterwaveEnabled, '(raw:', paymentSettings?.flutterwave_enabled, ')');
+    console.log('Manual Payment Methods:', paymentMethods);
+    console.log('Total Active Methods:', totalActiveMethods);
+    console.log('========================');
+  }, [paymentSettings, paymentMethods, stripeEnabled, paystackEnabled, flutterwaveEnabled, totalActiveMethods]);
 
   const walletBalance = wallet ? parseFloat(wallet.balance) : 0;
   const canPayWithWallet = walletBalance >= amount;
@@ -555,12 +570,15 @@ export default function Payment() {
                 ))}
 
                 {/* Empty State */}
-                {!paystackEnabled && !stripeEnabled && !flutterwaveEnabled && paymentMethods.length === 0 && (
+                {totalActiveMethods === 0 && (
                   <div className="p-8 text-center border-2 border-dashed rounded-lg">
                     <Building2 className="h-12 w-12 mx-auto text-slate-300 mb-3" />
                     <p className="font-bold text-slate-600 mb-1">No Payment Methods Available</p>
                     <p className="text-sm text-slate-500">
                       Please contact the administrator to enable payment methods.
+                    </p>
+                    <p className="text-xs text-slate-400 mt-2">
+                      Debug: Check browser console for details
                     </p>
                   </div>
                 )}

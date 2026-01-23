@@ -799,9 +799,22 @@ export class FirestoreStorage implements IStorage {
   }
 
   async getVendorBookings(vendorId: string): Promise<any[]> {
-    const snapshot = await collections.vendorBookings().where('vendorId', '==', vendorId).get();
+    // Get bookings from the main bookings collection (escrow system)
+    const snapshot = await collections.bookings().where('vendorId', '==', vendorId).get();
     return snapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          customerName: data.customerName || data.buyerName || 'Unknown',
+          service: data.serviceName || data.serviceType || 'Service',
+          date: data.scheduledDate || data.createdAt,
+          time: data.scheduledTime || '',
+          status: data.status || 'pending',
+          amount: parseFloat(data.amount || 0),
+          ...data
+        };
+      })
       .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
@@ -816,20 +829,61 @@ export class FirestoreStorage implements IStorage {
     await collections.vendorBookings().doc(bookingId).update(updates);
   }
 
-  async getVendorStats(vendorId: string): Promise<{ leads: number; bookings: number; earnings: number }> {
-    const leadsSnapshot = await collections.vendorLeads().where('vendorId', '==', vendorId).get();
-    const bookingsSnapshot = await collections.vendorBookings().where('vendorId', '==', vendorId).where('status', '==', 'completed').get();
+  async getVendorStats(vendorId: string): Promise<{ totalLeads: number; totalBookings: number; totalEarnings: number; thisMonthLeads: number; thisMonthBookings: number; thisMonthEarnings: number }> {
+    // Get all bookings for this vendor
+    const allBookingsSnapshot = await collections.bookings().where('vendorId', '==', vendorId).get();
     
-    let earnings = 0;
-    bookingsSnapshot.docs.forEach(doc => {
+    // Calculate totals
+    let totalBookings = 0;
+    let totalEarnings = 0;
+    let thisMonthBookings = 0;
+    let thisMonthEarnings = 0;
+    
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    allBookingsSnapshot.docs.forEach(doc => {
       const data = doc.data();
-      earnings += data.amount || 0;
+      const amount = parseFloat(data.amount || 0);
+      const createdAt = data.createdAt?.toDate?.() || new Date(data.createdAt);
+      
+      // Count all bookings
+      totalBookings++;
+      
+      // Only count completed bookings for earnings
+      if (data.status === 'completed' || data.status === 'released') {
+        totalEarnings += amount;
+      }
+      
+      // This month stats
+      if (createdAt >= firstDayOfMonth) {
+        thisMonthBookings++;
+        if (data.status === 'completed' || data.status === 'released') {
+          thisMonthEarnings += amount;
+        }
+      }
+    });
+    
+    // Count leads (service inquiries) - these are stored separately
+    const leadsSnapshot = await collections.vendorLeads().where('vendorId', '==', vendorId).get();
+    let totalLeads = leadsSnapshot.size;
+    let thisMonthLeads = 0;
+    
+    leadsSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const createdAt = data.createdAt?.toDate?.() || new Date(data.createdAt);
+      if (createdAt >= firstDayOfMonth) {
+        thisMonthLeads++;
+      }
     });
 
     return {
-      leads: leadsSnapshot.size,
-      bookings: bookingsSnapshot.size,
-      earnings
+      totalLeads,
+      totalBookings,
+      totalEarnings,
+      thisMonthLeads,
+      thisMonthBookings,
+      thisMonthEarnings
     };
   }
 
