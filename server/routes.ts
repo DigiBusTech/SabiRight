@@ -1660,6 +1660,248 @@ export async function registerRoutes(
     res.json(dispute);
   });
 
+  // ===== SabiGuard, SabiMove, SabiWork Service Endpoints =====
+
+  // ===== SabiGuard, SabiMove, SabiWork Service Endpoints =====
+  // These endpoints integrate with the credit system
+  
+  // SabiGuard - AI Legal Assistant
+  app.post("/api/sabiguard/query", userAuth, async (req, res) => {
+    try {
+      const { userId, query } = req.body;
+  
+      if (!query) {
+        return res.status(400).json({ error: "Query is required" });
+      }
+  
+      // Check and deduct credits
+      const userCredits = await storage.getUserCredits(userId);
+      const sabiguardCost = 5; // 5 credits per query
+  
+      if (!userCredits || userCredits.balance < sabiguardCost) {
+        return res.status(400).json({ 
+          error: "Insufficient credits", 
+          required: sabiguardCost,
+          available: userCredits?.balance || 0
+        });
+      }
+  
+      // Deduct credits
+      await storage.deductCredits(userId, sabiguardCost, "SabiGuard query", null);
+  
+      // Call Gemini API (placeholder - implement actual API call)
+      const response = {
+        answer: "This is a placeholder response. Implement Gemini API integration here.",
+        query,
+        timestamp: new Date().toISOString()
+      };
+  
+      // Send notification
+      await storage.sendNotification({
+        userId,
+        type: "service_used",
+        title: "SabiGuard Query Processed",
+        message: `${sabiguardCost} credits deducted. Remaining: ${userCredits.balance - sabiguardCost}`,
+        data: { service: "sabiguard", creditsDeducted: sabiguardCost }
+      });
+  
+      res.json({ 
+        success: true, 
+        response,
+        creditsRemaining: userCredits.balance - sabiguardCost
+      });
+    } catch (error: any) {
+      console.error("[SabiGuard] Error processing query:", error);
+      res.status(500).json({ error: error.message || "Failed to process query" });
+    }
+  });
+  
+  // Get SabiGuard query history
+  app.get("/api/sabiguard/history/:userId", userAuth, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const history = await storage.getCreditLog(userId, 50);
+      const sabiguardHistory = history.filter(log => log.description?.includes("SabiGuard"));
+      res.json(sabiguardHistory);
+    } catch (error: any) {
+      console.error("[SabiGuard] Error fetching history:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch history" });
+    }
+  });
+  
+  // SabiMove - Route Planning with Traffic Alerts
+  app.post("/api/sabimove/route", userAuth, async (req, res) => {
+    try {
+      const { userId, origin, destination, waypoints } = req.body;
+  
+      if (!origin || !destination) {
+        return res.status(400).json({ error: "Origin and destination are required" });
+      }
+  
+      // Check and deduct credits
+      const userCredits = await storage.getUserCredits(userId);
+      const sabimoveCost = 3; // 3 credits per route
+  
+      if (!userCredits || userCredits.balance < sabimoveCost) {
+        return res.status(400).json({ 
+          error: "Insufficient credits",
+          required: sabimoveCost,
+          available: userCredits?.balance || 0
+        });
+      }
+  
+      // Deduct credits
+      await storage.deductCredits(userId, sabimoveCost, "SabiMove route planning", null);
+  
+      // Create route (uses existing route storage)
+      const route = await storage.createRoute({
+        userId,
+        origin,
+        destination,
+        waypoints: waypoints || [],
+        status: "active",
+        createdAt: new Date()
+      });
+  
+      // Send notification
+      await storage.sendNotification({
+        userId,
+        type: "service_used",
+        title: "SabiMove Route Created",
+        message: `${sabimoveCost} credits deducted. Remaining: ${userCredits.balance - sabimoveCost}`,
+        data: { service: "sabimove", routeId: route.id, creditsDeducted: sabimoveCost }
+      });
+  
+      res.json({ 
+        success: true, 
+        route,
+        creditsRemaining: userCredits.balance - sabimoveCost
+      });
+    } catch (error: any) {
+      console.error("[SabiMove] Error creating route:", error);
+      res.status(500).json({ error: error.message || "Failed to create route" });
+    }
+  });
+  
+  // Get SabiMove route history
+  app.get("/api/sabimove/history/:userId", userAuth, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const routes = await storage.getUserRoutes(userId);
+      res.json(routes);
+    } catch (error: any) {
+      console.error("[SabiMove] Error fetching history:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch history" });
+    }
+  });
+  
+  // SabiWork - Job Matching and Recommendations
+  app.post("/api/sabiwork/recommendations", userAuth, async (req, res) => {
+    try {
+      const { userId, skills, location, jobType } = req.body;
+  
+      // Check and deduct credits
+      const userCredits = await storage.getUserCredits(userId);
+      const sabiworkCost = 2; // 2 credits per recommendation request
+  
+      if (!userCredits || userCredits.balance < sabiworkCost) {
+        return res.status(400).json({ 
+          error: "Insufficient credits",
+          required: sabiworkCost,
+          available: userCredits?.balance || 0
+        });
+      }
+  
+      // Deduct credits
+      await storage.deductCredits(userId, sabiworkCost, "SabiWork job recommendations", null);
+  
+      // Get job recommendations (uses existing vendor services)
+      const allServices = await storage.getVendorServices();
+      const recommendations = allServices.filter(service => 
+        service.category === "jobs" || service.type === "job_posting"
+      ).slice(0, 10);
+  
+      // Send notification
+      await storage.sendNotification({
+        userId,
+        type: "service_used",
+        title: "SabiWork Recommendations Generated",
+        message: `${sabiworkCost} credits deducted. Remaining: ${userCredits.balance - sabiworkCost}`,
+        data: { service: "sabiwork", count: recommendations.length, creditsDeducted: sabiworkCost }
+      });
+  
+      res.json({ 
+        success: true, 
+        recommendations,
+        creditsRemaining: userCredits.balance - sabiworkCost
+      });
+    } catch (error: any) {
+      console.error("[SabiWork] Error generating recommendations:", error);
+      res.status(500).json({ error: error.message || "Failed to generate recommendations" });
+    }
+  });
+  
+  // Apply for a job through SabiWork
+  app.post("/api/sabiwork/apply", userAuth, async (req, res) => {
+    try {
+      const { userId, serviceId, coverLetter, resume } = req.body;
+  
+      if (!serviceId) {
+        return res.status(400).json({ error: "Service ID is required" });
+      }
+  
+      // Create a booking for the job application
+      const service = await storage.getVendorServiceById(serviceId);
+      if (!service) {
+        return res.status(404).json({ error: "Job not found" });
+      }
+  
+      const booking = await storage.createBooking({
+        userId,
+        vendorId: service.vendorId,
+        serviceId,
+        status: "pending",
+        coverLetter,
+        resume,
+        createdAt: new Date()
+      });
+  
+      // Send notification to both user and vendor
+      await storage.sendNotification({
+        userId,
+        type: "job_application",
+        title: "Job Application Submitted",
+        message: `Your application for "${service.title}" has been submitted`,
+        data: { bookingId: booking.id, serviceId }
+      });
+  
+      await storage.sendNotification({
+        userId: service.vendorId,
+        type: "job_application",
+        title: "New Job Application",
+        message: `You have a new application for "${service.title}"`,
+        data: { bookingId: booking.id, applicantId: userId }
+      });
+  
+      res.json({ success: true, booking });
+    } catch (error: any) {
+      console.error("[SabiWork] Error submitting application:", error);
+      res.status(500).json({ error: error.message || "Failed to submit application" });
+    }
+  });
+  
+  // Get SabiWork application history
+  app.get("/api/sabiwork/history/:userId", userAuth, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const history = await storage.getCreditLog(userId, 50);
+      const sabiworkHistory = history.filter(log => log.description?.includes("SabiWork"));
+      res.json(sabiworkHistory);
+    } catch (error: any) {
+      console.error("[SabiWork] Error fetching history:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch history" });
+    }
+  });
   // ===== Notification API =====
 
   // Get user notifications
