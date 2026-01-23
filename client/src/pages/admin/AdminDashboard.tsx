@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { 
   Settings, Users, CreditCard, MapPin, Calendar, Briefcase, Store, 
   Shield, Key, CheckCircle2, XCircle, Eye, EyeOff, Save, Bell, Mail, Trash2, Plus, Edit, Building2, Coins,
-  BarChart3, Download, FileSpreadsheet, FileText
+  BarChart3, Download, FileSpreadsheet, FileText, Flag
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -431,6 +431,49 @@ export default function AdminDashboard() {
     }
   });
 
+  // Flagged Posts Query
+  const { data: flaggedPosts = [] } = useQuery({
+    queryKey: ['admin-flagged-posts'],
+    queryFn: async () => {
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/flagged-posts', { headers });
+      return res.ok ? res.json() : [];
+    }
+  });
+
+  // Flagged Posts Mutations
+  const reinstatePost = useMutation({
+    mutationFn: async (postId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/flagged-posts/${postId}/reinstate`, {
+        method: 'POST',
+        headers
+      });
+      if (!res.ok) throw new Error('Failed to reinstate');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-flagged-posts'] });
+      toast({ title: "Reinstated", description: "Post has been reinstated and is now visible to users" });
+    }
+  });
+
+  const deleteFlaggedPost = useMutation({
+    mutationFn: async (postId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/flagged-posts/${postId}`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!res.ok) throw new Error('Failed to delete');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-flagged-posts'] });
+      toast({ title: "Deleted", description: "Post has been permanently deleted" });
+    }
+  });
+
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [creditAmount, setCreditAmount] = useState("");
   const [newPlan, setNewPlan] = useState({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '' });
@@ -692,6 +735,7 @@ export default function AdminDashboard() {
               <TabsTrigger value="vendors" className="text-xs md:text-sm whitespace-nowrap"><Store className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Vendors</span><span className="sm:hidden">Vend</span></TabsTrigger>
               <TabsTrigger value="notifications" className="text-xs md:text-sm whitespace-nowrap" data-testid="tab-notifications"><Bell className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Notifications</span><span className="sm:hidden">Notif</span></TabsTrigger>
               <TabsTrigger value="analytics" className="text-xs md:text-sm whitespace-nowrap"><BarChart3 className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Analytics</span><span className="sm:hidden">Stats</span></TabsTrigger>
+              <TabsTrigger value="flagged-posts" className="text-xs md:text-sm whitespace-nowrap"><Flag className="h-3 w-3 md:h-4 md:w-4 mr-1 md:mr-2" /><span className="hidden sm:inline">Flagged Posts</span><span className="sm:hidden">Flags</span></TabsTrigger>
             </TabsList>
           </div>
 
@@ -2717,6 +2761,92 @@ export default function AdminDashboard() {
                       </div>
                     ));
                 })()}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        {/* Flagged Posts Tab */}
+        <TabsContent value="flagged-posts" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Flag className="h-5 w-5" />
+                Flagged Forum Posts
+                {flaggedPosts.length > 0 && (
+                  <Badge variant="destructive" className="ml-2">{flaggedPosts.length}</Badge>
+                )}
+              </CardTitle>
+              <p className="text-sm text-slate-500">
+                Review posts that have been flagged 10+ times and are hidden from users
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {flaggedPosts.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500">
+                    <Flag className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No flagged posts requiring review</p>
+                    <p className="text-sm mt-2">Posts with 10+ flags will appear here for admin review</p>
+                  </div>
+                ) : (
+                  flaggedPosts.map((post: any) => (
+                    <Card key={post.id} className="border-red-200 bg-red-50">
+                      <CardContent className="p-4">
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge variant="destructive">
+                                  {post.flagCount || 0} flags
+                                </Badge>
+                                <span className="text-sm text-slate-600">
+                                  by {post.author || 'Unknown'}
+                                </span>
+                                <span className="text-xs text-slate-400">
+                                  {post.city || 'Unknown City'}
+                                </span>
+                              </div>
+                              <p className="text-slate-800 mb-2">{post.content}</p>
+                              <div className="flex gap-2 text-xs text-slate-500">
+                                <span>👍 {post.upvotes || 0}</span>
+                                <span>💬 {post.comments?.length || 0} comments</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex gap-2 pt-2 border-t">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => {
+                                if (confirm('Reinstate this post? It will be visible to all users again.')) {
+                                  reinstatePost.mutate(post.id);
+                                }
+                              }}
+                            >
+                              <CheckCircle2 className="h-4 w-4 mr-1" />
+                              Reinstate
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="flex-1"
+                              onClick={() => {
+                                if (confirm('Permanently delete this post? This action cannot be undone.')) {
+                                  deleteFlaggedPost.mutate(post.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete Permanently
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>

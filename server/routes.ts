@@ -1573,6 +1573,74 @@ export async function registerRoutes(
     }
   });
 
+  // Flagged Posts Management
+  app.get("/api/admin/flagged-posts", adminAuth, async (req, res) => {
+    try {
+      const admin = require('firebase-admin');
+      const db = admin.firestore();
+      const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID || 'legal-13d13';
+      
+      const postsRef = db.collection('artifacts').doc(FIREBASE_APP_ID)
+        .collection('public').doc('data').collection('forum_posts');
+      
+      const snapshot = await postsRef.where('shadowedForReview', '==', true).get();
+      const flaggedPosts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      res.json(flaggedPosts);
+    } catch (error) {
+      console.error('Error fetching flagged posts:', error);
+      res.status(500).json({ error: 'Failed to fetch flagged posts' });
+    }
+  });
+
+  app.post("/api/admin/flagged-posts/:postId/reinstate", adminAuth, async (req, res) => {
+    try {
+      const { postId } = req.params;
+      const admin = require('firebase-admin');
+      const db = admin.firestore();
+      const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID || 'legal-13d13';
+      
+      const postRef = db.collection('artifacts').doc(FIREBASE_APP_ID)
+        .collection('public').doc('data').collection('forum_posts').doc(postId);
+      
+      await postRef.update({
+        shadowedForReview: false,
+        flagged: false,
+        flagCount: 0,
+        flaggedBy: [],
+        reinstatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        reinstatedBy: (req as any).userId
+      });
+      
+      res.json({ success: true, message: 'Post reinstated successfully' });
+    } catch (error) {
+      console.error('Error reinstating post:', error);
+      res.status(500).json({ error: 'Failed to reinstate post' });
+    }
+  });
+
+  app.delete("/api/admin/flagged-posts/:postId", adminAuth, async (req, res) => {
+    try {
+      const { postId } = req.params;
+      const admin = require('firebase-admin');
+      const db = admin.firestore();
+      const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID || 'legal-13d13';
+      
+      const postRef = db.collection('artifacts').doc(FIREBASE_APP_ID)
+        .collection('public').doc('data').collection('forum_posts').doc(postId);
+      
+      await postRef.delete();
+      
+      res.json({ success: true, message: 'Post deleted permanently' });
+    } catch (error) {
+      console.error('Error deleting post:', error);
+      res.status(500).json({ error: 'Failed to delete post' });
+    }
+  });
+
   // Subscriptions
   app.get("/api/subscription/:userId", async (req, res) => {
     const { userId } = req.params;
