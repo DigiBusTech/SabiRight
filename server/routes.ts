@@ -1502,10 +1502,28 @@ export async function registerRoutes(
           payment.providerRef || paymentId,
           `Wallet top-up - ${payment.description || 'Manual approval'}`
         );
+        
+        // Send notification
+        await storage.createNotification({
+          userId: payment.userId,
+          type: 'payment_approved',
+          title: 'Payment Approved',
+          message: `Your wallet top-up of ${payment.currency || 'NGN'} ${payment.amount.toLocaleString()} has been approved and credited to your wallet.`,
+          data: { paymentId, amount: payment.amount, type: payment.type }
+        });
       } else if (payment.type === 'credit_purchase' && payment.metadata?.credits) {
         const userCredits = await storage.getUserCredits(payment.userId);
         const currentTotal = userCredits?.totalCredits || 0;
         await storage.setUserCredits(payment.userId, currentTotal + payment.metadata.credits);
+        
+        // Send notification
+        await storage.createNotification({
+          userId: payment.userId,
+          type: 'credits_added',
+          title: 'Credits Added',
+          message: `${payment.metadata.credits} credits have been added to your account. Your payment of ${payment.currency || 'NGN'} ${payment.amount.toLocaleString()} has been approved.`,
+          data: { paymentId, credits: payment.metadata.credits, amount: payment.amount }
+        });
       }
       
       res.json({ success: true, message: 'Payment approved and credited' });
@@ -1538,6 +1556,15 @@ export async function registerRoutes(
       if (reason) {
         await storage.updatePayment(paymentId, { rejectionReason: reason });
       }
+      
+      // Send notification
+      await storage.createNotification({
+        userId: payment.userId,
+        type: 'payment_rejected',
+        title: 'Payment Rejected',
+        message: `Your payment of ${payment.currency || 'NGN'} ${payment.amount.toLocaleString()} has been rejected. ${reason ? `Reason: ${reason}` : 'Please contact support for more information.'}`,
+        data: { paymentId, amount: payment.amount, reason }
+      });
       
       res.json({ success: true, message: 'Payment rejected' });
     } catch (error) {

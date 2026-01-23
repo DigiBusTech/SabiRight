@@ -129,9 +129,19 @@ export default function Payment() {
   });
 
   const paymentMode = paymentSettings?.payment_mode || 'automatic';
-  const stripeEnabled = paymentSettings?.stripe_enabled === 'true';
-  const paystackEnabled = paymentSettings?.paystack_enabled === 'true';
-  const flutterwaveEnabled = paymentSettings?.flutterwave_enabled === 'true';
+  // Handle both string and boolean values for enabled flags
+  const stripeEnabled = paymentSettings?.stripe_enabled === 'true' || paymentSettings?.stripe_enabled === true;
+  const paystackEnabled = paymentSettings?.paystack_enabled === 'true' || paymentSettings?.paystack_enabled === true;
+  const flutterwaveEnabled = paymentSettings?.flutterwave_enabled === 'true' || paymentSettings?.flutterwave_enabled === true;
+
+  // Debug: Log payment settings and methods
+  useEffect(() => {
+    console.log('Payment Settings:', paymentSettings);
+    console.log('Stripe Enabled:', stripeEnabled);
+    console.log('Paystack Enabled:', paystackEnabled);
+    console.log('Flutterwave Enabled:', flutterwaveEnabled);
+    console.log('Payment Methods:', paymentMethods);
+  }, [paymentSettings, paymentMethods, stripeEnabled, paystackEnabled, flutterwaveEnabled]);
 
   const walletBalance = wallet ? parseFloat(wallet.balance) : 0;
   const canPayWithWallet = walletBalance >= amount;
@@ -543,6 +553,17 @@ export default function Payment() {
                     <Badge variant="outline">Manual</Badge>
                   </label>
                 ))}
+
+                {/* Empty State */}
+                {!paystackEnabled && !stripeEnabled && !flutterwaveEnabled && paymentMethods.length === 0 && (
+                  <div className="p-8 text-center border-2 border-dashed rounded-lg">
+                    <Building2 className="h-12 w-12 mx-auto text-slate-300 mb-3" />
+                    <p className="font-bold text-slate-600 mb-1">No Payment Methods Available</p>
+                    <p className="text-sm text-slate-500">
+                      Please contact the administrator to enable payment methods.
+                    </p>
+                  </div>
+                )}
               </div>
             </RadioGroup>
 

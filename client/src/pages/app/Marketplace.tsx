@@ -545,9 +545,9 @@ export default function Marketplace() {
 
       {/* Booking Modal */}
       {showBookingModal && bookingProvider && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg bg-white rounded-lg shadow-xl">
-            <CardContent className="p-6">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
+          <Card className="w-full max-w-lg bg-white rounded-lg shadow-xl my-4 sm:my-8 max-h-[95vh] overflow-y-auto">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex justify-between items-start mb-6">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">Book Service</h2>
@@ -608,7 +608,7 @@ export default function Marketplace() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="amount">Total Amount (₦) *</Label>
                     <Input 
