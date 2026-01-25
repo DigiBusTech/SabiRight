@@ -946,43 +946,15 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {/* Flutterwave */}
-                <div className="p-4 border rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <CreditCard className="h-5 w-5 text-orange-500" />
-                      <p className="font-bold">Flutterwave</p>
-                    </div>
-                    <Switch 
-                      checked={getSetting('flutterwave_enabled') === 'true'}
-                      onCheckedChange={(checked) => saveSetting.mutate({ 
-                        key: 'flutterwave_enabled', value: checked ? 'true' : 'false', category: 'payments' 
-                      })}
-                    />
+                {/* Note: Payment gateway configuration moved to Payment Methods tab */}
+                <div className="p-4 border rounded-lg bg-blue-50">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CreditCard className="h-5 w-5 text-blue-500" />
+                    <p className="font-bold">Payment Gateway Configuration</p>
                   </div>
-                  <div className="space-y-2">
-                    <Input
-                      type={showSecrets ? "text" : "password"}
-                      value={localSettings['flutterwave_public_key'] ?? getSetting('flutterwave_public_key')}
-                      onChange={(e) => handleSettingChange('flutterwave_public_key', e.target.value)}
-                      placeholder="Flutterwave Public Key"
-                    />
-                    <div className="flex gap-2">
-                      <Input
-                        type={showSecrets ? "text" : "password"}
-                        value={localSettings['flutterwave_secret_key'] ?? getSetting('flutterwave_secret_key')}
-                        onChange={(e) => handleSettingChange('flutterwave_secret_key', e.target.value)}
-                        placeholder="Flutterwave Secret Key"
-                        className="flex-1"
-                      />
-                      <Button onClick={() => {
-                        handleSaveSetting('flutterwave_public_key', 'api_keys', true);
-                        handleSaveSetting('flutterwave_secret_key', 'api_keys', true);
-                      }}>
-                        <Save className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
+                  <p className="text-sm text-slate-600">
+                    Payment gateway configuration (Flutterwave, Paystack, Stripe) has been moved to the <strong>Payment Methods</strong> tab for better organization.
+                  </p>
                 </div>
 
                 {/* AI Configuration Section */}
@@ -1648,37 +1620,254 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
 
-              {/* Automatic Payment Gateways (from API Keys tab) */}
+              {/* Automatic Payment Gateways Configuration */}
               <Card>
                 <CardHeader>
                   <CardTitle>Automatic Payment Gateways</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-slate-600 mb-4">
-                    Configure automatic payment gateways in the <strong>API Keys</strong> tab. 
-                    When enabled, they will automatically appear as payment options for users.
+                  <p className="text-sm text-slate-600 mt-2">
+                    Configure automatic payment gateways with their API keys. When enabled and configured, they will automatically appear as payment options for users.
                   </p>
-                  <div className="grid md:grid-cols-3 gap-3">
-                    <div className="p-3 border rounded-lg">
-                      <p className="font-bold">Paystack</p>
-                      <p className="text-xs text-slate-500">Card, Bank Transfer, USSD</p>
-                      <Badge className="mt-2" variant={getSetting('paystack_enabled') === 'true' ? "default" : "secondary"}>
-                        {getSetting('paystack_enabled') === 'true' ? "Enabled" : "Disabled"}
-                      </Badge>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Flutterwave */}
+                  <div className="p-4 border rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-5 w-5 text-orange-500" />
+                        <div>
+                          <p className="font-bold">Flutterwave</p>
+                          <p className="text-xs text-slate-500">Card, Bank, Mobile Money</p>
+                        </div>
+                      </div>
+                      <Switch 
+                        checked={paymentMethods.find((m: any) => m.type === 'flutterwave')?.active || false}
+                        onCheckedChange={async (checked) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'flutterwave');
+                          if (method) {
+                            const headers = await getAdminHeaders();
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ active: checked })
+                            });
+                            queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                          }
+                        }}
+                      />
                     </div>
-                    <div className="p-3 border rounded-lg">
-                      <p className="font-bold">Stripe</p>
-                      <p className="text-xs text-slate-500">International Cards</p>
-                      <Badge className="mt-2" variant={getSetting('stripe_enabled') === 'true' ? "default" : "secondary"}>
-                        {getSetting('stripe_enabled') === 'true' ? "Enabled" : "Disabled"}
-                      </Badge>
+                    <div className="space-y-2">
+                      <Input
+                        type="text"
+                        placeholder="Public Key"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'flutterwave')?.publicKey || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'flutterwave');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ publicKey: e.target.value })
+                            });
+                          } else {
+                            await fetch('/api/admin/payment-methods', {
+                              method: 'POST',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                name: 'Flutterwave',
+                                type: 'flutterwave',
+                                publicKey: e.target.value,
+                                active: false
+                              })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
+                      <Input
+                        type="password"
+                        placeholder="Secret Key"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'flutterwave')?.secretKey || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'flutterwave');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ secretKey: e.target.value })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
+                      <Input
+                        type="password"
+                        placeholder="Encryption Key"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'flutterwave')?.encryptionKey || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'flutterwave');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ encryptionKey: e.target.value })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
                     </div>
-                    <div className="p-3 border rounded-lg">
-                      <p className="font-bold">Flutterwave</p>
-                      <p className="text-xs text-slate-500">Card, Bank, Mobile Money</p>
-                      <Badge className="mt-2" variant={getSetting('flutterwave_enabled') === 'true' ? "default" : "secondary"}>
-                        {getSetting('flutterwave_enabled') === 'true' ? "Enabled" : "Disabled"}
-                      </Badge>
+                  </div>
+
+                  {/* Paystack */}
+                  <div className="p-4 border rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-5 w-5 text-blue-500" />
+                        <div>
+                          <p className="font-bold">Paystack</p>
+                          <p className="text-xs text-slate-500">Card, Bank Transfer, USSD</p>
+                        </div>
+                      </div>
+                      <Switch 
+                        checked={paymentMethods.find((m: any) => m.type === 'paystack')?.active || false}
+                        onCheckedChange={async (checked) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'paystack');
+                          if (method) {
+                            const headers = await getAdminHeaders();
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ active: checked })
+                            });
+                            queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Input
+                        type="text"
+                        placeholder="Public Key"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'paystack')?.publicKey || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'paystack');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ publicKey: e.target.value })
+                            });
+                          } else {
+                            await fetch('/api/admin/payment-methods', {
+                              method: 'POST',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                name: 'Paystack',
+                                type: 'paystack',
+                                publicKey: e.target.value,
+                                active: false
+                              })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
+                      <Input
+                        type="password"
+                        placeholder="Secret Key"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'paystack')?.secretKey || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'paystack');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ secretKey: e.target.value })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Stripe */}
+                  <div className="p-4 border rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-5 w-5 text-purple-500" />
+                        <div>
+                          <p className="font-bold">Stripe</p>
+                          <p className="text-xs text-slate-500">International Cards</p>
+                        </div>
+                      </div>
+                      <Switch 
+                        checked={paymentMethods.find((m: any) => m.type === 'stripe')?.active || false}
+                        onCheckedChange={async (checked) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'stripe');
+                          if (method) {
+                            const headers = await getAdminHeaders();
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ active: checked })
+                            });
+                            queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Input
+                        type="text"
+                        placeholder="Publishable Key"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'stripe')?.publicKey || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'stripe');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ publicKey: e.target.value })
+                            });
+                          } else {
+                            await fetch('/api/admin/payment-methods', {
+                              method: 'POST',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                name: 'Stripe',
+                                type: 'stripe',
+                                publicKey: e.target.value,
+                                active: false
+                              })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
+                      <Input
+                        type="password"
+                        placeholder="Secret Key"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'stripe')?.secretKey || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'stripe');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ secretKey: e.target.value })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
                     </div>
                   </div>
                 </CardContent>
