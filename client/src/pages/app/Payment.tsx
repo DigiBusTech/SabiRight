@@ -374,17 +374,29 @@ export default function Payment() {
       // Initiate payment to create payment record
       initiatePayment.mutate(paymentData, {
         onSuccess: (data: any) => {
+          // Debug: Log flutterwaveGateway and public key
+          console.log('=== FLUTTERWAVE PAYMENT DEBUG ===');
+          console.log('flutterwaveGateway:', flutterwaveGateway);
+          console.log('flutterwaveGateway?.publicKey:', flutterwaveGateway?.publicKey);
+          console.log('allPaymentMethods:', allPaymentMethods);
+          console.log('automaticGateways:', automaticGateways);
+          console.log('================================');
+
           // Get public key from flutterwaveGateway
           const publicKey = flutterwaveGateway?.publicKey;
           
           if (!publicKey) {
+            console.error('Flutterwave public key not found!');
+            console.error('flutterwaveGateway:', flutterwaveGateway);
             toast({
               title: "Configuration Error",
-              description: "Flutterwave is not properly configured.",
+              description: "Flutterwave public key not found. Please check admin configuration.",
               variant: "destructive"
             });
             return;
           }
+
+          console.log('Using public key:', publicKey);
 
           // Open Flutterwave modal
           window.FlutterwaveCheckout({
