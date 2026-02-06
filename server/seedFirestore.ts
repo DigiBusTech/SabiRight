@@ -1,6 +1,6 @@
 import admin from 'firebase-admin';
 
-const FIREBASE_APP_ID = 'digital-citizen-v2';
+const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID || 'legal-13d13';
 
 function initializeFirebase() {
   if (admin.apps && admin.apps.length > 0) {

@@ -16,13 +16,48 @@ export const userProfiles = pgTable("user_profiles", {
   city: text("city"),
   state: text("state"),
   isVendor: boolean("is_vendor").default(false),
+  isAdmin: boolean("is_admin").default(false),
   kycStatus: text("kyc_status").default("pending"), // 'pending', 'verified', 'rejected'
   kycDocument: text("kyc_document"),
   kycSubmittedAt: timestamp("kyc_submitted_at"),
   kycVerifiedAt: timestamp("kyc_verified_at"),
   vendorMode: boolean("vendor_mode").default(false),
+  chatStorageLimit: integer("chat_storage_limit").default(524288), // Default 512KB in bytes
+  chatStorageUsed: integer("chat_storage_used").default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const sabiguardChats = pgTable("sabiguard_chats", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  title: text("title").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const sabiguardMessages = pgTable("sabiguard_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  chatId: varchar("chat_id").notNull().references(() => sabiguardChats.id),
+  role: text("role").notNull(), // 'user' or 'ai'
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const moatData = pgTable("moat_data", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  category: text("category").notNull(), // 'threat', 'policy', 'legal', 'chat_intel'
+  source: text("source"), // e.g., 'sabiguard_chat'
+  content: text("content").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type SabiGuardChat = typeof sabiguardChats.$inferSelect;
+export type InsertSabiGuardChat = typeof sabiguardChats.$inferInsert;
+export type SabiGuardMessage = typeof sabiguardMessages.$inferSelect;
+export type InsertSabiGuardMessage = typeof sabiguardMessages.$inferInsert;
+export type MoatData = typeof moatData.$inferSelect;
+export type InsertMoatData = typeof moatData.$inferInsert;
 
 export const plans = pgTable("plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -148,11 +183,13 @@ export const vendorServices = pgTable("vendor_services", {
   rating: numeric("rating", { precision: 3, scale: 2 }).default("0"),
   reviewCount: integer("review_count").default(0),
   verified: boolean("verified").default(false),
+  status: text("status").default("pending"), // 'pending', 'approved', 'rejected'
   contactPhone: text("contact_phone"),
   contactEmail: text("contact_email"),
   priceRange: text("price_range"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
+  approvedAt: timestamp("approved_at"),
 });
 
 export const adminSettings = pgTable("admin_settings", {
@@ -295,6 +332,7 @@ export const disputes = pgTable("disputes", {
   description: text("description"),
   evidence: jsonb("evidence").default([]), // array of {type, url, description}
   status: text("status").notNull().default("open"), // 'open', 'under_review', 'resolved', 'closed'
+  adminJoined: boolean("admin_joined").default(false),
   resolution: text("resolution"), // 'user_favor', 'vendor_favor', 'split', 'cancelled'
   resolutionNotes: text("resolution_notes"),
   resolvedBy: varchar("resolved_by").references(() => users.id),
@@ -391,12 +429,55 @@ export const generatedJobs = pgTable("generated_jobs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// FAQs
+export const faqs = pgTable("faqs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  question: text("question").notNull(),
+  answer: text("answer").notNull(),
+  category: text("category").default("general"),
+  order: integer("order").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Testimonials
+export const testimonials = pgTable("testimonials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  role: text("role"),
+  content: text("content").notNull(),
+  avatar: text("avatar"),
+  rating: integer("rating").default(5),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const surveys = pgTable("surveys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  feature: text("feature").notNull(), // e.g., 'civic', 'marketplace', 'jobs'
+  rating: integer("rating").notNull(), // 1-5
+  feedback: text("feedback"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Saved events
 export const savedEvents = pgTable("saved_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
   eventId: varchar("event_id").notNull(),
   savedAt: timestamp("saved_at").defaultNow(),
+});
+
+// MOAT Data (Training data for AI)
+export const moatDataTraining = pgTable("moat_data_training", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  category: text("category").notNull(), // 'constitution', 'police_act', 'forum', 'marketplace', etc.
+  source: text("source"),
+  createdAt: timestamp("created_at").defaultNow(),
+  metadata: jsonb("metadata"),
 });
 
 // Insert schemas
@@ -520,6 +601,16 @@ export const insertSavedEventSchema = createInsertSchema(savedEvents).omit({
   savedAt: true,
 });
 
+export const insertFaqSchema = createInsertSchema(faqs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertTestimonialSchema = createInsertSchema(testimonials).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertCoupon = z.infer<typeof insertCouponSchema>;
@@ -540,6 +631,9 @@ export type InsertSavedJob = z.infer<typeof insertSavedJobSchema>;
 export type InsertAppliedJob = z.infer<typeof insertAppliedJobSchema>;
 export type InsertGeneratedJob = z.infer<typeof insertGeneratedJobSchema>;
 export type InsertSavedEvent = z.infer<typeof insertSavedEventSchema>;
+export type InsertFaq = z.infer<typeof insertFaqSchema>;
+export type InsertTestimonial = z.infer<typeof insertTestimonialSchema>;
+
 export type User = typeof users.$inferSelect;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type Plan = typeof plans.$inferSelect;
@@ -572,3 +666,5 @@ export type SavedJob = typeof savedJobs.$inferSelect;
 export type AppliedJob = typeof appliedJobs.$inferSelect;
 export type GeneratedJob = typeof generatedJobs.$inferSelect;
 export type SavedEvent = typeof savedEvents.$inferSelect;
+export type Faq = typeof faqs.$inferSelect;
+export type Testimonial = typeof testimonials.$inferSelect;

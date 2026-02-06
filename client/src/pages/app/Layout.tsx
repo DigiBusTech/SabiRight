@@ -27,6 +27,7 @@ import { useAuth } from "@/context/AuthContext";
 import { auth } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import NotificationBell from "@/components/NotificationBell";
 
@@ -40,8 +41,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const { user, profile, loading, switchVendorMode } = useAuth();
 
   // Protect Route
-  if (!loading && !user) {
-      setLocation("/auth/login");
+  const publicRoutes = ['/app/forum', '/app/jobs', '/app/events'];
+  if (!loading && !user && !publicRoutes.includes(location)) {
+      setTimeout(() => setLocation("/auth/login"), 0);
       return null;
   }
 
@@ -50,14 +52,25 @@ export default function AppLayout({ children }: AppLayoutProps) {
       setLocation("/");
   };
 
-  // Admin items come first if user is admin
+  // Admin items
+  console.log('[Layout] Profile status:', { 
+    isAdmin: profile?.isAdmin, 
+    isVendor: profile?.isVendor, 
+    hasProfile: !!profile,
+    userId: profile?.userId
+  });
+  
   const adminItems = profile?.isAdmin ? [
-    { icon: Settings, label: "Admin Dashboard", href: "/admin", isAdmin: true },
+    { 
+      icon: ShieldCheck, 
+      label: "Admin Dashboard", 
+      href: "/admin", 
+    },
   ] : [];
 
   const baseNavItems = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/app" },
-    { icon: Scale, label: "SabiGuard", href: "/app/civic", description: "Legal First Aid" },
+    { icon: Scale, label: "SabiRight AI", href: "/app/civic", description: "Law-based Guidance" },
     { icon: AlertTriangle, label: "SabiMove", href: "/app/traffic", description: "Smart Traffic" },
     { icon: Briefcase, label: "SabiWork", href: "/app/jobs", description: "Jobs & Careers" },
     { icon: Store, label: "SabiMarket", href: "/app/marketplace", description: "Find Pros" },
@@ -71,10 +84,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
   ];
 
   const vendorItems = profile?.isVendor ? [
-    { icon: BarChart3, label: "Vendor Dashboard", href: "/app/vendor" },
+    { 
+      icon: BarChart3, 
+      label: "Vendor Portal", 
+      href: "/app/vendor" 
+    },
   ] : [];
 
-  // Admin dashboard appears first in navigation for admin users
+  // Construct final navigation list
   const navItems = [...adminItems, ...baseNavItems, ...vendorItems];
 
   return (

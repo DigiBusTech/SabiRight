@@ -56,9 +56,10 @@ export default function Events() {
   const userCity = profile?.city || "";
 
   const { data: events = [], isLoading } = useQuery({
-    queryKey: ['events'],
+    queryKey: ['events', profile?.city],
     queryFn: async () => {
-      const res = await fetch('/api/events');
+      const cityParam = profile?.city ? `?city=${encodeURIComponent(profile.city)}` : '';
+      const res = await fetch(`/api/events${cityParam}`);
       return res.ok ? res.json() : [];
     }
   });
@@ -75,9 +76,16 @@ export default function Events() {
 
   const createEventMutation = useMutation({
     mutationFn: async (eventData: any) => {
+      if (!user) throw new Error('Login required');
+      if (profile?.kycStatus !== 'verified') throw new Error('KYC verification required');
+
+      const idToken = await user.getIdToken();
       const res = await fetch('/api/events', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
         body: JSON.stringify(eventData)
       });
       if (!res.ok) throw new Error('Failed to create event');
@@ -96,12 +104,19 @@ export default function Events() {
 
   const registerMutation = useMutation({
     mutationFn: async ({ eventId, userId }: { eventId: string; userId: string }) => {
+      if (!user) throw new Error('Login required');
+      if (profile?.kycStatus !== 'verified') throw new Error('KYC verification required');
+
+      const idToken = await user.getIdToken();
       const res = await fetch(`/api/events/${eventId}/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
         body: JSON.stringify({ userId })
       });
-      if (!res.ok) throw new Error('Failed to register');
+      if (!res.ok) throw new Error('Failed to register for event');
       return res.json();
     },
     onSuccess: () => {
@@ -142,12 +157,12 @@ export default function Events() {
     }
   });
 
-  const handleCreateEvent = () => {
+  const handleCreateEvent = (e: React.FormEvent) => {
+    e.preventDefault();
     if (!user) {
-      toast({ title: "Login Required", description: "Please login to create events." });
+      toast({ title: "Login Required", description: "You must be logged in to create an event." });
       return;
     }
-
     if (!newEvent.title || !newEvent.date || !newEvent.time || !newEvent.location) {
       toast({ title: "Error", description: "Please fill all required fields", variant: "destructive" });
       return;
@@ -186,7 +201,10 @@ export default function Events() {
   };
 
   const handleUnsaveEvent = (event: Event) => {
-    if (!user) return;
+    if (!user) {
+      toast({ title: "Login Required", description: "Please login to save events." });
+      return;
+    }
     unsaveEventMutation.mutate({ eventId: event.id, userId: user.uid });
   };
 
@@ -330,6 +348,18 @@ export default function Events() {
 
   return (
     <div className="space-y-8 pb-20">
+      {!user && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-6 text-center">
+            <h3 className="font-bold text-lg mb-2">Connect with Your Community</h3>
+            <p className="text-slate-500 mb-4">You must be logged in to register for events, save them, or host your own.</p>
+            <div className="flex justify-center gap-4">
+              <Button onClick={() => window.location.href = '/auth/login'}>Login / Sign Up</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Civic Events & Trainings</h2>

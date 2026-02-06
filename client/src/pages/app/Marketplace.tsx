@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { SurveyDialog } from "@/components/SurveyDialog";
 
 interface ServiceProvider {
   id: string;
@@ -18,6 +19,7 @@ interface ServiceProvider {
   type: string;
   specialization: string;
   location: string;
+  city?: string;
   latitude: number;
   longitude: number;
   rating: string;
@@ -47,6 +49,7 @@ export default function Marketplace() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All Services");
   const [sortBy, setSortBy] = useState<"distance" | "time" | "rating">("time");
+  const [showSurveyDialog, setShowSurveyDialog] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [providersWithDistance, setProvidersWithDistance] = useState<ServiceProvider[]>([]);
@@ -94,11 +97,24 @@ export default function Marketplace() {
     }
   }, []);
 
+  // Fetch user profile for city
+  const { data: userProfile } = useQuery({
+    queryKey: [`profile-${user?.uid}`],
+    queryFn: async () => {
+      if (!user?.uid) return null;
+      const res = await fetch(`/api/profile/${user.uid}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!user?.uid,
+  });
+
   // Fetch vendor services
   const { data: services = [] } = useQuery({
-    queryKey: ['vendor-services'],
+    queryKey: ['vendor-services', userProfile?.city],
     queryFn: async () => {
-      const res = await fetch('/api/services');
+      const cityParam = userProfile?.city ? `?city=${encodeURIComponent(userProfile.city)}` : '';
+      const res = await fetch(`/api/services${cityParam}`);
       if (!res.ok) return getMockProviders();
       const data = await res.json();
       return data.length > 0 ? data : getMockProviders();
@@ -156,19 +172,42 @@ export default function Marketplace() {
 
   // Filter and sort providers
   const filteredProviders = providersWithDistance.filter(provider => {
+    if (!provider) return false;
+    
+    const name = provider.name || "";
+    const type = provider.type || "";
+    const search = searchTerm || "";
+    const category = selectedCategory || "All Services";
+
     const matchesSearch = 
-      provider.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      provider.specialization?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      provider.type.toLowerCase().includes(searchTerm.toLowerCase());
+      name.toLowerCase().includes(search.toLowerCase()) ||
+      provider.specialization?.toLowerCase().includes(search.toLowerCase()) ||
+      type.toLowerCase().includes(search.toLowerCase());
     
     const matchesCategory = 
-      selectedCategory === "All Services" ||
-      provider.type.toLowerCase().includes(selectedCategory.toLowerCase().slice(0, -1));
+      category === "All Services" ||
+      type.toLowerCase().includes(category.toLowerCase().slice(0, -1));
     
     return matchesSearch && matchesCategory;
   });
 
   const sortedProviders = [...filteredProviders].sort((a, b) => {
+    // Primary sort: User City First
+    if (userProfile?.city) {
+      const userCity = userProfile.city.toLowerCase();
+      const aCity = a.city?.toLowerCase() || "";
+      const aLocation = a.location?.toLowerCase() || "";
+      const bCity = b.city?.toLowerCase() || "";
+      const bLocation = b.location?.toLowerCase() || "";
+
+      const aInCity = aCity === userCity || aLocation.includes(userCity);
+      const bInCity = bCity === userCity || bLocation.includes(userCity);
+      
+      if (aInCity && !bInCity) return -1;
+      if (!aInCity && bInCity) return 1;
+    }
+
+    // Secondary sort: User selected sort option
     if (sortBy === "distance") return (a.distanceKm || 0) - (b.distanceKm || 0);
     if (sortBy === "time") return (a.estimatedTimeMin || 0) - (b.estimatedTimeMin || 0);
     return parseFloat(b.rating) - parseFloat(a.rating);
@@ -267,6 +306,11 @@ export default function Marketplace() {
       
       // Navigate to booking detail
       setLocation(`/app/bookings/${booking.id}`);
+      
+      // Show survey dialog after a short delay to let navigation start
+      setTimeout(() => {
+        setShowSurveyDialog(true);
+      }, 1000);
       
     } catch (error: any) {
       toast({ title: "Error", description: error.message || "Failed to create booking", variant: "destructive" });
@@ -675,6 +719,12 @@ export default function Marketplace() {
           </Card>
         </div>
       )}
+
+      <SurveyDialog 
+        isOpen={showSurveyDialog} 
+        onClose={() => setShowSurveyDialog(false)} 
+        feature="marketplace"
+      />
     </div>
   );
 }

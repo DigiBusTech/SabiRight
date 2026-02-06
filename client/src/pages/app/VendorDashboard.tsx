@@ -9,6 +9,7 @@ import { Store, FileCheck, TrendingUp, AlertCircle, Plus, X, MapPin, Phone, Edit
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 
 interface VendorService {
   id: string;
@@ -97,8 +98,8 @@ export default function VendorDashboard() {
     enabled: !!user?.uid && profileLoaded && profile?.vendorMode !== true,
   });
 
-  // Check if user is approved vendor - prioritize profile.vendorMode over application status
-  const isApprovedVendor = profile?.vendorMode === true || application?.status === 'approved';
+  // Check if user is approved vendor
+  const isApprovedVendor = profile?.isVendor === true;
 
   const { data: services = [] } = useQuery({
     queryKey: ['my-services', user?.uid],
@@ -579,30 +580,32 @@ export default function VendorDashboard() {
                   ) : (
                     <div className="space-y-3">
                       {bookings.map((booking) => (
-                        <div key={booking.id} className="p-4 border rounded-lg">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <p className="font-bold">{booking.customerName}</p>
-                              <p className="text-sm text-slate-600">{booking.service}</p>
-                              <p className="text-sm text-slate-500">
-                                {booking.date} at {booking.time}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <Badge className={`${
-                                booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                                booking.status === 'confirmed' ? 'bg-blue-100 text-blue-800' :
-                                booking.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                'bg-red-100 text-red-800'
-                              }`}>
-                                {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                              </Badge>
-                              <p className="text-lg font-bold text-green-600 mt-2">
-                                N{booking.amount.toLocaleString()}
-                              </p>
+                        <Link key={booking.id} href={`/bookings/${booking.id}`}>
+                          <div className="p-4 border rounded-lg cursor-pointer hover:border-primary/50 transition-colors">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <p className="font-bold">{booking.customerName}</p>
+                                <p className="text-sm text-slate-600">{booking.service}</p>
+                                <p className="text-sm text-slate-500">
+                                  {booking.date} at {booking.time}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <Badge className={`${
+                                  booking.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                  booking.status === 'confirmed' ? 'bg-blue-100 text-blue-800' :
+                                  booking.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                  'bg-red-100 text-red-800'
+                                }`}>
+                                  {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                                </Badge>
+                                <p className="text-lg font-bold text-green-600 mt-2">
+                                  N{booking.amount.toLocaleString()}
+                                </p>
+                              </div>
                             </div>
                           </div>
-                        </div>
+                        </Link>
                       ))}
                     </div>
                   )}

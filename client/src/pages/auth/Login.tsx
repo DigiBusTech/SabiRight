@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Label } from "@/components/ui/label";
 import { ShieldCheck, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import ReCAPTCHA from "react-google-recaptcha";
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
@@ -15,12 +16,38 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState(""); // For registration
   const [loading, setLoading] = useState(false);
+  const [siteKey, setSiteKey] = useState<string | null>(null);
+  const captchaRef = useRef<ReCAPTCHA>(null);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  useEffect(() => {
+    // Fetch public site key
+    fetch('/api/settings/public')
+      .then(res => res.json())
+      .then(data => {
+        if (data.captcha_site_key) {
+          setSiteKey(data.captcha_site_key);
+        }
+      })
+      .catch(err => console.error('Failed to fetch site key:', err));
+  }, []);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    const captchaToken = !isLogin ? captchaRef.current?.getValue() : null;
+    
+    if (!isLogin && siteKey && !captchaToken) {
+      toast({ 
+        title: "Verification Required", 
+        description: "Please complete the reCAPTCHA verification.", 
+        variant: "destructive" 
+      });
+      setLoading(false);
+      return;
+    }
 
     try {
       if (isLogin) {
@@ -30,6 +57,21 @@ export default function Login() {
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         if (auth.currentUser) {
             await updateProfile(auth.currentUser, { displayName: name });
+            
+            // Sync profile with backend and pass captchaToken
+            const idToken = await auth.currentUser.getIdToken();
+            await fetch(`/api/profile/${auth.currentUser.uid}`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${idToken}`
+                },
+                body: JSON.stringify({ 
+                    email: auth.currentUser.email, 
+                    displayName: name,
+                    captchaToken
+                })
+            });
         }
         toast({ title: "Account created!", description: "Welcome to Digital Citizen." });
       }
@@ -105,6 +147,16 @@ export default function Login() {
                   required 
                 />
               </div>
+
+              {!isLogin && siteKey && (
+                <div className="flex justify-center py-2">
+                  <ReCAPTCHA
+                    ref={captchaRef}
+                    sitekey={siteKey}
+                    onChange={(val) => console.log('Captcha value:', val)}
+                  />
+                </div>
+              )}
 
               <Button type="submit" className="w-full font-bold shadow-lg" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

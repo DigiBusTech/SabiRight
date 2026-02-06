@@ -78,6 +78,15 @@ export default function Wallet() {
     enabled: !!user?.uid,
   });
 
+  const { data: paymentMethods = [] } = useQuery({
+    queryKey: ['payment-methods'],
+    queryFn: async () => {
+      const res = await fetch('/api/payment-methods');
+      if (!res.ok) return [];
+      return res.json();
+    }
+  });
+
   const createWalletMutation = useMutation({
     mutationFn: async () => {
       if (!user?.uid) throw new Error("Not authenticated");
@@ -310,13 +319,32 @@ export default function Wallet() {
                   </div>
                   <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
                     <p className="text-xs font-medium text-blue-900 mb-1">📋 Payment Instructions:</p>
-                    <p className="text-xs text-blue-800">
-                      Transfer <strong>{payment.currency} {payment.amount}</strong> to:<br />
-                      <strong>Bank:</strong> GTBank<br />
-                      <strong>Account:</strong> 0123456789<br />
-                      <strong>Name:</strong> SabiRight Technologies<br />
-                      <strong>Reference:</strong> {payment.metadata?.reference || payment.id}
-                    </p>
+                    <div className="text-xs text-blue-800">
+                      {(() => {
+                        const method = paymentMethods.find((m: any) => m.id === payment.provider || m.name === payment.provider);
+                        if (method?.description) {
+                          return <div dangerouslySetInnerHTML={{ __html: method.description }} />;
+                        }
+                        
+                        // Fallback to manual fields if description not available
+                        if (payment.metadata?.manualFields) {
+                          return (
+                            <div className="space-y-1">
+                              {payment.metadata.manualFields.map((f: any, idx: number) => (
+                                <p key={idx}><strong>{f.name}:</strong> {f.value}</p>
+                              ))}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <>
+                            Transfer <strong>{payment.currency} {payment.amount}</strong> to our bank account.<br />
+                            <strong>Reference:</strong> {payment.metadata?.reference || payment.id}
+                          </>
+                        );
+                      })()}
+                    </div>
                     <p className="text-xs text-blue-700 mt-2">
                       ⏳ Your payment will be credited after admin verification.
                     </p>

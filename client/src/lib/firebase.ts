@@ -22,4 +22,4 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 
 // App ID constant from original code
-export const FIREBASE_APP_ID = 'digital-citizen-v2';
+export const FIREBASE_APP_ID = 'legal-13d13';

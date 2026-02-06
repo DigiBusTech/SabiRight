@@ -84,9 +84,10 @@ export default function Jobs() {
   });
 
   const { data: allJobs = [], isLoading: jobsLoading, refetch: refetchJobs } = useQuery({
-    queryKey: ['jobs'],
+    queryKey: ['jobs', profile?.city],
     queryFn: async () => {
-      const res = await fetch('/api/jobs');
+      const cityParam = profile?.city ? `?city=${encodeURIComponent(profile.city)}` : '';
+      const res = await fetch(`/api/jobs${cityParam}`);
       if (!res.ok) return [];
       return res.json();
     },
@@ -189,9 +190,16 @@ export default function Jobs() {
 
   const applyJobMutation = useMutation({
     mutationFn: async (jobId: string) => {
+      if (!user) throw new Error('Login required');
+      if (profile?.kycStatus !== 'verified') throw new Error('KYC verification required');
+
+      const idToken = await user.getIdToken();
       const res = await fetch(`/api/jobs/${jobId}/apply`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
         body: JSON.stringify({ userId: user?.uid })
       });
       if (!res.ok) throw new Error('Failed to apply to job');
@@ -271,6 +279,16 @@ export default function Jobs() {
   };
 
   const handlePostJob = async () => {
+    if (!user) {
+      toast({ title: "Login Required", description: "You must be logged in to post a job." });
+      return;
+    }
+    
+    if (profile?.kycStatus !== 'verified') {
+      toast({ title: "KYC Required", description: "You must be KYC verified to post a job.", variant: "destructive" });
+      return;
+    }
+
     if (!jobForm.title || !jobForm.company || !jobForm.description) {
       toast({ title: "Error", description: "Please fill required fields", variant: "destructive" });
       return;
@@ -278,9 +296,13 @@ export default function Jobs() {
 
     setIsPosting(true);
     try {
+      const idToken = await user.getIdToken();
       const response = await fetch('/api/jobs', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
         body: JSON.stringify({
           ...jobForm,
           postedBy: user?.uid,
@@ -308,6 +330,10 @@ export default function Jobs() {
 
   const handleSaveJob = (e: React.MouseEvent, jobId: string) => {
     e.stopPropagation();
+    if (!user) {
+      toast({ title: "Login Required", description: "Please login to save jobs." });
+      return;
+    }
     if (savedJobIds.includes(jobId)) {
       unsaveJobMutation.mutate(jobId);
     } else {
@@ -317,6 +343,10 @@ export default function Jobs() {
 
   const handleApplyJob = (e: React.MouseEvent, job: Job) => {
     e.stopPropagation();
+    if (!user) {
+      toast({ title: "Login Required", description: "Please login to apply for jobs." });
+      return;
+    }
     if (appliedJobIds.includes(job.id)) {
       if (job.contact) {
         window.open(job.contact.startsWith('http') ? job.contact : `mailto:${job.contact}`, '_blank');
@@ -441,6 +471,18 @@ export default function Jobs() {
 
   return (
     <div className="space-y-8">
+      {!user && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-6 text-center">
+            <h3 className="font-bold text-lg mb-2">Find Your Next Opportunity</h3>
+            <p className="text-slate-500 mb-4">You must be logged in to apply for jobs, save listings, or post new opportunities.</p>
+            <div className="flex justify-center gap-4">
+              <Button onClick={() => window.location.href = '/auth/login'}>Login / Sign Up</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">AI Job Matches</h2>

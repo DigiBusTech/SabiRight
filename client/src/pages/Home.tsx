@@ -1,13 +1,26 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Shield, MapPin, Search, MessageSquare, Briefcase, Users, Scale, AlertTriangle, ChevronDown } from "lucide-react";
+import { ArrowRight, Shield, MapPin, Search, MessageSquare, Briefcase, Users, Scale, AlertTriangle, ChevronDown, User, Star } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 
 export default function Home() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+
+  const { data: faqs = [] } = useQuery<any[]>({
+    queryKey: ['/api/faqs'],
+  });
+
+  const { data: testimonials = [] } = useQuery<any[]>({
+    queryKey: ['/api/testimonials'],
+  });
+
+  const activeFaqs = faqs.filter(f => f.isActive).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const activeTestimonials = testimonials.filter(t => t.isActive);
 
   const fadeInUp = {
     initial: { opacity: 0, y: 30 },
@@ -46,7 +59,7 @@ export default function Home() {
             </h1>
             
             <p className="text-lg text-slate-600 max-w-lg mb-10">
-              SabiRight is your AI-powered Civic Super-App. Legal First Aid, Smart Traffic routing, AI-powered Jobs, and a Verified Marketplace - the essential toolkit for the modern citizen.
+              SabiRight is a citizen education and support platform. It helps people understand their rights calmly and lawfully during everyday civic situations, like police stops or housing disputes.
             </p>
             
             <div className="flex flex-wrap gap-4">
@@ -134,17 +147,17 @@ export default function Home() {
             variants={fadeInUp}
           >
             <h2 className="text-4xl font-extrabold mb-6 leading-tight">
-              Fragmented systems.<br/>
-              <span className="text-red-600 uppercase">Zero protection.</span>
+              Knowledge is Peace.<br/>
+              <span className="text-primary uppercase">Empowering Citizens.</span>
             </h2>
             <p className="text-slate-600 text-lg mb-8 text-justify">
-              Citizens waste hours on unreliable platforms for jobs, housing, and legal information. 
-              This gap leads to fraud and exploitation. We bridge it with AI-powered verified intelligence.
+              SabiRight works like first aid — offering immediate, law-based guidance and then connecting users to verified professionals nearby. Everything is strictly based on Nigerian law, including the Police Act, to reduce conflict, misinformation, and citizen-officer tension.
             </p>
             <div className="space-y-4 font-bold text-slate-700">
-              <p className="flex items-center gap-3"><span className="text-red-500">✖</span> Job & Housing Scams</p>
-              <p className="flex items-center gap-3"><span className="text-red-500">✖</span> Police Harassment without Defense</p>
-              <p className="flex items-center gap-3"><span className="text-red-500">✖</span> Bureaucratic Language Barriers</p>
+              <p className="flex items-center gap-3"><span className="text-green-500">✔</span> Curated AI Job Matching Board</p>
+              <p className="flex items-center gap-3"><span className="text-green-500">✔</span> Lawful Civic Education & Support</p>
+              <p className="flex items-center gap-3"><span className="text-green-500">✔</span> Marketplace for Verified Pros</p>
+              <p className="flex items-center gap-3"><span className="text-green-500">✔</span> Community Forum & Civic Events</p>
             </div>
           </motion.div>
           
@@ -163,8 +176,8 @@ export default function Home() {
                   <Shield className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="font-bold">Instant Legal Defense</p>
-                  <p className="text-sm text-slate-400">CITES the 1999 Constitution and NPF Act automatically.</p>
+                  <p className="font-bold">Lawful Civic Guidance</p>
+                  <p className="text-sm text-slate-400">Based strictly on the 1999 Constitution and Police Act.</p>
                 </div>
               </div>
               <div className="flex gap-5">
@@ -194,7 +207,7 @@ export default function Home() {
               <span className="text-gradient">SabiDoctor</span> AI
             </h2>
             <p className="text-xl text-slate-400 max-w-3xl mx-auto mb-16 italic">
-              Facing harassment? Landlord dispute? Get an instant, legally accurate citation telling you exactly what to say. Your pocket lawyer, powered by AI.
+              Facing a complex situation? Get instant, law-based first aid guidance on exactly how to handle it calmly and lawfully. Your pocket educator for civic rights.
             </p>
           </motion.div>
           
@@ -285,27 +298,23 @@ export default function Home() {
         <div className="max-w-3xl mx-auto px-6">
           <h2 className="text-3xl font-bold text-center mb-12">Frequently Asked Questions</h2>
           <div className="space-y-4">
-            {[
-              { q: "How accurate is the AI Legal Guard?", a: "SabiGuard uses Retrieval-Augmented Generation (RAG) to cite specific sections of the 1999 Constitution and NPF Act 2020. It provides accurate legal information but is not a substitute for professional legal advice in complex matters." },
-              { q: "Is the platform free to use?", a: "Yes! Core features including civic alerts, basic AI legal queries, and community forums are completely free. Premium features like unlimited AI queries, job matching, and priority marketplace placement use Credits which you can earn or purchase." },
-              { q: "What are Credits and how do I get them?", a: "Credits are your in-app currency for premium features. New users get 10 free credits daily. You can earn more by completing your profile, verifying your identity (KYC), referring friends, or purchasing credit packs." },
-              { q: "How does SabiMove help with traffic?", a: "SabiMove provides real-time traffic updates, checkpoint alerts, and AI-powered route optimization. Our 'Cloaked Routes' feature helps you navigate around known checkpoint hotspots while staying completely legal." },
-              { q: "How do I become a verified vendor?", a: "Go to your dashboard and apply for vendor status. You'll need to provide business documentation and complete KYC verification. Once approved, you can list services, receive leads, and accept bookings through SabiMarket." },
-              { q: "Is my data safe?", a: "Absolutely. We use Firebase Authentication and industry-standard encryption. Your personal data is never sold to third parties. Cloaked routes are processed locally and never stored on our servers." },
-              { q: "Can I use SabiRight outside Lagos?", a: "Yes! While we started in Lagos, Abuja, and Port Harcourt, SabiRight works nationwide. Traffic data is community-sourced, so coverage improves as more users join in your area." },
-              { q: "How do I contact support?", a: "You can reach us through the in-app help center, email support@sabiright.com, or join our community forum where our team actively responds to questions." }
-            ].map((faq, i) => (
+            {(activeFaqs.length > 0 ? activeFaqs : [
+              { question: "How accurate is the AI Legal Guard?", answer: "SabiGuard uses Retrieval-Augmented Generation (RAG) to cite specific sections of the 1999 Constitution and NPF Act 2020. It provides accurate legal information but is not a substitute for professional legal advice in complex matters." },
+              { question: "Is the platform free to use?", answer: "Yes! Core features including civic alerts, basic AI legal queries, and community forums are completely free. Premium features like unlimited AI queries, job matching, and priority marketplace placement use Credits which you can earn or purchase." },
+              { question: "What are Credits and how do I get them?", answer: "Credits are your in-app currency for premium features. New users get 10 free credits daily. You can earn more by completing your profile, verifying your identity (KYC), referring friends, or purchasing credit packs." },
+              { question: "How does SabiMove help with traffic?", answer: "SabiMove provides real-time traffic updates, checkpoint alerts, and AI-powered route optimization. Our 'Cloaked Routes' feature helps you navigate around known checkpoint hotspots while staying completely legal." }
+            ]).map((faq, i) => (
               <div key={i} className="bg-white border rounded-2xl overflow-hidden">
                 <button 
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
                   className="w-full p-6 text-left font-bold flex justify-between items-center hover:bg-slate-50 transition"
                 >
-                  <span>{faq.q}</span>
+                  <span>{faq.question || faq.q}</span>
                   <ChevronDown className={`transform transition-transform ${openFaq === i ? "rotate-180" : ""}`} />
                 </button>
                 {openFaq === i && (
                   <div className="p-6 pt-0 text-slate-600 border-t text-sm bg-slate-50/50 animate-in slide-in-from-top-2 fade-in duration-300">
-                    {faq.a}
+                    {faq.answer || faq.a}
                   </div>
                 )}
               </div>
@@ -313,6 +322,47 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Testimonials Section */}
+      {activeTestimonials.length > 0 && (
+        <section className="py-24 bg-white overflow-hidden">
+          <div className="max-w-7xl mx-auto px-6">
+            <h2 className="text-4xl font-extrabold text-center mb-16">Citizen Success Stories</h2>
+            <div className="grid md:grid-cols-3 gap-8">
+              {activeTestimonials.slice(0, 6).map((t, i) => (
+                <motion.div 
+                  key={t.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.1 }}
+                  className="bg-slate-50 p-8 rounded-3xl border relative"
+                >
+                  <div className="flex gap-1 mb-4">
+                    {[...Array(t.rating || 5)].map((_, i) => (
+                      <Star key={i} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                    ))}
+                  </div>
+                  <p className="text-slate-700 italic mb-8 leading-relaxed">"{t.content}"</p>
+                  <div className="flex items-center gap-4">
+                    <div className="h-12 w-12 rounded-full bg-white border flex items-center justify-center overflow-hidden">
+                      {t.avatar ? (
+                        <img src={t.avatar} alt={t.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <User className="h-6 w-6 text-slate-300" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm">{t.name}</p>
+                      <p className="text-xs text-slate-500">{t.role}</p>
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Waitlist / CTA Section */}
       <section className="py-24 bg-slate-950 text-white">

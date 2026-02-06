@@ -61,6 +61,9 @@ export function Navbar() {
           <button onClick={() => scrollToSection("problem")} className="hover:text-primary transition">
             SabiSquare
           </button>
+          <Link href="/app/forum">
+            <button className="hover:text-primary transition">Forum</button>
+          </Link>
         </div>
 
         <div className="hidden md:flex items-center gap-4">
@@ -95,6 +98,9 @@ export function Navbar() {
           <button onClick={() => scrollToSection("problem")} className="text-left font-semibold py-2">
             SabiSquare
           </button>
+          <Link href="/app/forum" className="text-left font-semibold py-2">
+            Forum
+          </Link>
           <Link href="/app" className="inline-flex w-full">
             <Button className="w-full rounded-xl font-bold mt-2">Launch App</Button>
           </Link>

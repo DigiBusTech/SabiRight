@@ -3,19 +3,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Send, Sparkles, User, ShieldCheck, Copy, ThumbsUp, Mic, AlertCircle } from "lucide-react";
+import { Send, Sparkles, User, ShieldCheck, Copy, ThumbsUp, Mic, AlertCircle, Plus, MessageSquare, History, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { runGemini } from "@/lib/gemini";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { CreditDisplay } from "@/components/CreditDisplay";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
+import { SurveyDialog } from "@/components/SurveyDialog";
 
 interface Message {
   role: "user" | "ai";
   text: string;
   sources?: { title?: string; uri?: string }[];
+  timestamp?: string;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  updatedAt: string;
 }
 
 export default function CivicGuard() {
@@ -25,20 +33,228 @@ export default function CivicGuard() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isUrgent, setIsUrgent] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number, lng: number } | null>(null);
+  const [showSurveyDialog, setShowSurveyDialog] = useState(false);
+  const [surveyTriggered, setSurveyTriggered] = useState(false);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [chatList, setChatList] = useState<ChatSession[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Fetch credits
-  const { data: credits, refetch: refetchCredits } = useQuery({
-    queryKey: [`credits-${user?.uid}`],
+  const queryClient = useQueryClient();
+
+  // Fetch chat sessions
+  const { data: sessions = [], isLoading: isLoadingSessions } = useQuery<ChatSession[]>({
+    queryKey: ['sabiguard-chats', user?.uid],
+    queryFn: async () => {
+      if (!user?.uid) return [];
+      const res = await fetch(`/api/sabiguard/chats?userId=${user.uid}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user?.uid,
+  });
+
+  // Fetch messages for current chat
+  const { data: chatMessages = [], isLoading: isLoadingMessages } = useQuery<Message[]>({
+    queryKey: ['sabiguard-messages', currentChatId],
+    queryFn: async () => {
+      if (!currentChatId) return [];
+      const res = await fetch(`/api/sabiguard/chats/${currentChatId}/messages`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!currentChatId,
+  });
+
+  // Update messages when chatMessages changes
+  useEffect(() => {
+    if (chatMessages.length > 0) {
+      setMessages(chatMessages);
+    } else if (currentChatId === null) {
+      setMessages([]);
+    }
+  }, [chatMessages, currentChatId]);
+
+  // Create new chat mutation
+  const createChatMutation = useMutation({
+    mutationFn: async (title: string) => {
+      const res = await fetch('/api/sabiguard/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.uid, title })
+      });
+      if (!res.ok) throw new Error('Failed to create chat');
+      return res.json();
+    },
+    onSuccess: (newChat) => {
+      queryClient.invalidateQueries({ queryKey: ['sabiguard-chats', user?.uid] });
+      setCurrentChatId(newChat.id);
+      setMessages([]);
+    }
+  });
+
+  // Delete chat mutation
+  const deleteChatMutation = useMutation({
+    mutationFn: async (chatId: string) => {
+      const res = await fetch(`/api/sabiguard/chats/${chatId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete chat');
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sabiguard-chats', user?.uid] });
+      if (currentChatId) {
+        setCurrentChatId(null);
+        setMessages([]);
+      }
+    }
+  });
+
+  // Add message mutation
+  const addMessageMutation = useMutation({
+    mutationFn: async ({ chatId, role, text }: { chatId: string, role: 'user' | 'ai', text: string }) => {
+      const res = await fetch(`/api/sabiguard/chats/${chatId}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, text })
+      });
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to save message');
+      }
+      return res.json();
+    }
+  });
+
+  // Get user geolocation
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserCoords({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.warn("Location access declined or unavailable. Emergency features may be limited.");
+        }
+      );
+    }
+  }, []);
+  const recognitionRef = useRef<any>(null);
+
+  // Initialize Speech Recognition
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.lang = 'en-NG';
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(transcript);
+        setIsListening(false);
+        // Automatically send after a short delay to allow the user to see what was captured
+        setTimeout(() => {
+          if (transcript.trim()) {
+            // We use a ref-based approach or a trigger to call handleSend
+            document.getElementById('send-message-btn')?.click();
+          }
+        }, 500);
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        toast({
+          title: "Speech Error",
+          description: "Could not recognize speech. Please try again.",
+          variant: "destructive"
+        });
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      if (!recognitionRef.current) {
+        toast({
+          title: "Not Supported",
+          description: "Speech recognition is not supported in your browser.",
+          variant: "destructive"
+        });
+        return;
+      }
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (err) {
+        console.error('Failed to start speech recognition:', err);
+      }
+    }
+  };
+
+  const speakText = (text: string) => {
+    if ('speechSynthesis' in window) {
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-NG';
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Fetch user profile for city
+  const { data: userProfile } = useQuery({
+    queryKey: [`profile-${user?.uid}`],
     queryFn: async () => {
       if (!user?.uid) return null;
-      const res = await fetch(`/api/credits/${user.uid}/available`);
+      const res = await fetch(`/api/profile/${user.uid}`);
       if (!res.ok) return null;
       return res.json();
     },
     enabled: !!user?.uid,
-    refetchInterval: 30000,
   });
+
+    // Fetch credits
+    const { data: credits, refetch: refetchCredits } = useQuery({
+      queryKey: [`credits-${user?.uid}`],
+      queryFn: async () => {
+        if (!user?.uid) return null;
+        const res = await fetch(`/api/credits/${user.uid}/available`);
+        if (!res.ok) return null;
+        return res.json();
+      },
+      enabled: !!user?.uid,
+      refetchInterval: 30000,
+    });
+
+    // Fetch storage info
+    const { data: storageInfo, refetch: refetchStorage } = useQuery({
+      queryKey: [`storage-${user?.uid}`],
+      queryFn: async () => {
+        if (!user?.uid) return null;
+        const res = await fetch(`/api/profile/${user.uid}`);
+        if (!res.ok) return null;
+        const profile = await res.json();
+        return {
+          used: profile.chatStorageUsed || 0,
+          limit: profile.chatStorageLimit || 512 * 1024 // default 512KB
+        };
+      },
+      enabled: !!user?.uid,
+    });
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -61,58 +277,77 @@ export default function CivicGuard() {
 
     const userText = input;
     setInput("");
-    setMessages(prev => [...prev, { role: "user", text: userText }]);
     setIsTyping(true);
-
-    try {
-      const city = "Nigeria"; 
-      
-      const systemPrompt = isUrgent
-        ? `EMERGENCY LEGAL ASSISTANT MODE. User Location: ${city}.
-           You are an urgent legal aid tool. The user might be in danger.
-           1. First, quickly assess if they are safe.
-           2. Provide concise, imperative instructions (e.g., "Do not speak," "Ask for a warrant").
-           3. Cite specific Nigerian laws (1999 Constitution, Police Act 2020) to empower them.
-           4. Do NOT give long explanations. Bullet points only.`
-        : `You are the "Right-To-Know" Legal Assistant for Nigeria.
-           1. Your goal is to educate citizens on their rights under the 1999 Constitution and Police Act 2020.
-           2. Provide clear, structured summaries.
-           3. If the user asks about bail, arrests, or tenancy, cite the specific sections.
-           4. Use Markdown for formatting (bolding key terms).
-           5. Be helpful, professional, and empowering.`;
-
-      const fullPrompt = `${systemPrompt}\n\nUser Question: ${userText}`;
-      
-      const result = await runGemini(fullPrompt);
-      
-      if (result.error) {
-        setMessages(prev => [...prev, { role: "ai", text: result.error || "An error occurred" }]);
+    
+    let chatId = currentChatId;
+    
+    // Create a new chat if none exists
+    if (!chatId) {
+      try {
+        const newChat = await createChatMutation.mutateAsync(userText.slice(0, 30) + "...");
+        chatId = newChat.id;
+        setCurrentChatId(chatId);
+      } catch (err: any) {
+        toast({ title: "Error", description: "Could not create chat session", variant: "destructive" });
+        setIsTyping(false);
         return;
       }
-      
-      if (!result.response) {
-        throw new Error("No response from AI");
+    }
+
+    // Check if chatId is still null (shouldn't happen but for type safety)
+    if (!chatId) {
+      setIsTyping(false);
+      return;
+    }
+
+    setMessages(prev => [...prev, { role: "user", text: userText }]);
+
+    try {
+      // Save user message
+      await addMessageMutation.mutateAsync({ chatId, role: 'user', text: userText });
+
+      const response = await fetch('/api/ai/civic/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.uid,
+          message: userText,
+          city: userProfile?.city || "Nigeria",
+          isUrgent,
+          lat: userCoords?.lat,
+          lng: userCoords?.lng,
+          chatId
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to get AI response");
       }
 
-      const aiResponse = result.response;
-      setMessages(prev => [...prev, { role: "ai", text: aiResponse, sources: [] }]);
+      const data = await response.json();
       
-      // Deduct credit
-      if (user?.uid) {
-        await fetch(`/api/credits/${user.uid}/deduct`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            amount: 1,
-            feature: 'civic_guard',
-            description: `Legal AI query: ${userText.substring(0, 50)}`
-          })
-        });
-        refetchCredits();
+      // Save AI response
+      await addMessageMutation.mutateAsync({ chatId, role: 'ai', text: data.response });
+
+      setMessages(prev => [...prev, { role: "ai", text: data.response, sources: [] }]);
+      
+      // Speak the AI response
+      speakText(data.response);
+      
+      // Credit deduction is now handled on the server
+      refetchCredits();
+
+      // Show survey after first AI response in session
+      if (!surveyTriggered) {
+        setSurveyTriggered(true);
+        setTimeout(() => {
+          setShowSurveyDialog(true);
+        }, 3000); // Wait 3 seconds for user to read initial response
       }
-    } catch (error) {
-      console.error("Gemini Error:", error);
-      setMessages(prev => [...prev, { role: "ai", text: "Something went wrong. Please try again." }]);
+    } catch (error: any) {
+      console.error("Civic Chat Error:", error);
+      setMessages(prev => [...prev, { role: "ai", text: error.message || "Something went wrong. Please try again." }]);
     } finally {
       setIsTyping(false);
     }
@@ -141,8 +376,8 @@ export default function CivicGuard() {
                <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="font-bold text-sm">Right-to-Know AI Agent</h2>
-              <p className="text-xs text-slate-500">{isUrgent ? "🚨 Urgent Assistance Mode" : "Verified Legal Knowledge Base"}</p>
+              <h2 className="font-bold text-sm">SabiRight Citizen Education Agent</h2>
+              <p className="text-xs text-slate-500">{isUrgent ? "🚨 Urgent Assistance Mode" : "Law-based Guidance (Legal First Aid)"}</p>
             </div>
           </div>
           <Button 
@@ -220,10 +455,24 @@ export default function CivicGuard() {
               placeholder={isUrgent ? "Describe emergency situation..." : "Ask about your rights..."}
               className={cn("flex-1 rounded-xl h-12 border-slate-200 focus-visible:ring-primary", isUrgent ? "bg-red-50 placeholder:text-red-300" : "bg-slate-50")}
             />
-            <Button type="button" size="icon" variant="outline" className="h-12 w-12 rounded-xl text-slate-400 hover:text-slate-600">
-                <Mic className="h-5 w-5" />
+            <Button 
+              type="button" 
+              size="icon" 
+              variant="outline" 
+              onClick={toggleListening}
+              className={cn(
+                "h-12 w-12 rounded-xl transition-all", 
+                isListening ? "bg-red-100 text-red-600 border-red-200 animate-pulse" : "text-slate-400 hover:text-slate-600"
+              )}
+            >
+                <Mic className={cn("h-5 w-5", isListening ? "fill-current" : "")} />
             </Button>
-            <Button type="submit" size="icon" className={cn("h-12 w-12 rounded-xl shadow-lg", isUrgent ? "bg-red-600 hover:bg-red-700" : "")}>
+            <Button 
+              type="submit" 
+              id="send-message-btn"
+              size="icon" 
+              className={cn("h-12 w-12 rounded-xl shadow-lg", isUrgent ? "bg-red-600 hover:bg-red-700" : "")}
+            >
               <Send className="h-5 w-5" />
             </Button>
           </form>
@@ -231,7 +480,91 @@ export default function CivicGuard() {
       </div>
 
       {/* Sidebar Info */}
-      <div className="hidden md:block space-y-6">
+      <div className="hidden md:block space-y-6 overflow-y-auto">
+        {/* Storage Limit Section */}
+        {storageInfo && (
+          <div className="bg-white border rounded-3xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-xs text-slate-500 uppercase tracking-wider">Chat Storage</h3>
+              <span className="text-[10px] font-medium text-slate-400">
+                {Math.round(storageInfo.used / 1024)}KB / {Math.round(storageInfo.limit / 1024)}KB
+              </span>
+            </div>
+            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div 
+                className={cn(
+                  "h-full transition-all duration-500",
+                  (storageInfo.used / storageInfo.limit) > 0.9 ? "bg-red-500" : 
+                  (storageInfo.used / storageInfo.limit) > 0.7 ? "bg-yellow-500" : "bg-primary"
+                )}
+                style={{ width: `${Math.min(100, (storageInfo.used / storageInfo.limit) * 100)}%` }}
+              />
+            </div>
+            {(storageInfo.used / storageInfo.limit) > 0.8 && (
+              <p className="text-[10px] text-yellow-600 font-medium">
+                Storage almost full. <a href="/app/plans" className="underline">Upgrade</a> for more space.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Chat History Section */}
+        <div className="bg-white border rounded-3xl p-4 flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              <History className="h-4 w-4" /> History
+            </h3>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 rounded-full"
+              onClick={() => {
+                setCurrentChatId(null);
+                setMessages([]);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          
+          <ScrollArea className="h-[200px]">
+            <div className="space-y-2">
+              {isLoadingSessions ? (
+                <div className="text-center py-4">
+                  <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce inline-block"></span>
+                </div>
+              ) : sessions.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-4">No previous chats</p>
+              ) : (
+                sessions.map((session) => (
+                  <div 
+                    key={session.id}
+                    className={cn(
+                      "group flex items-center gap-2 p-2 rounded-xl text-xs cursor-pointer transition-colors",
+                      currentChatId === session.id ? "bg-primary/10 text-primary font-medium" : "hover:bg-slate-50 text-slate-600"
+                    )}
+                    onClick={() => setCurrentChatId(session.id)}
+                  >
+                    <MessageSquare className="h-3 w-3 shrink-0" />
+                    <span className="truncate flex-1">{session.title}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteChatMutation.mutate(session.id);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3 text-slate-400 hover:text-red-500" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+
         <CreditDisplay compact={false} onClick={() => window.location.href = '/app/plans'} />
         
         <div className="bg-slate-900 text-white p-6 rounded-3xl relative overflow-hidden">
@@ -258,6 +591,12 @@ export default function CivicGuard() {
            </div>
         </div>
       </div>
+
+      <SurveyDialog 
+        isOpen={showSurveyDialog} 
+        onClose={() => setShowSurveyDialog(false)} 
+        feature="civic-guard"
+      />
     </div>
   );
 }

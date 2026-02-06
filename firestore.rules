@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      // PROPER ADMIN CHECK:
+      // Replace 'YOUR_ADMIN_UID' with the actual UID of the admin user
+      // Or check a specific field in the users/profiles collection
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/artifacts/legal-13d13/profiles/$(request.auth.uid)).data.isAdmin == true ||
+        get(/databases/$(database)/documents/artifacts/legal-13d13/users/$(request.auth.uid)).data.isAdmin == true
+      );
+    }
+
+    // Rules for artifacts
+    match /artifacts/legal-13d13/{collection}/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+      
+      // Allow users to write to their own profile/user documents
+      match /profiles/{userId} {
+        allow write: if isOwner(userId);
+      }
+      match /users/{userId} {
+        allow write: if isOwner(userId);
+      }
+      
+      // Allow users to create vendor applications
+      match /vendorApplications/{appId} {
+        allow create: if isSignedIn();
+        allow read, update: if isAdmin() || resource.data.userId == request.auth.uid;
+      }
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

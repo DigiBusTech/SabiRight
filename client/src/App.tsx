@@ -85,7 +85,9 @@ function Router() {
       <Route path="/app/payment">
         <AppLayout><Payment /></AppLayout>
       </Route>
-      <Route path="/admin" component={AdminDashboard} />
+      <Route path="/admin">
+        <AppLayout><AdminDashboard /></AppLayout>
+      </Route>
 
       <Route component={NotFound} />
     </Switch>

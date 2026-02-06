@@ -1,15 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { CreditCard, Wallet as WalletIcon, Building2, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
+import { CreditCard, Wallet as WalletIcon, Building2, ArrowLeft, Loader2, CheckCircle2, UploadCloud } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import ReCAPTCHA from "react-google-recaptcha";
 
 // Declare Paystack and Flutterwave popup types
 declare global {
@@ -18,6 +22,56 @@ declare global {
     FlutterwaveCheckout: any;
   }
 }
+
+// Stripe Checkout Form Component
+const StripeCheckoutForm = ({ clientSecret, onSuccess }: { clientSecret: string, onSuccess: () => void }) => {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [error, setError] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!stripe || !elements) {
+      return;
+    }
+
+    setProcessing(true);
+
+    const { error: submitError } = await elements.submit();
+    if (submitError) {
+        setError(submitError.message || "An error occurred");
+        setProcessing(false);
+        return;
+    }
+
+    const { error } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: window.location.origin + "/app/wallet?payment=success",
+      },
+    });
+
+    if (error) {
+      setError(error.message || "Payment failed");
+      setProcessing(false);
+    } else {
+      // The return_url will handle the rest
+      onSuccess();
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <PaymentElement />
+      {error && <div className="text-red-500 text-sm">{error}</div>}
+      <Button type="submit" disabled={!stripe || processing} className="w-full">
+        {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Pay Now"}
+      </Button>
+    </form>
+  );
+};
 
 export default function Payment() {
   const { user } = useAuth();
@@ -42,8 +96,27 @@ export default function Payment() {
 
   const [selectedMethod, setSelectedMethod] = useState<string>('');
   const [useWalletBalance, setUseWalletBalance] = useState(false);
+  const [manualFieldValues, setManualFieldValues] = useState<Record<string, any>>({});
+  const [manualFiles, setManualFiles] = useState<Record<string, File>>({});
+  const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
+  const [stripePromise, setStripePromise] = useState<Promise<any> | null>(null);
+  const [isStripeModalOpen, setIsStripeModalOpen] = useState(false);
+  const [siteKey, setSiteKey] = useState<string | null>(null);
+  const captchaRef = useRef<ReCAPTCHA>(null);
 
   // Debug: Log payment parameters
+  useEffect(() => {
+    // Fetch public site key
+    fetch('/api/settings/public')
+      .then(res => res.json())
+      .then(data => {
+        if (data.captcha_site_key) {
+          setSiteKey(data.captcha_site_key);
+        }
+      })
+      .catch(err => console.error('Failed to fetch site key:', err));
+  }, []);
+
   useEffect(() => {
     console.log('Payment Page Parameters:', {
       paymentType,
@@ -107,13 +180,21 @@ export default function Payment() {
     ['paystack', 'flutterwave', 'stripe'].includes(m.type)
   );
   const manualMethods = allPaymentMethods.filter((m: any) => 
-    m.type === 'manual'
+    m.type === 'manual' || (m.type !== 'wallet' && !['paystack', 'flutterwave', 'stripe'].includes(m.type))
   );
 
   // Get specific gateway configurations
   const paystackGateway = automaticGateways.find((g: any) => g.type === 'paystack');
   const flutterwaveGateway = automaticGateways.find((g: any) => g.type === 'flutterwave');
   const stripeGateway = automaticGateways.find((g: any) => g.type === 'stripe');
+  const walletMethod = allPaymentMethods.find((m: any) => m.type === 'wallet');
+
+  // Initialize Stripe
+  useEffect(() => {
+    if (stripeGateway?.publicKey && !stripePromise) {
+        setStripePromise(loadStripe(stripeGateway.publicKey));
+    }
+  }, [stripeGateway, stripePromise]);
 
   // Count total active payment methods
   const totalActiveMethods = automaticGateways.length + manualMethods.length;
@@ -214,7 +295,7 @@ export default function Payment() {
     }
   });
 
-  const handlePayment = () => {
+  const handlePayment = async () => {
     if (!user?.uid) {
       toast({
         title: "Authentication Required",
@@ -237,6 +318,53 @@ export default function Payment() {
         variant: "destructive"
       });
       return;
+    }
+
+    const captchaToken = captchaRef.current?.getValue();
+    if (siteKey && !captchaToken) {
+      toast({
+        title: "Verification Required",
+        description: "Please complete the reCAPTCHA verification.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Handle Stripe Payment
+    if (selectedMethod === 'stripe') {
+        const paymentData = {
+            userId: user.uid,
+            amount,
+            currency: 'NGN',
+            provider: 'stripe',
+            type: paymentType,
+            description: paymentType === 'credit_purchase' 
+              ? `Purchase ${credits} credits`
+              : paymentType === 'subscription'
+              ? `Subscription to plan ${planId}`
+              : `Wallet top-up - NGN ${amount}`,
+            captchaToken,
+            metadata: {
+              ...(credits && { credits }),
+              ...(planId && { planId })
+            }
+        };
+
+        initiatePayment.mutate(paymentData, {
+            onSuccess: (data: any) => {
+                if (data.clientSecret) {
+                    setStripeClientSecret(data.clientSecret);
+                    setIsStripeModalOpen(true);
+                } else {
+                    toast({
+                        title: "Error",
+                        description: "Failed to initialize Stripe payment",
+                        variant: "destructive"
+                    });
+                }
+            }
+        });
+        return;
     }
 
     // Handle Paystack inline payment
@@ -263,6 +391,7 @@ export default function Payment() {
           : paymentType === 'subscription'
           ? `Subscription to plan ${planId}`
           : `Wallet top-up - NGN ${amount}`,
+        captchaToken,
         metadata: {
           reference,
           ...(credits && { credits }),
@@ -273,8 +402,8 @@ export default function Payment() {
       // Initiate payment to get Paystack public key
       initiatePayment.mutate(paymentData, {
         onSuccess: (data: any) => {
-          // Get public key from settings
-          const publicKey = paymentSettings?.paystack_public_key;
+          // Get public key from configured payment method
+          const publicKey = (paystackGateway as any)?.publicKey;
           
           if (!publicKey) {
             toast({
@@ -364,6 +493,7 @@ export default function Payment() {
           : paymentType === 'subscription'
           ? `Subscription to plan ${planId}`
           : `Wallet top-up - NGN ${amount}`,
+        captchaToken,
         metadata: {
           reference,
           ...(credits && { credits }),
@@ -405,6 +535,7 @@ export default function Payment() {
             amount: amount,
             currency: 'NGN',
             payment_options: 'card,banktransfer,ussd,mobilemoney',
+            redirect_url: window.location.origin + "/app/wallet?payment=success&provider=flutterwave",
             customer: {
               email: paymentData.email,
               name: user.displayName || 'SabiRight User',
@@ -472,35 +603,86 @@ export default function Payment() {
     }
 
     // Handle other payment methods (manual methods)
-    const paymentData = {
-      userId: user.uid,
-      amount,
-      currency: 'NGN',
-      provider: selectedMethod,
-      type: paymentType,
-      description: paymentType === 'credit_purchase' 
-        ? `Purchase ${credits} credits`
-        : paymentType === 'subscription'
-        ? `Subscription to plan ${planId}`
-        : `Wallet top-up - NGN ${amount}`,
-      metadata: {
-        reference: `${paymentType.toUpperCase()}-${Date.now()}`,
-        ...(credits && { credits }),
-        ...(planId && { planId })
-      }
-    };
-
-    // For manual payment methods, show success message after initiation
-    initiatePayment.mutate(paymentData, {
-      onSuccess: () => {
-        toast({
-          title: "Payment Initiated",
-          description: "Please complete the payment and wait for admin approval.",
-          duration: 5000
+    // Upload files first
+    const uploadPromises = Object.entries(manualFiles).map(async ([fieldName, file]) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const res = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
         });
-        navigate('/app/wallet');
-      }
+        
+        if (!res.ok) throw new Error('File upload failed');
+        const data = await res.json();
+        return { fieldName, url: data.url };
     });
+
+    try {
+        const uploadedFiles = await Promise.all(uploadPromises);
+        const updatedManualFieldValues = { ...manualFieldValues };
+        
+        uploadedFiles.forEach(({ fieldName, url }) => {
+            updatedManualFieldValues[fieldName] = url;
+        });
+
+        const paymentData = {
+          userId: user.uid,
+          amount,
+          currency: 'NGN',
+          provider: selectedMethod,
+          type: paymentType,
+          description: paymentType === 'credit_purchase' 
+            ? `Purchase ${credits} credits`
+            : paymentType === 'subscription'
+            ? `Subscription to plan ${planId}`
+            : `Wallet top-up - NGN ${amount}`,
+          captchaToken,
+          metadata: (() => {
+            const method = manualMethods.find((m: any) => m.id === selectedMethod);
+            const manualFields = (method?.fields || []).map((f: any) => ({
+              name: f.name,
+              type: f.type,
+              required: !!f.required,
+              value: updatedManualFieldValues[f.name] ?? ''
+            }));
+            const missingRequired = manualFields.some((f: any) => f.required && !f.value);
+            if (missingRequired) {
+              toast({
+                title: "Missing Required Fields",
+                description: "Please fill all required manual payment fields.",
+                variant: "destructive"
+              });
+              throw new Error("Missing required manual fields");
+            }
+            return {
+              reference: `${paymentType.toUpperCase()}-${Date.now()}`,
+              ...(credits && { credits }),
+              ...(planId && { planId }),
+              manualFields
+            };
+          })()
+        };
+
+        // For manual payment methods, show success message after initiation
+        initiatePayment.mutate(paymentData, {
+          onSuccess: () => {
+            toast({
+              title: "Payment Initiated",
+              description: "Please wait for admin approval.",
+              duration: 5000
+            });
+            navigate('/app/wallet');
+          }
+        });
+    } catch (error) {
+        console.error("Upload error", error);
+        toast({
+            title: "Error",
+            description: "Failed to upload receipt or initiate payment",
+            variant: "destructive"
+        });
+    }
   };
 
   const formatCurrency = (value: number) => {
@@ -705,13 +887,32 @@ export default function Payment() {
                             <div key={idx}>
                               <Label>{field.name} {field.required && '*'}</Label>
                               {field.type === 'file' ? (
-                                <Input type="file" required={field.required} className="mt-1" />
+                                <Input 
+                                  type="file" 
+                                  required={field.required} 
+                                  className="mt-1"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    setManualFiles((prev) => ({
+                                      ...prev,
+                                      [field.name]: file
+                                    }));
+                                  }}
+                                />
                               ) : (
                                 <Input 
                                   type="text" 
                                   placeholder={field.placeholder} 
                                   required={field.required}
                                   className="mt-1"
+                                  value={manualFieldValues[field.name] ?? ''}
+                                  onChange={(e) => {
+                                    setManualFieldValues((prev) => ({
+                                      ...prev,
+                                      [field.name]: e.target.value
+                                    }));
+                                  }}
                                 />
                               )}
                             </div>
@@ -731,6 +932,17 @@ export default function Payment() {
 
           </CardContent>
         </Card>
+      )}
+
+      {/* reCAPTCHA Verification */}
+      {siteKey && (
+        <div className="flex justify-center my-4">
+          <ReCAPTCHA
+            ref={captchaRef}
+            sitekey={siteKey}
+            onChange={(val) => console.log("Captcha value:", val)}
+          />
+        </div>
       )}
 
       {/* Payment Button */}
@@ -757,6 +969,20 @@ export default function Payment() {
       <p className="text-xs text-center text-slate-500">
         🔒 Your payment information is secure and encrypted
       </p>
+
+      {/* Stripe Modal */}
+      <Dialog open={isStripeModalOpen} onOpenChange={setIsStripeModalOpen}>
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Complete Payment with Stripe</DialogTitle>
+            </DialogHeader>
+            {stripeClientSecret && stripePromise && (
+                <Elements stripe={stripePromise} options={{ clientSecret: stripeClientSecret }}>
+                    <StripeCheckoutForm clientSecret={stripeClientSecret} onSuccess={() => setIsStripeModalOpen(false)} />
+                </Elements>
+            )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

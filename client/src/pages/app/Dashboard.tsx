@@ -218,7 +218,7 @@ export default function Dashboard() {
       </Card>
 
       {/* Become a Vendor CTA - Only show if not already a vendor */}
-      {!profile?.vendorMode && (
+      {!profile?.isVendor && (
         <Card className="bg-gradient-to-r from-orange-500 to-amber-500 text-white border-0 shadow-lg overflow-hidden">
           <CardContent className="p-4 md:p-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -308,6 +308,30 @@ export default function Dashboard() {
 
           {/* Quick Actions Grid */}
           <div className="grid grid-cols-2 gap-3">
+            {profile?.isAdmin && (
+              <Link href="/admin">
+                <Card className="bg-red-50 border-red-100 hover:border-red-300 transition-colors cursor-pointer h-full">
+                  <CardContent className="p-4">
+                    <ShieldCheck className="h-6 w-6 text-red-600 mb-2" />
+                    <h4 className="font-bold text-sm mb-1">Admin Dashboard</h4>
+                    <p className="text-xs text-slate-600">Manage platform and users</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            )}
+
+            {profile?.isVendor && (
+              <Link href="/app/vendor">
+                <Card className="bg-orange-50 border-orange-100 hover:border-orange-300 transition-colors cursor-pointer h-full">
+                  <CardContent className="p-4">
+                    <Store className="h-6 w-6 text-orange-600 mb-2" />
+                    <h4 className="font-bold text-sm mb-1">Vendor Portal</h4>
+                    <p className="text-xs text-slate-600">Manage your business & leads</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            )}
+
             <Link href="/app/jobs">
               <Card className="bg-blue-50 border-blue-100 hover:border-blue-300 transition-colors cursor-pointer h-full">
                 <CardContent className="p-4">
@@ -395,22 +419,22 @@ export default function Dashboard() {
                 <ShieldCheck className="h-6 w-6 text-primary" />
               </div>
               
-              <h3 className="text-lg font-bold mb-2">SabiGuard AI</h3>
+              <h3 className="text-lg font-bold mb-2">SabiRight AI</h3>
               <p className="text-slate-400 text-sm mb-4">
-                Get instant legal citations from the 1999 Constitution.
+                Lawful civic guidance & "Legal First Aid" education.
               </p>
               
               <div className="space-y-2">
                 <Button className="w-full justify-start bg-white/10 hover:bg-white/20 border-0 text-left h-auto py-2.5 px-3 text-xs">
-                  "What are my rights at a checkpoint?"
+                  "How to handle a police stop lawfully?"
                 </Button>
                 <Button className="w-full justify-start bg-white/10 hover:bg-white/20 border-0 text-left h-auto py-2.5 px-3 text-xs">
-                  "Can my landlord increase rent?"
+                  "What does the Police Act say about bail?"
                 </Button>
                 
                 <Link href="/app/civic">
                   <Button className="w-full mt-3 bg-primary hover:bg-primary/90 text-white font-bold">
-                    Ask AI <ChevronRight className="ml-2 h-4 w-4" />
+                    Get Lawful Guidance <ChevronRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
               </div>

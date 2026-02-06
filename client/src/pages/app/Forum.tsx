@@ -37,7 +37,7 @@ interface Post {
 }
 
 export default function Forum() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   const [posts, setPosts] = useState<Post[]>([]);
   const [newPostContent, setNewPostContent] = useState("");
@@ -52,32 +52,58 @@ export default function Forum() {
         orderBy('timestamp', 'desc')
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
-        const postsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+        let postsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
+        
+        // Sort by city if user city is available
+        if (profile?.city) {
+          postsData.sort((a, b) => {
+            const aInCity = a.city?.toLowerCase() === profile.city.toLowerCase();
+            const bInCity = b.city?.toLowerCase() === profile.city.toLowerCase();
+            if (aInCity && !bInCity) return -1;
+            if (!aInCity && bInCity) return 1;
+            return 0;
+          });
+        }
+        
         setPosts(postsData);
     });
     return () => unsubscribe();
-  }, []);
+  }, [profile?.city]);
 
   const handleCreatePost = async (e: React.FormEvent) => {
       e.preventDefault();
+      if (!user) {
+          toast({ title: "Login Required", description: "Please login to post." });
+          return;
+      }
+
+      if (profile?.kycStatus !== 'verified') {
+          toast({ title: "KYC Required", description: "You must be KYC verified to create a post.", variant: "destructive" });
+          return;
+      }
+
       if (!newPostContent.trim()) return;
 
       try {
-          await addDoc(collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts'), {
+          const idToken = await user.getIdToken();
+          const response = await fetch('/api/forum/posts', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`
+            },
+            body: JSON.stringify({
               content: newPostContent,
-              city: "Lagos",
+              city: profile?.city || "Lagos",
               author: user?.displayName || "Citizen",
-              userId: user?.uid || "anon",
-              upvotes: 0,
-              downvotes: 0,
-              comments: [],
-              flagged: false,
-              flagCount: 0,
-              flaggedBy: [],
-              shadowedForReview: false,
-              upvotedBy: [],
-              timestamp: serverTimestamp()
+              userId: user?.uid || "anon"
+            })
           });
+
+          if (!response.ok) {
+            throw new Error('Failed to create post');
+          }
+
           setNewPostContent("");
           toast({ title: "Posted", description: "Your voice has been heard." });
       } catch (err) {
@@ -147,28 +173,30 @@ export default function Forum() {
       if (!confirm("Flag this post as inappropriate?")) return;
       
       try {
-          const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', postId);
-          
-          // Add user to flaggedBy array and increment flagCount
-          await updateDoc(postRef, {
-              flaggedBy: arrayUnion(user.uid),
-              flagCount: increment(1)
+          const idToken = await user.getIdToken();
+          const response = await fetch(`/api/forum/posts/${postId}/flag`, {
+              method: 'POST',
+              headers: {
+                  'Authorization': `Bearer ${idToken}`,
+                  'Content-Type': 'application/json'
+              }
           });
+
+          if (!response.ok) {
+              const error = await response.json();
+              throw new Error(error.error || 'Failed to flag post');
+          }
+
+          const result = await response.json();
           
-          // Check if we need to shadow the post (10+ flags)
-          const currentFlagCount = (post?.flagCount || 0) + 1;
-          if (currentFlagCount >= 10) {
-              await updateDoc(postRef, {
-                  shadowedForReview: true,
-                  flagged: true
-              });
+          if (result.shadowed) {
               toast({ title: "Post Shadowed", description: "This post has been hidden for admin review due to multiple flags." });
           } else {
-              toast({ title: "Flagged", description: `Post has been reported for review. (${currentFlagCount}/10 flags)` });
+              toast({ title: "Flagged", description: `Post has been reported for review. (${result.flagCount}/${result.threshold} flags)` });
           }
-      } catch (err) {
+      } catch (err: any) {
           console.error("Error flagging post", err);
-          toast({ title: "Error", description: "Failed to flag post.", variant: "destructive" });
+          toast({ title: "Error", description: err.message || "Failed to flag post.", variant: "destructive" });
       }
   };
 
@@ -180,26 +208,44 @@ export default function Forum() {
 
   const handleComment = async (e: React.FormEvent, postId: string) => {
       e.preventDefault();
-      if (!commentText.trim() || !user) return;
+      if (!user) {
+          toast({ title: "Login Required", description: "Please login to comment." });
+          return;
+      }
 
-      const newComment: Comment = {
-          id: crypto.randomUUID(),
-          text: replyingTo ? `@${posts.find(p => p.id === postId)?.comments.find(c => c.id === replyingTo)?.author || 'User'} ${commentText}` : commentText,
-          author: user.displayName || "Citizen",
-          userId: user.uid,
-          upvotes: 0,
-          upvotedBy: [],
-          timestamp: new Date().toISOString()
-      };
+      if (profile?.kycStatus !== 'verified') {
+          toast({ title: "KYC Required", description: "You must be KYC verified to comment.", variant: "destructive" });
+          return;
+      }
 
-      const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', postId);
-      await updateDoc(postRef, {
-          comments: arrayUnion(newComment)
-      });
-      
-      setCommentText("");
-      setReplyingTo(null);
-      toast({ title: "Comment Added", description: "Your reply has been posted." });
+      if (!commentText.trim()) return;
+
+      try {
+          const idToken = await user.getIdToken();
+          const response = await fetch(`/api/forum/posts/${postId}/comments`, {
+              method: 'POST',
+              headers: { 
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${idToken}`
+              },
+              body: JSON.stringify({
+                  text: replyingTo ? `@${posts.find(p => p.id === postId)?.comments.find(c => c.id === replyingTo)?.author || 'User'} ${commentText}` : commentText,
+                  author: user.displayName || "Citizen",
+                  userId: user.uid
+              })
+          });
+
+          if (!response.ok) {
+              throw new Error('Failed to add comment');
+          }
+          
+          setCommentText("");
+          setReplyingTo(null);
+          toast({ title: "Comment Added", description: "Your reply has been posted." });
+      } catch (err) {
+          console.error("Error adding comment", err);
+          toast({ title: "Error", description: "Failed to post comment.", variant: "destructive" });
+      }
   };
 
   return (
@@ -212,19 +258,31 @@ export default function Forum() {
       </div>
 
       {/* Create Post */}
-      <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="p-4">
-              <form onSubmit={handleCreatePost} className="flex gap-4">
-                  <Input 
-                    value={newPostContent}
-                    onChange={e => setNewPostContent(e.target.value)}
-                    placeholder="Share a thought or report..." 
-                    className="bg-white"
-                  />
-                  <Button type="submit">Post</Button>
-              </form>
+      {!user ? (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-6 text-center">
+            <h3 className="font-bold text-lg mb-2">Join the Conversation</h3>
+            <p className="text-slate-500 mb-4">You must be logged in to share thoughts, vote, and comment.</p>
+            <div className="flex justify-center gap-4">
+              <Button onClick={() => window.location.href = '/auth/login'}>Login / Sign Up</Button>
+            </div>
           </CardContent>
-      </Card>
+        </Card>
+      ) : (
+        <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="p-4">
+                <form onSubmit={handleCreatePost} className="flex gap-4">
+                    <Input 
+                      value={newPostContent}
+                      onChange={e => setNewPostContent(e.target.value)}
+                      placeholder="Share a thought or report..." 
+                      className="bg-white"
+                    />
+                    <Button type="submit">Post</Button>
+                </form>
+            </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4">
         {posts
@@ -283,8 +341,7 @@ export default function Forum() {
                     </button>
                   </div>
 
-                  {/* Comments Section */}
-                  {expandedPostId === post.id && (
+                          {expandedPostId === post.id && (
                       <div className="mt-4 pt-4 border-t bg-slate-50/50 -mx-6 px-6 pb-6 rounded-b-xl animate-in fade-in slide-in-from-top-2">
                           <div className="space-y-4 mb-4">
                               {post.comments?.length === 0 && <p className="text-xs text-slate-400 italic">No comments yet. Be the first.</p>}
@@ -304,7 +361,13 @@ export default function Forum() {
                                                   <ThumbsUp className="h-3 w-3" /> {comment.upvotes || 0}
                                               </button>
                                               <button 
-                                                  onClick={() => setReplyingTo(comment.id)}
+                                                  onClick={() => {
+                                                    if (!user) {
+                                                      toast({ title: "Login Required", description: "Please login to reply." });
+                                                      return;
+                                                    }
+                                                    setReplyingTo(comment.id);
+                                                  }}
                                                   className="flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-primary transition-colors"
                                               >
                                                   <Reply className="h-3 w-3" /> Reply
@@ -334,17 +397,30 @@ export default function Forum() {
                               </div>
                           )}
 
-                          <form onSubmit={(e) => handleComment(e, post.id)} className="flex gap-2 pl-7">
-                              <Input 
-                                  value={commentText}
-                                  onChange={e => setCommentText(e.target.value)}
-                                  placeholder={replyingTo ? "Write a reply..." : "Write a comment..."} 
-                                  className="h-9 text-xs bg-white"
-                              />
-                              <Button type="submit" size="sm" className="h-9 w-9 p-0">
-                                  <Send className="h-4 w-4" />
-                              </Button>
-                          </form>
+                          {user ? (
+                            <form onSubmit={(e) => handleComment(e, post.id)} className="flex gap-2 pl-7">
+                                <Input 
+                                    value={commentText}
+                                    onChange={e => setCommentText(e.target.value)}
+                                    placeholder={replyingTo ? "Write a reply..." : "Write a comment..."} 
+                                    className="h-9 text-xs bg-white"
+                                />
+                                <Button type="submit" size="sm" className="h-9 w-9 p-0">
+                                    <Send className="h-4 w-4" />
+                                </Button>
+                            </form>
+                          ) : (
+                            <div className="pl-7 pt-2">
+                              <p className="text-xs text-slate-500">
+                                <button 
+                                  onClick={() => window.location.href = '/auth/login'}
+                                  className="text-primary font-semibold hover:underline"
+                                >
+                                  Login
+                                </button> to join the discussion.
+                              </p>
+                            </div>
+                          )}
                       </div>
                   )}
                 </div>

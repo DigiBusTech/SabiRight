@@ -1,8 +1,10 @@
 import admin from 'firebase-admin';
-import { type User, type InsertUser, type Subscription, type Credits, type Plan, type CreditLog, type CloakedRoute, type TrafficAlert, type DashboardTrafficCard, type UserProfile, type VendorApplication, type Event, type VendorService, type AdminSetting, type Payment, type Coupon, type Wallet, type WalletTransaction, type Booking, type BookingMilestone, type EscrowAccount, type EscrowEvent, type Contract, type Dispute, type BookingMessage, type Notification, type NotificationTemplate, type SmtpSettings, type PushSubscription } from "@shared/schema";
-import { type IStorage } from "./storage";
+import fs from 'fs';
+import path from 'path';
+import { type User, type InsertUser, type Subscription, type Credits, type Plan, type CreditLog, type CloakedRoute, type TrafficAlert, type DashboardTrafficCard, type UserProfile, type VendorApplication, type Event, type VendorService, type AdminSetting, type Payment, type Coupon, type Wallet, type WalletTransaction, type Booking, type BookingMilestone, type EscrowAccount, type EscrowEvent, type Contract, type Dispute, type BookingMessage, type Notification, type NotificationTemplate, type SmtpSettings, type PushSubscription, type SabiGuardChat, type SabiGuardMessage } from "@shared/schema";
+import { type IStorage } from "./types";
 
-const FIREBASE_APP_ID = 'digital-citizen-v2';
+export const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID || 'legal-13d13';
 
 export async function verifyUserToken(idToken: string): Promise<{ 
   valid: boolean; 
@@ -28,20 +30,43 @@ export async function verifyAdminToken(idToken: string): Promise<{
     const decodedToken = await admin.auth().verifyIdToken(idToken);
     const userId = decodedToken.uid;
     
-    const profileDoc = await admin.firestore()
-      .collection('artifacts')
-      .doc(FIREBASE_APP_ID)
-      .collection('profiles')
-      .doc(userId)
-      .get();
+    // Check both collections for admin status
+    console.log(`[getFirestoreUserFlags] Checking UID: ${userId} in AppID: ${FIREBASE_APP_ID}`);
+    const [profileDoc, userDoc] = await Promise.all([
+      admin.firestore()
+        .collection('artifacts')
+        .doc(FIREBASE_APP_ID)
+        .collection('profiles')
+        .doc(userId)
+        .get(),
+      admin.firestore()
+        .collection('artifacts')
+        .doc(FIREBASE_APP_ID)
+        .collection('users')
+        .doc(userId)
+        .get()
+    ]);
     
-    if (!profileDoc.exists) {
-      console.log(`Admin auth: No profile found for user ${userId}`);
+    console.log(`[verifyAdminToken] Docs exist for ${userId}: profile=${profileDoc.exists}, user=${userDoc.exists}`);
+    
+    if (!profileDoc.exists && !userDoc.exists) {
+      console.log(`Admin auth: No profile or user found for ${userId}`);
       return { valid: false, userId, isAdmin: false, error: 'no_profile' };
     }
     
-    const profile = profileDoc.data();
-    const isAdmin = profile?.isAdmin === true;
+    const profileData = profileDoc.exists ? profileDoc.data() : {};
+    const userData = userDoc.exists ? userDoc.data() : {};
+    
+    const isAdmin = profileData?.isAdmin === true || 
+                    userData?.isAdmin === true || 
+                    userData?.role === 'admin';
+                    
+    console.log(`[verifyAdminToken] Admin check for ${userId}:`, { 
+      profileIsAdmin: profileData?.isAdmin,
+      userIsAdmin: userData?.isAdmin,
+      userRole: userData?.role,
+      finalIsAdmin: isAdmin
+    });
     
     if (!isAdmin) {
       console.log(`Admin auth: User ${userId} is not an admin`);
@@ -55,21 +80,92 @@ export async function verifyAdminToken(idToken: string): Promise<{
   }
 }
 
+export async function getFirestoreUserFlags(userId: string): Promise<{ isAdmin: boolean, isVendor: boolean }> {
+  try {
+    const [profileDoc, userDoc] = await Promise.all([
+      admin.firestore()
+        .collection('artifacts')
+        .doc(FIREBASE_APP_ID)
+        .collection('profiles')
+        .doc(userId)
+        .get(),
+      admin.firestore()
+        .collection('artifacts')
+        .doc(FIREBASE_APP_ID)
+        .collection('users')
+        .doc(userId)
+        .get()
+    ]);
+    
+    if (!profileDoc.exists && !userDoc.exists) {
+      console.log(`[getFirestoreUserFlags] No docs found for ${userId}`);
+      return { isAdmin: false, isVendor: false };
+    }
+    
+    const profileData = profileDoc.exists ? profileDoc.data() : {};
+    const userData = userDoc.exists ? userDoc.data() : {};
+    
+    const isAdmin = profileData?.isAdmin === true || 
+                    userData?.isAdmin === true || 
+                    userData?.role === 'admin';
+                    
+    const isVendor = profileData?.isVendor === true || 
+                     userData?.isVendor === true || 
+                     userData?.role === 'vendor' ||
+                     userData?.role === 'provider';
+                     
+    console.log(`[getFirestoreUserFlags] Result for ${userId}:`, { 
+      isAdmin, 
+      isVendor,
+      profileExists: profileDoc.exists,
+      userExists: userDoc.exists,
+      profileData: profileDoc.exists ? profileDoc.data() : 'none',
+      userData: userDoc.exists ? userDoc.data() : 'none'
+    });
+    return { isAdmin, isVendor };
+  } catch (error) {
+    console.error('Error checking user flags in Firestore:', error);
+    return { isAdmin: false, isVendor: false };
+  }
+}
+
+export async function isUserAdmin(userId: string): Promise<boolean> {
+  const flags = await getFirestoreUserFlags(userId);
+  return flags.isAdmin;
+}
+
 function initializeFirebase() {
   if (admin.apps && admin.apps.length > 0) {
     return admin.app();
   }
   
+  let serviceAccount;
   const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!serviceAccountJson) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT environment variable is not set');
+  
+  if (serviceAccountJson) {
+    try {
+      serviceAccount = JSON.parse(serviceAccountJson);
+    } catch (e) {
+      console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT JSON');
+    }
   }
   
-  let serviceAccount;
-  try {
-    serviceAccount = JSON.parse(serviceAccountJson);
-  } catch (e) {
-    throw new Error('Failed to parse FIREBASE_SERVICE_ACCOUNT JSON');
+  // Fallback to local file if env var is not set or invalid
+  if (!serviceAccount) {
+    try {
+      const filePath = path.join(process.cwd(), 'legal-13d13-firebase-adminsdk-fbsvc-e736182a52.json');
+      if (fs.existsSync(filePath)) {
+        serviceAccount = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        console.log('Initialized Firebase using local service account file');
+      }
+    } catch (e) {
+      console.error('Failed to load local service account file:', e);
+    }
+  }
+
+  if (!serviceAccount) {
+    console.warn('Firebase service account not found in environment or local file. Auth verification will fail.');
+    return null;
   }
   
   return admin.initializeApp({
@@ -78,47 +174,62 @@ function initializeFirebase() {
   });
 }
 
-initializeFirebase();
-const db = admin.firestore();
+const app = initializeFirebase();
+const db = app ? admin.firestore() : null;
+
+const getColl = (name: string) => {
+  if (!db) throw new Error("Firestore not initialized");
+  return db.collection('artifacts').doc(FIREBASE_APP_ID).collection(name);
+};
 
 const collections = {
-  users: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('users'),
-  profiles: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('profiles'),
-  subscriptions: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('subscriptions'),
-  credits: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('credits'),
-  creditLogs: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('creditLogs'),
-  plans: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('plans'),
-  creditPackages: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('creditPackages'),
-  paymentMethods: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('paymentMethods'),
-  routes: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('routes'),
-  alerts: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('alerts'),
-  vendorApplications: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorApplications'),
-  dashboardTraffic: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('dashboardTraffic'),
-  events: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('events'),
-  vendorServices: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorServices'),
-  adminSettings: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('adminSettings'),
-  payments: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('payments'),
-  jobs: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('jobs'),
-  vendorLeads: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorLeads'),
-  vendorBookings: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('vendorBookings'),
-  coupons: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('coupons'),
-  wallets: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('wallets'),
-  walletTransactions: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('walletTransactions'),
-  bookings: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('bookings'),
-  bookingMilestones: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('bookingMilestones'),
-  escrowAccounts: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('escrowAccounts'),
-  escrowEvents: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('escrowEvents'),
-  contracts: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('contracts'),
-  disputes: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('disputes'),
-  bookingMessages: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('bookingMessages'),
-  savedEvents: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('savedEvents'),
-  savedJobs: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('savedJobs'),
-  appliedJobs: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('appliedJobs'),
-  generatedJobs: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('generatedJobs'),
-  notifications: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('notifications'),
-  notificationTemplates: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('notificationTemplates'),
-  smtpSettings: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('smtpSettings'),
-  pushSubscriptions: () => db.collection('artifacts').doc(FIREBASE_APP_ID).collection('pushSubscriptions'),
+  users: () => getColl('users'),
+  profiles: () => getColl('profiles'),
+  subscriptions: () => getColl('subscriptions'),
+  credits: () => getColl('credits'),
+  creditLogs: () => getColl('creditLogs'),
+  plans: () => getColl('plans'),
+  creditPackages: () => getColl('creditPackages'),
+  paymentMethods: () => getColl('paymentMethods'),
+  routes: () => getColl('routes'),
+  alerts: () => getColl('alerts'),
+  vendorApplications: () => getColl('vendorApplications'),
+  dashboardTraffic: () => getColl('dashboardTraffic'),
+  events: () => getColl('events'),
+  vendorServices: () => getColl('vendorServices'),
+  sabiguardChats: () => getColl('sabiguardChats'),
+  sabiguardMessages: () => getColl('sabiguardMessages'),
+  moatData: () => getColl('moatData'),
+  adminSettings: () => getColl('adminSettings'),
+  payments: () => getColl('payments'),
+  jobs: () => getColl('jobs'),
+  vendorLeads: () => getColl('vendorLeads'),
+  vendorBookings: () => getColl('vendorBookings'),
+  coupons: () => getColl('coupons'),
+  wallets: () => getColl('wallets'),
+  walletTransactions: () => getColl('walletTransactions'),
+  bookings: () => getColl('bookings'),
+  bookingMilestones: () => getColl('bookingMilestones'),
+  escrowAccounts: () => getColl('escrowAccounts'),
+  escrowEvents: () => getColl('escrowEvents'),
+  contracts: () => getColl('contracts'),
+  disputes: () => getColl('disputes'),
+  bookingMessages: () => getColl('bookingMessages'),
+  savedEvents: () => getColl('savedEvents'),
+  savedJobs: () => getColl('savedJobs'),
+  appliedJobs: () => getColl('appliedJobs'),
+  generatedJobs: () => getColl('generatedJobs'),
+  notifications: () => getColl('notifications'),
+  notificationTemplates: () => getColl('notificationTemplates'),
+  smtpSettings: () => getColl('smtpSettings'),
+  pushSubscriptions: () => getColl('pushSubscriptions'),
+  faqs: () => getColl('faqs'),
+  testimonials: () => getColl('testimonials'),
+  surveys: () => getColl('surveys'),
+  forumPosts: () => {
+    if (!db) throw new Error("Firestore not initialized");
+    return db.collection('artifacts').doc(FIREBASE_APP_ID).collection('public').doc('data').collection('forum_posts');
+  },
 };
 
 export class FirestoreStorage implements IStorage {
@@ -127,66 +238,210 @@ export class FirestoreStorage implements IStorage {
     this.initializeDefaults();
   }
 
-  private async initializeDefaults(): Promise<void> {
-    const plansSnapshot = await collections.plans().get();
-    if (plansSnapshot.empty) {
-      const defaultPlans: any[] = [
-        { id: 'free-user', name: 'Free', description: 'Basic access', price: '0', dailyCredits: 5, marketplaceListings: 0, features: ['AI Legal Help', 'Basic Civic Info'], type: 'free', userType: 'user' },
-        { id: 'basic-user', name: 'Basic', description: 'Standard access', price: '2000', dailyCredits: 15, marketplaceListings: 3, features: ['AI Legal Help', 'Civic Info', 'Job Matches', 'Events'], type: 'basic', userType: 'user' },
-        { id: 'pro-user', name: 'Pro', description: 'Full access', price: '5000', dailyCredits: 50, marketplaceListings: 10, features: ['All Features', 'Priority Support', 'Advanced AI'], type: 'pro', userType: 'user' },
-        { id: 'free-vendor', name: 'Vendor Free', description: 'Basic vendor access', price: '0', dailyCredits: 10, marketplaceListings: 3, features: ['List 3 Services', 'Basic Analytics'], type: 'free', userType: 'vendor' },
-        { id: 'pro-vendor', name: 'Vendor Pro', description: 'Full vendor access', price: '10000', dailyCredits: 100, marketplaceListings: null, features: ['Unlimited Services', 'Priority Listing', 'Full Analytics'], type: 'pro', userType: 'vendor' },
-      ];
-      
-      const batch = db.batch();
-      defaultPlans.forEach(plan => {
-        batch.set(collections.plans().doc(plan.id), plan);
-      });
-      await batch.commit();
+  private toMs(x: any): number {
+    if (x == null) return 0;
+    if (typeof x === 'string') {
+      const t = Date.parse(x);
+      return isNaN(t) ? 0 : t;
     }
+    if (x instanceof Date) return x.getTime();
+    const maybeDate = typeof x?.toDate === 'function' ? x.toDate() : null;
+    if (maybeDate instanceof Date) return maybeDate.getTime();
+    if (typeof x === 'number') return x;
+    return 0;
+  }
 
-    const settingsSnapshot = await collections.adminSettings().get();
-    if (settingsSnapshot.empty) {
-      const defaults = [
-        { key: 'google_maps_api_key', value: '', category: 'api_keys', isSecret: true },
-        { key: 'gemini_api_key', value: '', category: 'api_keys', isSecret: true },
-        { key: 'stripe_enabled', value: 'true', category: 'payments', isSecret: false },
-        { key: 'paystack_enabled', value: 'true', category: 'payments', isSecret: false },
-        { key: 'flutterwave_enabled', value: 'true', category: 'payments', isSecret: false },
-        { key: 'payment_mode', value: 'automatic', category: 'payments', isSecret: false },
+  private async initializeDefaults(): Promise<void> {
+    if (!db) {
+      console.warn('Firestore is not initialized. Skipping default initialization.');
+      return;
+    }
+    // Plans initialization moved down
+    
+    const notificationTemplatesSnapshot = await collections.notificationTemplates().get();
+    if (notificationTemplatesSnapshot.empty) {
+      const defaultTemplates = [
+        {
+          id: 'booking_request',
+          name: 'New Booking Request',
+          subject: 'New Booking Request: {{serviceName}}',
+          bodyTemplate: 'You have a new booking request for {{serviceName}} from {{clientName}}.',
+          channels: ['in_app', 'email'],
+          isActive: true
+        },
+        {
+          id: 'booking_confirmed',
+          name: 'Booking Confirmed',
+          subject: 'Booking Confirmed: {{serviceName}}',
+          bodyTemplate: 'Your booking for {{serviceName}} has been confirmed by {{vendorName}}.',
+          channels: ['in_app', 'email'],
+          isActive: true
+        },
+        {
+          id: 'escrow_funded',
+          name: 'Funds Escrowed',
+          subject: 'Payment Received in Escrow: {{bookingId}}',
+          bodyTemplate: 'Funds for your booking {{bookingId}} have been securely deposited in escrow.',
+          channels: ['in_app'],
+          isActive: true
+        },
+        {
+          id: 'milestone_completed',
+          name: 'Milestone Completed',
+          subject: 'Milestone Completed: {{milestoneTitle}}',
+          bodyTemplate: 'Vendor has marked milestone "{{milestoneTitle}}" as completed. Please review and release funds.',
+          channels: ['in_app', 'email'],
+          isActive: true
+        },
+        {
+          id: 'dispute_opened',
+          name: 'Dispute Opened',
+          subject: 'Dispute Opened: {{bookingId}}',
+          bodyTemplate: 'A dispute has been opened for booking {{bookingId}}. Our team will review it shortly.',
+          channels: ['in_app', 'email'],
+          isActive: true
+        },
+        {
+          id: 'kyc_verified',
+          name: 'KYC Verified',
+          subject: 'Identity Verification Successful',
+          bodyTemplate: 'Congratulations! Your identity verification has been successful. You now have full access to the platform.',
+          channels: ['in_app', 'email'],
+          isActive: true
+        },
+        {
+          id: 'kyc_rejected',
+          name: 'KYC Rejected',
+          subject: 'Identity Verification Failed',
+          bodyTemplate: 'Unfortunately, your identity verification was rejected. Reason: {{reason}}. Please try again with valid documents.',
+          channels: ['in_app', 'email'],
+          isActive: true
+        },
+        {
+          id: 'admin_post_removed',
+          name: 'Post Removed by Moderator',
+          subject: 'Post Removed',
+          bodyTemplate: 'Your post "{{content}}" has been removed for violating community guidelines following a review.',
+          channels: ['in_app', 'email'],
+          isActive: true
+        }
       ];
       
-      const batch = db.batch();
-      defaults.forEach(s => {
-        batch.set(collections.adminSettings().doc(s.key), { ...s, updatedAt: new Date().toISOString() });
+      const templateBatch = db.batch();
+      defaultTemplates.forEach(t => {
+        templateBatch.set(collections.notificationTemplates().doc(t.id), {
+          ...t,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
       });
-      await batch.commit();
+      await templateBatch.commit();
     }
 
     // Initialize empty placeholder documents to make collections visible in Firestore Console
-    await this.ensureCollectionExists('users', '_placeholder');
-    await this.ensureCollectionExists('profiles', '_placeholder');
-    await this.ensureCollectionExists('events', '_placeholder');
-    await this.ensureCollectionExists('jobs', '_placeholder');
-    await this.ensureCollectionExists('vendorServices', '_placeholder');
-    await this.ensureCollectionExists('vendorApplications', '_placeholder');
-    await this.ensureCollectionExists('vendorLeads', '_placeholder');
-    await this.ensureCollectionExists('vendorBookings', '_placeholder');
-    await this.ensureCollectionExists('subscriptions', '_placeholder');
-    await this.ensureCollectionExists('credits', '_placeholder');
-    await this.ensureCollectionExists('routes', '_placeholder');
-    await this.ensureCollectionExists('alerts', '_placeholder');
-    await this.ensureCollectionExists('payments', '_placeholder');
-    await this.ensureCollectionExists('coupons', '_placeholder');
-    await this.ensureCollectionExists('wallets', '_placeholder');
-    await this.ensureCollectionExists('walletTransactions', '_placeholder');
-    await this.ensureCollectionExists('notifications', '_placeholder');
-    await this.ensureCollectionExists('notificationTemplates', '_placeholder');
-    await this.ensureCollectionExists('smtpSettings', '_placeholder');
-    await this.ensureCollectionExists('pushSubscriptions', '_placeholder');
+    if (db) {
+      await this.ensureCollectionExists('users', '_placeholder');
+      await this.ensureCollectionExists('profiles', '_placeholder');
+      await this.ensureCollectionExists('events', '_placeholder');
+      await this.ensureCollectionExists('jobs', '_placeholder');
+      await this.ensureCollectionExists('vendorServices', '_placeholder');
+      await this.ensureCollectionExists('vendorApplications', '_placeholder');
+      await this.ensureCollectionExists('vendorLeads', '_placeholder');
+      await this.ensureCollectionExists('vendorBookings', '_placeholder');
+      await this.ensureCollectionExists('subscriptions', '_placeholder');
+      await this.ensureCollectionExists('sabiguardChats', '_placeholder');
+      await this.ensureCollectionExists('sabiguardMessages', '_placeholder');
+      await this.ensureCollectionExists('moatData', '_placeholder');
+      await this.ensureCollectionExists('credits', '_placeholder');
+      await this.ensureCollectionExists('routes', '_placeholder');
+      await this.ensureCollectionExists('alerts', '_placeholder');
+      await this.ensureCollectionExists('payments', '_placeholder');
+      await this.ensureCollectionExists('coupons', '_placeholder');
+      await this.ensureCollectionExists('wallets', '_placeholder');
+      await this.ensureCollectionExists('walletTransactions', '_placeholder');
+      await this.ensureCollectionExists('notifications', '_placeholder');
+      await this.ensureCollectionExists('notificationTemplates', '_placeholder');
+      await this.ensureCollectionExists('smtpSettings', '_placeholder');
+      await this.ensureCollectionExists('pushSubscriptions', '_placeholder');
+      await this.ensureCollectionExists('paymentMethods', '_placeholder');
+      await this.ensureCollectionExists('plans', '_placeholder');
+    }
+
+    const plansSnapshot = await collections.plans().get();
+    const existingPlans = plansSnapshot.docs.reduce((acc, doc) => {
+      acc[doc.id] = doc.data();
+      return acc;
+    }, {} as Record<string, any>);
+
+    const defaultPlans = [
+      // User Plans
+      { id: 'free-user', name: 'Free', description: 'Basic features for individuals', price: 0, type: 'free', userType: 'user', dailyCredits: 5, billingCycle: 'monthly', features: ['Basic Search', 'Community Access', '5 AI Credits/mo'], active: true },
+      { id: 'basic-user', name: 'Basic', description: 'Standard features for regular users', price: 2000, type: 'basic', userType: 'user', dailyCredits: 20, billingCycle: 'monthly', features: ['Standard Search', 'Standard Support', '20 AI Credits/mo'], active: true },
+      { id: 'pro-user', name: 'Pro', description: 'Advanced features for professionals', price: 5000, type: 'pro', userType: 'user', dailyCredits: 50, billingCycle: 'monthly', features: ['Advanced Search', 'Priority Support', '50 AI Credits/mo', 'No Ads'], active: true },
+      
+      // Vendor Plans
+      { id: 'free-vendor', name: 'Vendor Starter', description: 'Start your vendor journey', price: 0, type: 'free', userType: 'vendor', dailyCredits: 10, billingCycle: 'monthly', features: ['Profile Listing', 'Basic Leads', '10 AI Credits/mo'], active: true },
+      { id: 'pro-vendor', name: 'Vendor Pro', description: 'Full features for professional vendors', price: 15000, type: 'pro', userType: 'vendor', dailyCredits: 200, billingCycle: 'monthly', features: ['Priority Leads', 'Featured Profile', '200 AI Credits/mo', 'Escrow Access'], active: true },
+    ];
+
+    const planBatch = db.batch();
+    let plansUpdated = 0;
+
+    for (const p of defaultPlans) {
+      const existing = existingPlans[p.id];
+      if (!existing || existing.type !== p.type || existing.userType !== p.userType) {
+        console.log(`[Firestore] Updating/Adding plan: ${p.id}`);
+        planBatch.set(collections.plans().doc(p.id), { 
+          ...p, 
+          createdAt: existing?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        plansUpdated++;
+      }
+    }
+
+    if (plansUpdated > 0) {
+      await planBatch.commit();
+      console.log(`[Firestore] Successfully updated ${plansUpdated} plans`);
+    }
+
+    const paymentMethodsSnapshot = await collections.paymentMethods().get();
+    const existingMethods = paymentMethodsSnapshot.docs.reduce((acc, doc) => {
+      acc[doc.id] = doc.data();
+      return acc;
+    }, {} as Record<string, any>);
+
+    const defaultMethods = [
+      { id: 'paystack', name: 'Paystack', description: 'Pay with card, bank transfer, or USSD', active: true, icon: 'credit-card', type: 'paystack' },
+      { id: 'flutterwave', name: 'Flutterwave', description: 'Pay with card, bank transfer, or mobile money', active: true, icon: 'zap', type: 'flutterwave' },
+      { id: 'wallet', name: 'Wallet', description: 'Pay using your DigiZen wallet balance', active: true, icon: 'wallet', type: 'wallet' }
+    ];
+
+    if (!db) throw new Error("Firestore not initialized");
+    const batch = db.batch();
+    let updatedCount = 0;
+
+    for (const m of defaultMethods) {
+      const existing = existingMethods[m.id];
+      if (!existing || existing.type !== m.type || existing.icon !== m.icon) {
+        console.log(`[Firestore] Updating/Adding payment method: ${m.id}`);
+        batch.set(collections.paymentMethods().doc(m.id), { 
+          ...m, 
+          createdAt: existing?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount > 0) {
+      await batch.commit();
+      console.log(`[Firestore] Successfully updated ${updatedCount} payment methods`);
+    }
   }
 
   private async ensureCollectionExists(collectionName: string, placeholderId: string): Promise<void> {
+    if (!db) throw new Error("Firestore not initialized");
     const collRef = db.collection('artifacts').doc(FIREBASE_APP_ID).collection(collectionName);
     const snapshot = await collRef.limit(1).get();
     if (snapshot.empty) {
@@ -499,10 +754,20 @@ export class FirestoreStorage implements IStorage {
 
   async toggleUserAdmin(userId: string, isAdmin: boolean): Promise<boolean> {
     try {
-      await collections.profiles().doc(userId).update({ isAdmin });
+      await collections.profiles().doc(userId).set({ isAdmin }, { merge: true });
       return true;
     } catch (error) {
       console.error('Failed to toggle user admin:', error);
+      return false;
+    }
+  }
+
+  async toggleUserVendor(userId: string, isVendor: boolean): Promise<boolean> {
+    try {
+      await collections.profiles().doc(userId).set({ isVendor }, { merge: true });
+      return true;
+    } catch (error) {
+      console.error('Failed to toggle user vendor:', error);
       return false;
     }
   }
@@ -568,18 +833,26 @@ export class FirestoreStorage implements IStorage {
   }
 
   async getUserProfile(userId: string): Promise<UserProfile | undefined> {
+    if (!db) return undefined;
+    
     // Check new profiles collection first
     const profileDoc = await collections.profiles().doc(userId).get();
     
     // Also check old users collection for legacy data
     const userDoc = await collections.users().doc(userId).get();
     
-    if (!profileDoc.exists && !userDoc.exists) return undefined;
+    if (!profileDoc.exists && !userDoc.exists) {
+      console.log(`[FirestoreStorage] No profile or user found for ${userId}`);
+      return undefined;
+    }
     
     // Merge data from both sources (profile takes priority, but include legacy fields)
     const profileData = profileDoc.exists ? profileDoc.data() : {};
     const userData = userDoc.exists ? userDoc.data() : {};
     
+    const isAdmin = profileData?.isAdmin === true || userData?.isAdmin === true || userData?.role === 'admin';
+    const isVendor = profileData?.isVendor === true || userData?.isVendor === true || userData?.role === 'vendor' || userData?.role === 'provider';
+
     // Map old format fields to new format
     const merged = {
       userId,
@@ -587,21 +860,44 @@ export class FirestoreStorage implements IStorage {
       email: profileData?.email || userData?.email || null,
       city: profileData?.city || userData?.city || null,
       state: profileData?.state || userData?.state || null,
-      isVendor: profileData?.isVendor ?? userData?.isVendor ?? false,
-      isAdmin: profileData?.isAdmin ?? userData?.isAdmin ?? (userData?.role === 'admin'),
+      isVendor,
+      isAdmin,
       kycStatus: profileData?.kycStatus || (userData?.isVerified ? 'verified' : 'pending'),
       kycDocument: profileData?.kycDocument || null,
       kycSubmittedAt: profileData?.kycSubmittedAt || null,
       kycVerifiedAt: profileData?.kycVerifiedAt || null,
       vendorMode: profileData?.vendorMode ?? false,
+      chatStorageLimit: profileData?.chatStorageLimit || 524288,
+      chatStorageUsed: profileData?.chatStorageUsed || 0,
       createdAt: profileData?.createdAt || userData?.joinedAt || new Date(),
     };
+    
+    console.log(`[FirestoreStorage] Merged profile for ${userId}:`, { 
+      isAdmin: merged.isAdmin, 
+      isVendor: merged.isVendor,
+      vendorMode: merged.vendorMode 
+    });
     
     return merged as UserProfile;
   }
 
-  async updateUserProfile(userId: string, profile: any): Promise<void> {
-    await collections.profiles().doc(userId).set(profile, { merge: true });
+  async updateUserProfile(userId: string, updates: Partial<UserProfile>): Promise<UserProfile | undefined> {
+    const profileRef = collections.profiles().doc(userId);
+    const doc = await profileRef.get();
+    
+    // Ensure we don't overwrite email and id if they are sensitive
+    const { email, userId: uid, ...allowedUpdates } = updates as any;
+    
+    if (!doc.exists) {
+      // If it doesn't exist, create it with set
+      const newProfile = { ...allowedUpdates, userId };
+      await profileRef.set(newProfile);
+      return newProfile as UserProfile;
+    }
+    
+    await profileRef.update(allowedUpdates);
+    const updatedDoc = await profileRef.get();
+    return updatedDoc.data() as UserProfile;
   }
 
   async submitVendorApplication(userId: string, app: any): Promise<VendorApplication> {
@@ -675,9 +971,61 @@ export class FirestoreStorage implements IStorage {
     });
   }
 
-  async getVendorServices(): Promise<VendorService[]> {
-    const snapshot = await collections.vendorServices().get();
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as VendorService));
+  async getVendorServices(filters?: { type?: string, city?: string, specialization?: string, lat?: number, lng?: number }): Promise<VendorService[]> {
+    let query: any = collections.vendorServices();
+    
+    if (filters) {
+      if (filters.type) {
+        query = query.where('type', '==', filters.type);
+      }
+      // If specialization is provided, use it
+      if (filters.specialization) {
+        query = query.where('specialization', '==', filters.specialization);
+      }
+    }
+
+    const snapshot = await query.get();
+    let services = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as VendorService));
+
+    // Client-side filtering and distance sorting
+    if (filters?.lat && filters?.lng) {
+      const R = 6371; // Earth's radius in km
+      services = services.map((s: VendorService) => {
+        const sLat = parseFloat(s.latitude || '0');
+        const sLng = parseFloat(s.longitude || '0');
+        
+        if (sLat === 0 && sLng === 0) return { ...s, distance: 9999 };
+
+        const dLat = (sLat - filters.lat!) * Math.PI / 180;
+        const dLon = (sLng - filters.lng!) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                  Math.cos(filters.lat! * Math.PI / 180) * Math.cos(sLat * Math.PI / 180) *
+                  Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const distance = R * c;
+        return { ...s, distance };
+      });
+
+      // Sort by distance primarily
+      services.sort((a: any, b: any) => a.distance - b.distance);
+    } else if (filters?.city && filters.city.toLowerCase() !== 'nigeria') {
+      const cityLower = filters.city.toLowerCase();
+      services = services.filter((s: VendorService) => 
+        s.location?.toLowerCase().includes(cityLower) || 
+        (s as any).city?.toLowerCase() === cityLower
+      );
+
+      // Sort by "closeness" - if it matches the city exactly, put it first
+      services.sort((a: VendorService, b: VendorService) => {
+        const aExact = a.location?.toLowerCase() === cityLower;
+        const bExact = b.location?.toLowerCase() === cityLower;
+        if (aExact && !bExact) return -1;
+        if (!aExact && bExact) return 1;
+        return 0;
+      });
+    }
+
+    return services;
   }
 
   async getVendorServiceById(serviceId: string): Promise<VendorService | undefined> {
@@ -732,7 +1080,7 @@ export class FirestoreStorage implements IStorage {
     const snapshot = await query.get();
     return snapshot.docs
       .map(doc => ({ id: doc.id, ...doc.data() } as Payment))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a, b) => this.toMs(b.createdAt) - this.toMs(a.createdAt));
   }
 
   async createPayment(payment: any): Promise<Payment> {
@@ -741,7 +1089,7 @@ export class FirestoreStorage implements IStorage {
       ...payment, 
       id, 
       status: payment.status || 'pending',
-      createdAt: new Date().toISOString() 
+      createdAt: new Date() 
     };
     await collections.payments().doc(id).set(newPayment);
     return newPayment as Payment;
@@ -767,14 +1115,25 @@ export class FirestoreStorage implements IStorage {
     return snapshot.docs.map(doc => doc.data() as UserProfile);
   }
 
+  async getAllVendors(): Promise<UserProfile[]> {
+    const snapshot = await collections.profiles().where('isVendor', '==', true).get();
+    return snapshot.docs.map(doc => doc.data() as UserProfile);
+  }
+
+  async getImpersonationToken(userId: string): Promise<string> {
+    return await admin.auth().createCustomToken(userId);
+  }
+
   async getAllVendorApplications(): Promise<VendorApplication[]> {
     const snapshot = await collections.vendorApplications().get();
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as VendorApplication));
+    return snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() } as VendorApplication));
   }
 
   async getJobs(limit: number = 50): Promise<any[]> {
-    const snapshot = await collections.jobs().orderBy('postedAt', 'desc').limit(limit).get();
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let query: any = collections.jobs();
+    query = query.orderBy('postedAt', 'desc').limit(limit);
+    const snapshot = await query.get();
+    return snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
   }
 
   async createJob(job: any): Promise<any> {
@@ -784,11 +1143,19 @@ export class FirestoreStorage implements IStorage {
     return newJob;
   }
 
+  async updateJob(jobId: string, updates: any): Promise<void> {
+    await collections.jobs().doc(jobId).update(updates);
+  }
+
+  async deleteJob(jobId: string): Promise<void> {
+    await collections.jobs().doc(jobId).delete();
+  }
+
   async getVendorLeads(vendorId: string): Promise<any[]> {
     const snapshot = await collections.vendorLeads().where('vendorId', '==', vendorId).get();
     return snapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .map((doc: any) => ({ id: doc.id, ...doc.data() }))
+      .sort((a: any, b: any) => this.toMs(b.createdAt) - this.toMs(a.createdAt));
   }
 
   async createVendorLead(lead: any): Promise<any> {
@@ -815,7 +1182,7 @@ export class FirestoreStorage implements IStorage {
           ...data
         };
       })
-      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      .sort((a: any, b: any) => this.toMs(b.createdAt) - this.toMs(a.createdAt));
   }
 
   async createVendorBooking(booking: any): Promise<any> {
@@ -978,7 +1345,7 @@ export class FirestoreStorage implements IStorage {
     });
   }
 
-  async getWallet(userId: string): Promise<Wallet | undefined> {
+  async getWalletByUserId(userId: string): Promise<Wallet | undefined> {
     const snapshot = await collections.wallets().where('userId', '==', userId).limit(1).get();
     if (snapshot.empty) return undefined;
     const doc = snapshot.docs[0];
@@ -986,7 +1353,7 @@ export class FirestoreStorage implements IStorage {
   }
 
   async createWallet(userId: string, currency: string = 'NGN'): Promise<Wallet> {
-    const existing = await this.getWallet(userId);
+    const existing = await this.getWalletByUserId(userId);
     if (existing) return existing;
     
     const id = crypto.randomUUID();
@@ -1009,8 +1376,8 @@ export class FirestoreStorage implements IStorage {
     });
   }
 
-  async topUpWallet(userId: string, amount: number, reference?: string, description?: string): Promise<WalletTransaction> {
-    const wallet = await this.getWallet(userId);
+  async topUpWallet(userId: string, amount: number, reference: string, description: string): Promise<void> {
+    const wallet = await this.getWalletByUserId(userId);
     if (!wallet) {
       throw new Error('Wallet not found');
     }
@@ -1035,11 +1402,43 @@ export class FirestoreStorage implements IStorage {
     };
     
     await collections.walletTransactions().doc(txId).set(transaction);
-    return transaction as WalletTransaction;
+  }
+
+  async addCredits(userId: string, amount: number, reason: string): Promise<void> {
+    const credits = await this.getUserCredits(userId);
+    const currentTotal = credits?.totalCredits || 0;
+    const newTotal = currentTotal + amount;
+    
+    if (credits) {
+      await collections.credits().doc(credits.id).update({
+        totalCredits: newTotal,
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      const id = crypto.randomUUID();
+      await collections.credits().doc(id).set({
+        id,
+        userId,
+        totalCredits: newTotal,
+        usedCredits: 0,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    // Log the credit addition
+    const logId = crypto.randomUUID();
+    await collections.creditLogs().doc(logId).set({
+      id: logId,
+      userId,
+      amount,
+      feature: 'admin_add',
+      description: reason,
+      createdAt: new Date().toISOString()
+    });
   }
 
   async getWalletTransactions(userId: string, limit: number = 50): Promise<WalletTransaction[]> {
-    const wallet = await this.getWallet(userId);
+    const wallet = await this.getWalletByUserId(userId);
     if (!wallet) return [];
     
     // Fetch without orderBy to avoid index requirement, then sort in memory
@@ -1049,12 +1448,49 @@ export class FirestoreStorage implements IStorage {
     
     return snapshot.docs
       .map(doc => ({ id: doc.id, ...doc.data() } as WalletTransaction))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => this.toMs(b.createdAt) - this.toMs(a.createdAt))
       .slice(0, limit);
   }
 
-  async deductFromWallet(userId: string, amount: number, type: string, reference?: string, description?: string): Promise<WalletTransaction | null> {
-    const wallet = await this.getWallet(userId);
+  async createWalletTransaction(transaction: any): Promise<any> {
+    const id = crypto.randomUUID();
+    const newTransaction = {
+      ...transaction,
+      id,
+      createdAt: new Date().toISOString()
+    };
+    await collections.walletTransactions().doc(id).set(newTransaction);
+    return newTransaction;
+  }
+
+  async getWallets(): Promise<any[]> {
+    const snapshot = await collections.wallets().get();
+    return snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async updateWallet(userId: string, updates: any): Promise<void> {
+    const wallet = await this.getWalletByUserId(userId);
+    if (wallet) {
+      await collections.wallets().doc(wallet.id).update({
+        ...updates,
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      const id = crypto.randomUUID();
+      await collections.wallets().doc(id).set({
+        id,
+        userId,
+        balance: '0',
+        currency: 'USD',
+        ...updates,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
+
+  async deductFromWallet(userId: string, amount: number, type: string, reference?: string, description?: string): Promise<any> {
+    const wallet = await this.getWalletByUserId(userId);
     if (!wallet) return null;
     
     const balanceBefore = parseFloat(wallet.balance || '0');
@@ -1079,7 +1515,7 @@ export class FirestoreStorage implements IStorage {
     };
     
     await collections.walletTransactions().doc(txId).set(transaction);
-    return transaction as WalletTransaction;
+    return transaction;
   }
 
   // ===== Booking Methods =====
@@ -1106,7 +1542,7 @@ export class FirestoreStorage implements IStorage {
       .where('userId', '==', userId)
       .get();
     const bookings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
-    return bookings.sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
+    return bookings.sort((a, b) => this.toMs(b.createdAt) - this.toMs(a.createdAt));
   }
 
   async getBookingsByVendorId(vendorId: string): Promise<Booking[]> {
@@ -1114,7 +1550,7 @@ export class FirestoreStorage implements IStorage {
       .where('vendorId', '==', vendorId)
       .get();
     const bookings = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
-    return bookings.sort((a, b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
+    return bookings.sort((a, b) => this.toMs(b.createdAt) - this.toMs(a.createdAt));
   }
 
   async updateBookingStatus(bookingId: string, status: string): Promise<void> {
@@ -1202,6 +1638,14 @@ export class FirestoreStorage implements IStorage {
     return doc.exists ? { id: doc.id, ...doc.data() } as EscrowAccount : undefined;
   }
 
+  async updateEscrowStatus(id: string, status: string, releasedAmount?: string): Promise<void> {
+    const updateData: any = { status };
+    if (releasedAmount) updateData.releasedAmount = releasedAmount;
+    if (status === 'released' || status === 'refunded') updateData.releasedAt = new Date().toISOString();
+    
+    await collections.escrowAccounts().doc(id).update(updateData);
+  }
+
   async fundEscrow(bookingId: string, amount: number, userId: string): Promise<EscrowAccount | null> {
     let escrow = await this.getEscrowByBookingId(bookingId);
     if (!escrow) {
@@ -1254,7 +1698,7 @@ export class FirestoreStorage implements IStorage {
     const amount = parseFloat(milestone.amount || '0');
     if (amount <= 0) return null;
 
-    const vendorWallet = await this.getWallet(vendorId);
+    const vendorWallet = await this.getWalletByUserId(vendorId);
     if (!vendorWallet) {
       await this.createWallet(vendorId);
     }
@@ -1371,11 +1815,21 @@ export class FirestoreStorage implements IStorage {
       ...dispute,
       id,
       status: 'open',
+      adminJoined: false,
       createdAt: new Date().toISOString()
     };
     await collections.disputes().doc(id).set(newDispute);
 
     await this.updateBookingStatus(dispute.bookingId, 'disputed');
+
+    // Add auto-message to chat
+    await this.createBookingMessage({
+      bookingId: dispute.bookingId,
+      senderId: 'system',
+      message: "A dispute has been opened. Please provide all necessary evidence (screenshots, documents, etc.) to enable the admin to settle the escrow fairly. Once an admin joins the chat, further communication between the user and vendor will be restricted.",
+      isAdminMessage: true,
+      attachments: []
+    });
 
     return newDispute as Dispute;
   }
@@ -1395,13 +1849,44 @@ export class FirestoreStorage implements IStorage {
     return doc.exists ? { id: doc.id, ...doc.data() } as Dispute : undefined;
   }
 
-  async getAllDisputes(): Promise<Dispute[]> {
+  async getDisputes(): Promise<Dispute[]> {
     const snapshot = await collections.disputes()
       .orderBy('createdAt', 'desc')
       .get();
     return snapshot.docs
       .filter(doc => !doc.data()._isPlaceholder)
       .map(doc => ({ id: doc.id, ...doc.data() } as Dispute));
+  }
+
+  async joinDispute(disputeId: string, adminId: string): Promise<Dispute | null> {
+    const dispute = await this.getDisputeById(disputeId);
+    if (!dispute) return null;
+
+    await collections.disputes().doc(disputeId).update({
+      adminJoined: true,
+      status: 'under_review'
+    });
+
+    // Add admin joined message
+    await this.createBookingMessage({
+      bookingId: dispute.bookingId,
+      senderId: adminId,
+      message: "An administrator has joined this dispute. Chat between user and vendor is now restricted. Please wait for the admin's decision.",
+      isAdminMessage: true,
+      attachments: []
+    });
+
+    return await this.getDisputeById(disputeId) || null;
+  }
+
+  async updateDisputeStatus(id: string, status: string, resolution?: string, notes?: string, resolvedBy?: string): Promise<void> {
+    const updateData: any = { status };
+    if (resolution) updateData.resolution = resolution;
+    if (notes) updateData.resolutionNotes = notes;
+    if (resolvedBy) updateData.resolvedBy = resolvedBy;
+    if (status === 'resolved') updateData.resolvedAt = new Date().toISOString();
+    
+    await collections.disputes().doc(id).update(updateData);
   }
 
   async resolveDispute(disputeId: string, resolution: string, resolutionNotes: string, resolvedBy: string): Promise<Dispute | null> {
@@ -1628,7 +2113,7 @@ export class FirestoreStorage implements IStorage {
     
     const applications: any[] = snapshot.docs
       .map(doc => ({ id: doc.id, ...doc.data() }))
-      .sort((a: any, b: any) => new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime());
+      .sort((a: any, b: any) => this.toMs(b.appliedAt) - this.toMs(a.appliedAt));
     const jobs = [];
     
     for (const app of applications) {
@@ -1691,7 +2176,7 @@ export class FirestoreStorage implements IStorage {
           source: 'AI Generated'
         };
       })
-      .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime());
+      .sort((a, b) => this.toMs(b.generatedAt) - this.toMs(a.generatedAt));
   }
 
   // ===== Notification Methods =====
@@ -1715,7 +2200,19 @@ export class FirestoreStorage implements IStorage {
       readAt: null
     };
     await collections.notifications().doc(id).set(newNotification);
-    return newNotification as Notification;
+    const typed: Notification = {
+      id,
+      userId: newNotification.userId,
+      type: newNotification.type,
+      title: newNotification.title,
+      message: newNotification.message,
+      data: newNotification.data,
+      channel: newNotification.channel,
+      isRead: newNotification.isRead,
+      createdAt: new Date(newNotification.createdAt),
+      readAt: null
+    };
+    return typed;
   }
 
   async getNotificationsByUserId(userId: string, limit: number = 50): Promise<Notification[]> {
@@ -1725,7 +2222,7 @@ export class FirestoreStorage implements IStorage {
     return snapshot.docs
       .filter(doc => !doc.data()._isPlaceholder)
       .map(doc => ({ id: doc.id, ...doc.data() } as Notification))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => this.toMs(b.createdAt) - this.toMs(a.createdAt))
       .slice(0, limit);
   }
 
@@ -1755,6 +2252,7 @@ export class FirestoreStorage implements IStorage {
       .where('isRead', '==', false)
       .get();
     
+    if (!db) throw new Error("Firestore not initialized");
     const batch = db.batch();
     let count = 0;
     
@@ -1792,8 +2290,8 @@ export class FirestoreStorage implements IStorage {
       id,
       channels: template.channels || ['in_app'],
       isActive: template.isActive !== false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: new Date(),
+      updatedAt: new Date()
     };
     await collections.notificationTemplates().doc(id).set(newTemplate);
     return newTemplate as NotificationTemplate;
@@ -1828,7 +2326,7 @@ export class FirestoreStorage implements IStorage {
     
     await templateRef.update({
       ...updates,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date()
     });
     
     const updated = await templateRef.get();
@@ -1872,7 +2370,7 @@ export class FirestoreStorage implements IStorage {
       id,
       encryption: settings.encryption || 'tls',
       isActive: settings.isActive !== false,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date()
     };
     
     await collections.smtpSettings().doc(id).set(smtpData, { merge: true });
@@ -1901,7 +2399,7 @@ export class FirestoreStorage implements IStorage {
     const newSubscription = {
       ...subscription,
       id,
-      createdAt: new Date().toISOString()
+      createdAt: new Date()
     };
     await collections.pushSubscriptions().doc(id).set(newSubscription);
     return newSubscription as PushSubscription;
@@ -1915,6 +2413,7 @@ export class FirestoreStorage implements IStorage {
     
     if (snapshot.empty) return false;
     
+    if (!db) throw new Error("Firestore not initialized");
     const batch = db.batch();
     snapshot.docs.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
@@ -1928,6 +2427,89 @@ export class FirestoreStorage implements IStorage {
     return snapshot.docs
       .filter(doc => !doc.data()._isPlaceholder)
       .map(doc => ({ id: doc.id, ...doc.data() } as PushSubscription));
+  }
+
+  // ===== Forum Methods =====
+
+  async getForumPost(postId: string): Promise<any | undefined> {
+    const doc = await collections.forumPosts().doc(postId).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : undefined;
+  }
+
+  async getForumPosts(): Promise<any[]> {
+    const snapshot = await collections.forumPosts().orderBy('timestamp', 'desc').get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async createForumPost(post: any): Promise<any> {
+    const id = crypto.randomUUID();
+    const item = {
+      ...post,
+      id,
+      upvotes: 0,
+      downvotes: 0,
+      comments: [],
+      upvotedBy: [],
+      timestamp: new Date().toISOString()
+    };
+    await collections.forumPosts().doc(id).set(item);
+    return item;
+  }
+
+  async updateForumPost(postId: string, updates: any): Promise<void> {
+    await collections.forumPosts().doc(postId).update(updates);
+  }
+
+  async addForumComment(postId: string, comment: any): Promise<void> {
+    await collections.forumPosts().doc(postId).update({
+      comments: admin.firestore.FieldValue.arrayUnion({
+        ...comment,
+        id: crypto.randomUUID(),
+        upvotes: 0,
+        upvotedBy: [],
+        timestamp: new Date().toISOString()
+      })
+    });
+  }
+
+  async deleteForumPost(postId: string): Promise<void> {
+    await collections.forumPosts().doc(postId).delete();
+  }
+
+  async deleteForumComment(postId: string, commentId: string): Promise<void> {
+    const post = await this.getForumPost(postId);
+    if (!post || !post.comments) return;
+    
+    const newComments = post.comments.filter((c: any) => c.id !== commentId);
+    await collections.forumPosts().doc(postId).update({ comments: newComments });
+  }
+
+  async voteForumPost(postId: string, userId: string, type: 'up' | 'down'): Promise<void> {
+    const post = await this.getForumPost(postId);
+    if (!post) return;
+    
+    if (post.upvotedBy?.includes(userId)) return;
+
+    await collections.forumPosts().doc(postId).update({
+      [type === 'up' ? 'upvotes' : 'downvotes']: admin.firestore.FieldValue.increment(1),
+      upvotedBy: admin.firestore.FieldValue.arrayUnion(userId)
+    });
+  }
+
+  async voteForumComment(postId: string, commentId: string, userId: string): Promise<void> {
+    const post = await this.getForumPost(postId);
+    if (!post || !post.comments) return;
+
+    const comment = post.comments.find((c: any) => c.id === commentId);
+    if (!comment || (comment.upvotedBy && comment.upvotedBy.includes(userId))) return;
+
+    const newComments = post.comments.map((c: any) => 
+      c.id === commentId 
+        ? { ...c, upvotes: (c.upvotes || 0) + 1, upvotedBy: [...(c.upvotedBy || []), userId] }
+        : c
+    );
+
+    await collections.forumPosts().doc(postId).update({ comments: newComments });
   }
 
   // ===== Send Notification Helper =====
@@ -2001,6 +2583,256 @@ export class FirestoreStorage implements IStorage {
       return false;
     }
   }
+
+  // ===== SabiGuard Chat Methods =====
+
+  async getSabiGuardChats(userId: string): Promise<SabiGuardChat[]> {
+    const snapshot = await collections.sabiguardChats()
+      .where('userId', '==', userId)
+      .orderBy('updatedAt', 'desc')
+      .get();
+    return snapshot.docs
+      .filter(doc => doc.id !== '_placeholder')
+      .map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          createdAt: data.createdAt instanceof admin.firestore.Timestamp ? data.createdAt.toDate() : new Date(data.createdAt),
+          updatedAt: data.updatedAt instanceof admin.firestore.Timestamp ? data.updatedAt.toDate() : new Date(data.updatedAt)
+        } as SabiGuardChat;
+      });
+  }
+
+  async getSabiGuardMessages(chatId: string): Promise<SabiGuardMessage[]> {
+    const snapshot = await collections.sabiguardMessages()
+      .where('chatId', '==', chatId)
+      .orderBy('createdAt', 'asc')
+      .get();
+    return snapshot.docs
+      .filter(doc => doc.id !== '_placeholder')
+      .map(doc => {
+        const data = doc.data();
+        return {
+          ...data,
+          createdAt: data.createdAt instanceof admin.firestore.Timestamp ? data.createdAt.toDate() : new Date(data.createdAt)
+        } as SabiGuardMessage;
+      });
+  }
+
+  async createSabiGuardChat(userId: string, title: string): Promise<SabiGuardChat> {
+    const id = crypto.randomUUID();
+    const now = new Date();
+    const chat: SabiGuardChat = {
+      id,
+      userId,
+      title,
+      createdAt: now,
+      updatedAt: now
+    };
+    await collections.sabiguardChats().doc(id).set({
+      ...chat,
+      createdAt: admin.firestore.Timestamp.fromDate(now),
+      updatedAt: admin.firestore.Timestamp.fromDate(now)
+    });
+    return chat;
+  }
+
+  async addSabiGuardMessage(chatId: string, role: string, content: string): Promise<SabiGuardMessage> {
+    const id = crypto.randomUUID();
+    const now = new Date();
+    const message: SabiGuardMessage = {
+      id,
+      chatId,
+      role,
+      content,
+      createdAt: now
+    };
+    await collections.sabiguardMessages().doc(id).set({
+      ...message,
+      createdAt: admin.firestore.Timestamp.fromDate(now)
+    });
+    
+    // Update chat timestamp
+    await collections.sabiguardChats().doc(chatId).update({
+      updatedAt: admin.firestore.Timestamp.fromDate(now)
+    });
+    
+    return message;
+  }
+
+  async deleteSabiGuardChat(chatId: string): Promise<void> {
+    // Delete all messages in the chat
+    const messagesSnapshot = await collections.sabiguardMessages().where('chatId', '==', chatId).get();
+    const batch = db.batch();
+    messagesSnapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+    
+    // Delete the chat itself
+    batch.delete(collections.sabiguardChats().doc(chatId));
+    await batch.commit();
+  }
+
+  async updateChatStorageUsed(userId: string, bytes: number): Promise<void> {
+    const profileRef = collections.profiles().doc(userId);
+    const profile = await profileRef.get();
+    if (profile.exists) {
+      const currentUsed = (profile.data() as UserProfile).chatStorageUsed || 0;
+      await profileRef.update({
+        chatStorageUsed: currentUsed + bytes
+      });
+    }
+  }
+
+  // ===== MOAT Data Methods =====
+
+  async getMoatData(category?: string): Promise<MoatData[]> {
+    let query: any = collections.moatData();
+    if (category) {
+      query = query.where('category', '==', category);
+    }
+    const snapshot = await query.get();
+    const results = snapshot.docs
+      .filter(doc => doc.id !== '_placeholder')
+      .map(doc => doc.data() as MoatData);
+    
+    results.sort((a, b) => this.toMs(b.createdAt) - this.toMs(a.createdAt));
+    return results;
+  }
+
+  async createMoatData(data: any): Promise<MoatData> {
+    const id = crypto.randomUUID();
+    const item = { 
+      ...data, 
+      id, 
+      createdAt: new Date().toISOString() 
+    };
+    await collections.moatData().doc(id).set(item);
+    return item as MoatData;
+  }
+
+  // ===== Vendor Service Approval Methods =====
+
+  async getAllVendorServices(): Promise<VendorService[]> {
+    const snapshot = await collections.vendorServices().get();
+    return snapshot.docs
+      .filter(doc => doc.id !== '_placeholder')
+      .map(doc => doc.data() as VendorService);
+  }
+
+  async approveVendorService(serviceId: string): Promise<void> {
+    await collections.vendorServices().doc(serviceId).update({
+      status: 'approved',
+      approvedAt: new Date().toISOString(),
+      verified: true
+    });
+  }
+
+  async rejectVendorService(serviceId: string): Promise<void> {
+    await collections.vendorServices().doc(serviceId).update({
+      status: 'rejected',
+      isActive: false
+    });
+  }
+
+  async deleteMoatData(id: string): Promise<void> {
+    await collections.moatData().doc(id).delete();
+  }
+
+  // ===== FAQ Methods =====
+
+  async getFaqs(): Promise<any[]> {
+    const snapshot = await collections.faqs().orderBy('order', 'asc').get();
+    return snapshot.docs
+      .filter(doc => !doc.data()._isPlaceholder)
+      .map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async createFaq(faq: any): Promise<any> {
+    const id = crypto.randomUUID();
+    const item = {
+      ...faq,
+      id,
+      isActive: faq.isActive ?? true,
+      order: faq.order ?? 0,
+      createdAt: new Date().toISOString()
+    };
+    await collections.faqs().doc(id).set(item);
+    return item;
+  }
+
+  async updateFaq(id: string, faq: any): Promise<void> {
+    await collections.faqs().doc(id).update({
+      ...faq,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  async deleteFaq(id: string): Promise<void> {
+    await collections.faqs().doc(id).delete();
+  }
+
+  // ===== Testimonial Methods =====
+
+  async getTestimonials(): Promise<any[]> {
+    const snapshot = await collections.testimonials().orderBy('createdAt', 'desc').get();
+    return snapshot.docs
+      .filter(doc => !doc.data()._isPlaceholder)
+      .map(doc => ({ id: doc.id, ...doc.data() }));
+  }
+
+  async createTestimonial(testimonial: any): Promise<any> {
+    const id = crypto.randomUUID();
+    const item = {
+      ...testimonial,
+      id,
+      isActive: testimonial.isActive ?? true,
+      rating: testimonial.rating ?? 5,
+      createdAt: new Date().toISOString()
+    };
+    await collections.testimonials().doc(id).set(item);
+    return item;
+  }
+
+  async updateTestimonial(id: string, testimonial: any): Promise<void> {
+    await collections.testimonials().doc(id).update({
+      ...testimonial,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  async deleteTestimonial(id: string): Promise<void> {
+    await collections.testimonials().doc(id).delete();
+  }
+
+  // Survey methods
+  async createSurvey(survey: any): Promise<any> {
+    const id = crypto.randomUUID();
+    const newSurvey = {
+      ...survey,
+      id,
+      createdAt: new Date()
+    };
+    await collections.surveys().doc(id).set(newSurvey);
+    return newSurvey;
+  }
+
+  async getSurveys(): Promise<any[]> {
+    const snapshot = await collections.surveys().get();
+    return snapshot.docs
+      .map(doc => doc.data())
+      .filter(item => item.id !== 'placeholder')
+      .sort((a, b) => this.toMs(b.createdAt) - this.toMs(a.createdAt));
+  }
+
+  async getSurveysByFeature(feature: string): Promise<any[]> {
+    const snapshot = await collections.surveys().where('feature', '==', feature).get();
+    return snapshot.docs
+      .map(doc => doc.data())
+      .sort((a, b) => this.toMs(b.createdAt) - this.toMs(a.createdAt));
+  }
 }
+
+  // Duplicate Wallet methods removed to resolve build errors
 
 export const firestoreStorage = new FirestoreStorage();
