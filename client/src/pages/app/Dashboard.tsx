@@ -258,7 +258,7 @@ export default function Dashboard() {
                   value={selectedCity || profile?.city || ""}
                   onChange={(e) => handleCityChange(e.target.value)}
                   disabled={isSavingCity}
-                  className="w-full pl-10 pr-3 py-3 rounded-xl border-2 border-slate-200 focus:border-primary focus:ring-2 ring-primary/20 outline-none text-sm font-bold bg-white disabled:opacity-50 appearance-none transition-all"
+                  className="w-full pl-10 pr-3 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-800 focus:border-primary focus:ring-2 ring-primary/20 outline-none text-sm font-bold bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 disabled:opacity-50 appearance-none transition-all"
                 >
                   <option value="">Select your city</option>
                   {NIGERIAN_CITIES.map(city => (
@@ -288,9 +288,9 @@ export default function Dashboard() {
 
       {/* Sabi Civic Guard (after Your Location) */}
       <motion.div variants={itemVariants} id="civic-inline">
-        <div className="rounded-2xl border bg-white overflow-hidden">
+        <div className="rounded-2xl border bg-white overflow-hidden min-h-[400px]">
           <div className="max-h-[600px] overflow-auto">
-            <CivicGuard />
+             <CivicGuard />
           </div>
         </div>
       </motion.div>

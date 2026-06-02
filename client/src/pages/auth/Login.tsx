@@ -21,6 +21,7 @@ import {
   Phone,
   User,
   MapPin,
+  Plus,
   Calendar as CalendarIcon,
   ChevronRight,
   ArrowLeft
@@ -55,15 +56,24 @@ export default function Login() {
   const [dob, setDob] = useState("");
   const [gender, setGender] = useState("");
   const [state, setState] = useState("");
+  const [referralCode, setReferralCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [isCompletingGoogleProfile, setIsCompletingGoogleProfile] = useState(false);
   const [googleUser, setGoogleUser] = useState<any>(null);
   const [siteKey, setSiteKey] = useState<string | null>(null);
   const captchaRef = useRef<ReCAPTCHA>(null);
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const { toast } = useToast();
 
   useEffect(() => {
+    // Capture referral code from URL
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref) {
+      setReferralCode(ref);
+      toast({ title: "Referral applied", description: `You'll receive a bonus for using code ${ref}` });
+    }
+
     fetch('/api/settings/public')
       .then(res => res.json())
       .then(data => {
@@ -135,6 +145,7 @@ export default function Login() {
           dob,
           gender,
           state,
+          referralCode,
           isGoogleAuth: true
         })
       });
@@ -199,6 +210,7 @@ export default function Login() {
               dob,
               gender,
               state,
+              referralCode,
               captchaToken
             })
           });
@@ -320,7 +332,7 @@ export default function Login() {
                             type="tel"
                             placeholder="+234 800 000 0000" 
                             value={phoneNumber} 
-                            onChange={(e) => setPhoneNumber(e.target.value)} 
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhoneNumber(e.target.value)} 
                             required 
                             className="h-11 md:h-12 pl-10"
                           />
@@ -336,7 +348,7 @@ export default function Login() {
                               id="g-dob" 
                               type="date" 
                               value={dob} 
-                              onChange={(e) => setDob(e.target.value)} 
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDob(e.target.value)} 
                               required 
                               className="h-11 md:h-12 pl-10 text-xs md:text-sm"
                             />
@@ -374,11 +386,25 @@ export default function Login() {
                         </div>
                       </div>
 
-                      <Button 
-                        type="submit" 
-                        className="w-full h-11 md:h-12 font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all mt-2 md:mt-4 text-sm md:text-base" 
-                        disabled={loading}
-                      >
+                        <div className="space-y-1.5 md:space-y-2">
+                          <Label htmlFor="g-referral">Referral Code (Optional)</Label>
+                          <div className="relative">
+                            <Plus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                            <Input 
+                              id="g-referral" 
+                              placeholder="REF12345" 
+                              value={referralCode} 
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReferralCode(e.target.value)} 
+                              className="h-11 md:h-12 pl-10"
+                            />
+                          </div>
+                        </div>
+
+                        <Button 
+                          type="submit" 
+                          className="w-full h-11 md:h-12 font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all mt-2 md:mt-4 text-sm md:text-base" 
+                          disabled={loading}
+                        >
                         {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                         Complete & Continue <ChevronRight className="ml-2 h-4 w-4" />
                       </Button>
@@ -449,7 +475,7 @@ export default function Login() {
                                   id="name" 
                                   placeholder="Uyouko Ekpo" 
                                   value={name} 
-                                  onChange={(e) => setName(e.target.value)} 
+                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} 
                                   required 
                                   className="h-11 md:h-12 pl-10"
                                 />
@@ -465,7 +491,7 @@ export default function Login() {
                                   type="tel"
                                   placeholder="+234 800 000 0000" 
                                   value={phoneNumber} 
-                                  onChange={(e) => setPhoneNumber(e.target.value)} 
+                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhoneNumber(e.target.value)} 
                                   required 
                                   className="h-11 md:h-12 pl-10"
                                 />
@@ -481,7 +507,7 @@ export default function Login() {
                                     id="dob" 
                                     type="date" 
                                     value={dob} 
-                                    onChange={(e) => setDob(e.target.value)} 
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDob(e.target.value)} 
                                     required 
                                     className="h-11 md:h-12 pl-10 text-xs md:text-sm"
                                   />
@@ -518,21 +544,35 @@ export default function Login() {
                                 </Select>
                               </div>
                             </div>
+
+                            <div className="space-y-1.5 md:space-y-2">
+                              <Label htmlFor="referral">Referral Code (Optional)</Label>
+                              <div className="relative">
+                                <Plus className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                <Input 
+                                  id="referral" 
+                                  placeholder="REF12345" 
+                                  value={referralCode} 
+                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReferralCode(e.target.value)} 
+                                  className="h-11 md:h-12 pl-10"
+                                />
+                              </div>
+                            </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
                       
                       <div className="space-y-1.5 md:space-y-2">
                         <Label htmlFor="email">Email Address</Label>
-                        <Input 
-                          id="email" 
-                          type="email" 
-                          placeholder="name@example.com" 
-                          value={email} 
-                          onChange={(e) => setEmail(e.target.value)} 
-                          required 
-                          className="h-11 md:h-12"
-                        />
+                          <Input 
+                            id="email" 
+                            type="email" 
+                            placeholder="name@example.com" 
+                            value={email} 
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} 
+                            required 
+                            className="h-11 md:h-12"
+                          />
                       </div>
 
                       <div className="space-y-1.5 md:space-y-2">
@@ -542,7 +582,7 @@ export default function Login() {
                             id="password" 
                             type={showPassword ? "text" : "password"} 
                             value={password} 
-                            onChange={(e) => setPassword(e.target.value)} 
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} 
                             required 
                             className="h-11 md:h-12 pr-10"
                           />
@@ -564,7 +604,7 @@ export default function Login() {
                               id="confirmPassword" 
                               type={showPassword ? "text" : "password"} 
                               value={confirmPassword} 
-                              onChange={(e) => setConfirmPassword(e.target.value)} 
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)} 
                               required 
                               className="h-11 md:h-12 pr-10"
                             />

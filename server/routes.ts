@@ -1,13 +1,17 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import "./types";
+import "../server/types.d.ts";
 import express from "express";
 import admin from "firebase-admin";
 import nodemailer from "nodemailer";
 import webpush from 'web-push';
 import { createServer, type Server } from "http";
-import { firestoreStorage as storage, FIREBASE_APP_ID } from "./firestoreStorage";
-import { verifyAdminToken, verifyUserToken, isUserAdmin, getFirestoreUserFlags } from "./firestoreStorage";
-import PaystackService from "./paystackService";
+import { firestoreStorage as storage, FIREBASE_APP_ID } from "./firestoreStorage.js";
+import { verifyAdminToken, verifyUserToken, isUserAdmin, getFirestoreUserFlags } from "./firestoreStorage.js";
+import { getLegalAgent, summarizeCaseForProfessional } from "./agent/legalAgent.js";
+import { Runner, InMemorySessionService, toStructuredEvents, EventType } from "@google/adk";
+import PaystackService from "./paystackService.js";
+
+const sessionService = new InMemorySessionService();
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -224,7 +228,8 @@ export async function registerRoutes(
         'seo_description', 'contact_email', 'site_favicon', 'site_favicon_dark',
         'hero_title', 'hero_subtitle', 'video_demo_url', 'seo_title', 
         'privacy_policy', 'terms_of_service', 'cookie_policy',
-        'frontend_page_content', 'frontend_page_content_about', 'frontend_page_content_contact', 'frontend_page_content_footer'
+        'frontend_page_content', 'frontend_page_content_about', 'frontend_page_content_contact', 'frontend_page_content_footer',
+        'credit_reward_referral', 'referral_reward_credits'
       ];
       
       const publicSettings = settings.filter(s => 
@@ -234,6 +239,25 @@ export async function registerRoutes(
         return acc;
       }, {});
       res.json(publicSettings);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/settings", async (req, res, next) => {
+    try {
+      const settings = await storage.getAdminSettings();
+      const allowedKeys = [
+        'captcha_site_key', 'ai_provider', 'site_title', 'site_logo', 'footer_text', 
+        'seo_description', 'contact_email', 'site_favicon', 'site_favicon_dark',
+        'hero_title', 'hero_subtitle', 'video_demo_url', 'seo_title', 
+        'privacy_policy', 'terms_of_service', 'cookie_policy',
+        'frontend_page_content', 'frontend_page_content_about', 'frontend_page_content_contact', 'frontend_page_content_footer',
+        'credit_reward_referral', 'referral_reward_credits'
+      ];
+      
+      const filteredSettings = settings.filter(s => allowedKeys.includes(s.key));
+      res.json(filteredSettings);
     } catch (error) {
       next(error);
     }
@@ -394,7 +418,8 @@ export async function registerRoutes(
         startLat: parseFloat(startLat),
         startLng: parseFloat(startLng),
         endLat: parseFloat(endLat),
-        endLng: parseFloat(endLng)
+        endLng: parseFloat(endLng),
+        status: 'unknown'
       });
 
       res.json(route);
@@ -802,6 +827,9 @@ export async function registerRoutes(
         createdAt: new Date()
       });
 
+      // Generate a unique referral code for the new user
+      await storage.generateReferralCode(userId);
+
       // Handle referral if provided
       if (referralCode) {
         await storage.processReferral(userId, referralCode);
@@ -838,19 +866,20 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/vendor/apply", async (req, res, next) => {
+  app.post("/api/professionals/apply", userAuth, async (req, res, next) => {
     try {
-      const { userId, businessName, serviceType, businessDocument, taxId } = req.body;
-      
-      if (!userId || !businessName || !serviceType) {
+      const userId = req.userId!;
+      const { businessName, role, serviceType, credentials } = req.body;
+
+      if (!businessName || !role || !serviceType) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
 
-      const application = await storage.submitVendorApplication(userId, {
+      const application = await storage.submitProfessionalApplication(userId, {
         businessName,
+        role,
         serviceType,
-        businessDocument,
-        taxId
+        credentials
       });
 
       res.json(application);
@@ -859,60 +888,86 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/vendor/application/:userId", async (req, res, next) => {
+  app.get("/api/professionals", async (req, res, next) => {
     try {
-      const { userId } = req.params;
-      const application = await storage.getVendorApplication(userId);
-      res.json(application || null);
+      const { status, role, city, verified } = req.query;
+      const filters: any = {};
+      if (status) filters.status = String(status);
+      if (role) filters.role = String(role);
+      if (city) filters.city = String(city);
+      if (verified !== undefined) filters.verified = String(verified).toLowerCase() === 'true';
+
+      const professionals = await storage.getProfessionals(filters);
+      res.json(professionals);
     } catch (error) {
       next(error);
     }
   });
 
-  app.patch("/api/vendor/mode/:userId", adminAuth, async (req, res, next) => {
-    const { userId } = req.params;
-    const { vendorMode } = req.body;
-
+  app.get("/api/professionals/:professionalId", async (req, res, next) => {
     try {
-      await storage.switchVendorMode(userId, vendorMode);
-      res.json({ success: true, vendorMode });
-    } catch (error: any) {
-      if (error.message?.includes('Profile not found')) {
-        return res.status(404).json({ error: 'User profile not found' });
+      const { professionalId } = req.params;
+      const professional = await storage.getProfessionalById(professionalId);
+      if (!professional) {
+        return res.status(404).json({ error: 'Professional not found' });
       }
+      res.json(professional);
+    } catch (error) {
       next(error);
     }
   });
 
-  app.patch("/api/vendor/self/mode", async (req, res, next) => {
+  app.patch("/api/professionals/:professionalId", userAuth, async (req, res, next) => {
     try {
-      const { vendorMode } = req.body;
+      const { professionalId } = req.params;
+      const updates = req.body;
+      const professional = await storage.getProfessionalById(professionalId);
+      if (!professional) {
+        return res.status(404).json({ error: 'Professional not found' });
+      }
+      if (professional.userId !== req.userId) {
+        return res.status(403).json({ error: 'Not authorized to update this professional profile' });
+      }
+      await storage.updateProfessional(professionalId, updates);
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  });
 
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Authentication required' });
-      }
-      const token = authHeader.substring(7);
-      const result = await verifyUserToken(token);
-      if (!result.valid || !result.userId) {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
+  app.get("/api/admin/professionals", adminAuth, async (req, res, next) => {
+    try {
+      const professionals = await storage.getProfessionals();
+      res.json(professionals);
+    } catch (error) {
+      next(error);
+    }
+  });
 
-      const userId = result.userId;
-      const profile = await storage.getUserProfile(userId);
-      if (!profile) {
-        return res.status(404).json({ error: 'Profile not found' });
+  app.post("/api/admin/professionals/:professionalId/approve", adminAuth, async (req, res, next) => {
+    try {
+      const { professionalId } = req.params;
+      const professional = await storage.getProfessionalById(professionalId);
+      if (!professional) {
+        return res.status(404).json({ error: 'Professional not found' });
       }
-      if (!profile.isVendor) {
-        return res.status(403).json({ error: 'Not an approved vendor' });
-      }
+      await storage.updateProfessional(professionalId, { status: 'active', verified: true });
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  });
 
-      await storage.switchVendorMode(userId, vendorMode);
-      res.json({ success: true, vendorMode });
-    } catch (error: any) {
-      if (error.message?.includes('Profile not found')) {
-        return res.status(404).json({ error: 'User profile not found' });
+  app.post("/api/admin/professionals/:professionalId/reject", adminAuth, async (req, res, next) => {
+    try {
+      const { professionalId } = req.params;
+      const professional = await storage.getProfessionalById(professionalId);
+      if (!professional) {
+        return res.status(404).json({ error: 'Professional not found' });
       }
+      await storage.updateProfessional(professionalId, { status: 'suspended', verified: false });
+      res.json({ success: true });
+    } catch (error) {
       next(error);
     }
   });
@@ -1145,7 +1200,7 @@ export async function registerRoutes(
   app.get("/api/services", async (req, res, next) => {
     try {
       const city = req.query.city as string;
-      const services = await storage.getVendorServices();
+      const services = await storage.getVendorServices({});
       
       if (city) {
         services.sort((a: any, b: any) => {
@@ -1204,6 +1259,93 @@ export async function registerRoutes(
     try {
       const { serviceId } = req.params;
       await storage.deleteVendorService(serviceId);
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/professional-services", async (req, res, next) => {
+    try {
+      const filters: any = {};
+      if (req.query.professionalId) filters.professionalId = String(req.query.professionalId);
+      if (req.query.type) filters.type = String(req.query.type);
+      if (req.query.city) filters.city = String(req.query.city);
+      const services = await storage.getProfessionalServices(filters);
+      res.json(services);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/professional-services", userAuth, async (req, res, next) => {
+    try {
+      const { professionalId, name, type, specialization, description, location, latitude, longitude, contactPhone, contactEmail, priceRange, priceList } = req.body;
+      if (!professionalId || !name || !type || !location) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      const professional = await storage.getProfessionalById(professionalId);
+      if (!professional) {
+        return res.status(404).json({ error: 'Professional not found' });
+      }
+      if (professional.userId !== req.userId) {
+        return res.status(403).json({ error: 'Not authorized to add services for this professional' });
+      }
+
+      const service = await storage.createProfessionalService({
+        professionalId,
+        name,
+        type,
+        specialization,
+        description,
+        location,
+        latitude,
+        longitude,
+        contactPhone,
+        contactEmail,
+        priceRange,
+        priceList,
+        verified: false
+      });
+      res.json(service);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/professional-services/:serviceId", userAuth, async (req, res, next) => {
+    try {
+      const { serviceId } = req.params;
+      const service = await storage.getProfessionalServiceById(serviceId);
+      if (!service) {
+        return res.status(404).json({ error: 'Professional service not found' });
+      }
+      const professional = await storage.getProfessionalById(service.professionalId);
+      if (!professional || professional.userId !== req.userId) {
+        return res.status(403).json({ error: 'Not authorized to modify this service' });
+      }
+
+      await storage.updateProfessionalService(serviceId, req.body);
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/professional-services/:serviceId", userAuth, async (req, res, next) => {
+    try {
+      const { serviceId } = req.params;
+      const service = await storage.getProfessionalServiceById(serviceId);
+      if (!service) {
+        return res.status(404).json({ error: 'Professional service not found' });
+      }
+      const professional = await storage.getProfessionalById(service.professionalId);
+      if (!professional || professional.userId !== req.userId) {
+        return res.status(403).json({ error: 'Not authorized to delete this service' });
+      }
+
+      await storage.deleteProfessionalService(serviceId);
       res.json({ success: true });
     } catch (error) {
       next(error);
@@ -1404,6 +1546,9 @@ export async function registerRoutes(
         description: "Learn about your rights as a Nigerian citizen",
         location: "Lagos, Victoria Island",
         date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        time: "10:00",
+        organizer: "SabiRight Admin",
+        organizerId: "admin",
         capacity: 100,
         category: "workshop"
       });
@@ -1419,6 +1564,7 @@ export async function registerRoutes(
         description: "Looking for an experienced developer",
         contact: "jobs@techlagos.com",
         source: "Sample Data",
+        postedBy: "admin",
         isAiFetched: false
       });
 
@@ -1448,7 +1594,7 @@ export async function registerRoutes(
     
     // 2. Proactively update Firestore if available
     try {
-      const { FIREBASE_APP_ID } = await import('./firestoreStorage');
+      const { FIREBASE_APP_ID } = await import('./firestoreStorage.js');
       const admin = await import('firebase-admin');
       
       await admin.default.firestore()
@@ -1536,7 +1682,8 @@ export async function registerRoutes(
       const subscription = await storage.createSubscription({
         userId,
         planId,
-        status: 'active'
+        status: 'active',
+        startDate: new Date().toISOString()
       });
 
       // Update user storage limit based on plan
@@ -2007,6 +2154,8 @@ export async function registerRoutes(
       if (!feature || !rating) {
         return res.status(400).json({ error: "Feature and rating are required" });
       }
+
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const survey = await storage.createSurvey({
         userId,
@@ -2707,242 +2856,152 @@ export async function registerRoutes(
     }
   });
 
-  // AI Civic Chat API (SabiRight Citizen Education)
+  // AI Agent API (Optimized for Hackathon)
+  app.post("/api/agent", userAuth, async (req, res) => {
+    try {
+      const { message, sessionId, city } = req.body;
+      const userId = req.userId;
+      const user = await storage.getUserProfile(userId!);
+
+      if (!message) {
+        return res.status(400).json({ error: "Message is required" });
+      }
+
+      const agent = await getLegalAgent();
+      const runner = new Runner({
+        appName: "SabiRight",
+        agent,
+        sessionService,
+      });
+
+      const currentSessionId = sessionId || `session-${Date.now()}`;
+      const session = await sessionService.getSession({
+        appName: "SabiRight",
+        userId: userId!,
+        sessionId: currentSessionId
+      });
+      
+      if (!session) {
+        await sessionService.createSession({
+          appName: "SabiRight",
+          userId: userId!,
+          sessionId: currentSessionId
+        });
+      }
+
+      const events = runner.runAsync({
+        userId: userId!,
+        sessionId: currentSessionId,
+        newMessage: { role: 'user', parts: [{ text: `[User City: ${city || 'Nigeria'}] ${message}` }] } as any
+      });
+
+      let finalResponse = "";
+      for await (const event of events) {
+        const structuredEvents = toStructuredEvents(event);
+        for (const se of structuredEvents) {
+          if (se.type === EventType.CONTENT) {
+            finalResponse += se.content;
+          } else if (se.type === EventType.ERROR) {
+            console.error(`[Agent API] ADK Error Event:`, se.error);
+            if (!finalResponse) {
+              finalResponse = "I apologize, but I encountered an error. Please try again.";
+            }
+          }
+        }
+      }
+
+      res.json({ response: finalResponse });
+    } catch (error: any) {
+      console.error('[Agent API] 500 Error:', error);
+      res.status(500).json({ error: error.message || String(error) });
+    }
+  });
+
+  // AI Civic Chat API (SabiRight Citizen Education) - Unified to use Autonomous Agent
   app.post("/api/ai/civic/chat", userAuth, async (req, res, next) => {
     try {
-      const { message, city, isUrgent, lat, lng, chatId } = req.body;
+      const { message, sessionId, chatId } = req.body;
       const userId = req.userId;
       
       if (!userId || !message) {
         return res.status(400).json({ error: 'User ID and message required' });
       }
 
-      // Check if this is the first message in the session for the greeting
-      let isFirstMessage = true;
-      let chatHistory = "";
-      if (chatId) {
-        const existingMessages = await storage.getSabiGuardMessages(chatId);
-        if (existingMessages && existingMessages.length > 0) {
-          isFirstMessage = false;
-          // Build chat history for AI context
-          chatHistory = existingMessages.map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
-        }
-      }
-
-      // Check storage limits
-      const profile = await storage.getUserProfile(userId);
-      if (profile) {
-        const limit = profile.chatStorageLimit || 524288;
-        const used = profile.chatStorageUsed || 0;
-        if (used >= limit) {
-          return res.status(400).json({ 
-            error: "Storage limit reached", 
-            message: "You have reached your chat storage limit. Please upgrade your plan for more space."
-          });
-        }
-      }
-
+      // Check credits
       const credits = await storage.getUserCredits(userId);
-      const availableCredits = credits?.totalCredits ?? 0;
-      
-      if (availableCredits < 1) {
+      if (!credits || (credits.totalCredits ?? 0) < 1) {
         return res.status(402).json({ error: 'Insufficient credits' });
       }
 
-      // Fetch nearby lawyers and accountants using distance if available
-      const lawyers = await storage.getVendorServices({ type: 'Lawyer', city, lat, lng });
-      const accountants = await storage.getVendorServices({ type: 'Accountant', city, lat, lng });
-      
-      // Sort by distance primarily (if available from getVendorServices), then verified status and rating
-      const allVendors = [...lawyers, ...accountants].sort((a: any, b: any) => {
-        if (a.distance !== undefined && b.distance !== undefined) {
-          if (a.distance !== b.distance) return a.distance - b.distance;
-        }
-        
-        if (a.verified && !b.verified) return -1;
-        if (!a.verified && b.verified) return 1;
-        return parseFloat(b.rating || '0') - parseFloat(a.rating || '0');
-      }).slice(0, 5); // Suggest top 5 closest/best matches
-
-      const nearbyVendors = allVendors.map((v: any) => 
-        `- ${v.name} (${v.type}${v.verified ? ' - Verified' : ''}): ${v.location}${v.distance ? ` (${Math.round(v.distance)}km away)` : ''}. Contact: ${v.contactPhone || v.contactEmail}`
-      ).join('\n');
-
-      // Fetch relevant MOAT data for accurate citations
-      const constitutionData = await storage.getMoatData('constitution');
-      const police_actData = await storage.getMoatData('police_act');
-      const forumMoat = await storage.getMoatData('forum');
-      const marketplaceMoat = await storage.getMoatData('marketplace');
-      const eventsMoat = await storage.getMoatData('events');
-      const jobsMoat = await storage.getMoatData('jobs');
-      const locationMoat = city ? await storage.getMoatData(city.toLowerCase()) : [];
-      
-      // Enhanced keyword-based relevance filtering for MOAT data
-      const queryKeywords = message.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
-      
-      const caseDocsMoat = await storage.getMoatData('case_documents');
-      const electricityMoat = await storage.getMoatData('electricity'); // Added for electricity queries
-      const tenancyMoat = await storage.getMoatData('tenancy'); // Added for tenancy queries
-      
-      const allMoatData = [
-        ...constitutionData, 
-        ...police_actData, 
-        ...forumMoat, 
-        ...marketplaceMoat, 
-        ...eventsMoat, 
-        ...jobsMoat, 
-        ...locationMoat, 
-        ...caseDocsMoat,
-        ...electricityMoat,
-        ...tenancyMoat
-      ];
-      
-      // Filter MOAT data strictly to avoid irrelevant content like ads/events unless requested
-      const isLegalQuery = message.toLowerCase().match(/(law|bail|police|rights|court|legal|constitution|arrest|fine|crime|case|document|affidavit|petition|electricity|meter|landlord|tenant|rent|bill)/);
-      const isMarketQuery = message.toLowerCase().match(/(buy|sell|price|market|vendor|product|cost)/);
-      
-      let relevantMoat = allMoatData.filter(d => {
-        const content = d.content.toLowerCase();
-        const title = (d.title || '').toLowerCase();
-        
-        // Match keywords
-        const hasKeyword = queryKeywords.some((kw: string) => content.includes(kw) || title.includes(kw));
-        
-        // If it's a legal or utility query, prioritize relevant categories
-        if (isLegalQuery && (d.category === 'case_documents' || d.category === 'constitution' || d.category === 'police_act' || d.category === 'electricity' || d.category === 'tenancy')) {
-          return hasKeyword || content.includes('law') || content.includes('legal') || content.includes('right');
-        }
-
-        // If it's a legal query, ignore marketplace/events/jobs unless they contain the keyword
-        if (isLegalQuery && (d.category === 'marketplace' || d.category === 'events' || d.category === 'jobs')) {
-          return hasKeyword && (content.includes('law') || content.includes('legal'));
-        }
-        
-        return hasKeyword;
+      // Initialize the Legal Agent (using MCP tools)
+      const agent = await getLegalAgent();
+      const runner = new Runner({
+        appName: "SabiRight",
+        agent,
+        sessionService,
       });
 
-      // Optimization: If we have high-quality MOAT data, we can skip or reduce internet search
-      const hasStrongMoatData = relevantMoat.length >= 3; // Increased slightly for better local context
-      
-      // Only search internet if absolutely necessary or explicitly requested
-      const needsInternetSearch = (message.toLowerCase().includes('verify') || 
-                                  message.toLowerCase().includes('update') || 
-                                  message.toLowerCase().includes('latest') ||
-                                  (!hasStrongMoatData && isLegalQuery)) && 
-                                  !message.toLowerCase().includes('quick'); // Add "quick" keyword to skip search
-      
-      let internetContext = "";
-      if (needsInternetSearch) {
-        // Only call internet if we don't have enough local knowledge for legal queries
-        // or if explicitly requested. This saves API calls/quota.
-        try {
-          const searchKey = await storage.getAdminSetting('tavily_api_key');
-          if (searchKey?.value) {
-            const searchRes = await fetch('https://api.tavily.com/search', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                api_key: searchKey.value,
-                query: message,
-                search_depth: "basic",
-                max_results: 2 // Reduced from 3 for faster response
-              })
-            });
-            if (searchRes.ok) {
-              const searchData = await searchRes.json() as any;
-              internetContext = searchData.results.map((r: any) => `Source: ${r.url}\nTitle: ${r.title}\nContent: ${r.content}`).join('\n\n');
-            }
-          } else {
-            // Fallback to DuckDuckGo (Free, no key)
-            const ddgRes = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(message)}&format=json&no_html=1&skip_disambig=1`);
-            if (ddgRes.ok) {
-              const ddgData = await ddgRes.json() as any;
-              if (ddgData.AbstractText) {
-                internetContext = `Source: DuckDuckGo\nContent: ${ddgData.AbstractText}`;
-              }
-            }
-          }
-        } catch (searchErr) {
-          console.error('[Civic Chat] Internet search failed:', searchErr);
-        }
-      }
-
-      // Combine MOAT and Internet context
-      const combinedContext = [
-        relevantMoat.length > 0 ? "--- RELEVANT MOAT DATA ---" : "",
-        relevantMoat.slice(0, 10).map(d => `Title: ${d.title || 'Untitled'}\nContent: ${d.content}\nSource: ${d.source || 'Unknown'}`).join('\n\n'),
-        internetContext ? "--- INTERNET SEARCH RESULTS ---" : "",
-        internetContext
-      ].filter(Boolean).join('\n\n');
-
-      const systemPrompt = `You are the SabiRight AI Citizen Education Agent for Nigeria. 
-        User Location: ${city || 'Nigeria'}.
+      // Ensure session exists in the in-memory store
+      let currentSessionId = sessionId || chatId || `session-${Date.now()}`;
+      if (currentSessionId) {
+        console.error(`[Agent API] Checking session ${currentSessionId}...`);
+        const session = await sessionService.getSession({ 
+          appName: "SabiRight", 
+          userId: userId!, 
+          sessionId: currentSessionId 
+        });
         
-        CRITICAL ROLE: Educate citizens on their rights and responsibilities in a concise, lawful, and highly precise manner.
-        
-        STRICT RESPONSE GUIDELINES:
-        1. BE CONCISE: Provide short, punchy summaries. Avoid bulky paragraphs. Use bullet points for clarity.
-        2. DIRECT LEGAL CITATIONS: You MUST cite specific Sections and Subsections of the 1999 Constitution or relevant Acts (e.g., "Section 35(1) of the 1999 Constitution"). Do NOT generalize.
-        3. NO HALLUCINATIONS: Be accurate about legal definitions. (e.g., Teachers are NOT typically "Public Officers" under the Code of Conduct unless employed by the State/Federal Civil Service commission).
-        4. VENDOR REFERRALS: If the user query involves legal issues, property, or taxes, you MUST explicitly refer them to the nearby professionals listed below.
-        5. TONE: Professional, authoritative, yet helpful.
-        
-        CONTEXT FOR THIS QUERY:
-        ${combinedContext || 'No specific local context found. Use general knowledge of Nigerian law.'}
-        
-        NEARBY PROFESSIONALS (REFER USER TO THESE IF NEEDED):
-        ${nearbyVendors || 'No verified lawyers currently available in this immediate area.'}`;
-
-      const fullPrompt = `System: ${systemPrompt}\n\nUser Question: ${message}\n\nAssistant Response (Short, precise, with citations):`;
-
-      let text;
-      try {
-        text = await generateAIResponse(fullPrompt);
-      } catch (aiErr: any) {
-        if (aiErr.status === 429) {
-          return res.status(429).json({ error: aiErr.message });
-        }
-        throw aiErr;
-      }
-
-      if (!text) {
-        return res.status(500).json({ error: 'Empty AI response' });
-      }
-
-      // Save to chat if chatId provided
-      if (chatId) {
-        await storage.addSabiGuardMessage(chatId, "user", message);
-        await storage.addSabiGuardMessage(chatId, "ai", text);
-        
-        // Track storage used (rough estimate: characters * 1 byte)
-        const bytesUsed = (message.length + text.length);
-        if (userId) {
-          await storage.updateChatStorageUsed(userId, bytesUsed);
-        }
-
-        // MOAT Integration: Use chat data for threat analysis
-        if (message.length > 50) {
-          await storage.createMoatData({
-            category: "chat_intel",
-            source: "sabiguard_chat",
-            content: message,
-            metadata: { userId, chatId, timestamp: new Date().toISOString() }
+        if (!session) {
+          // If not found, create a new one with this ID
+          console.error(`[Agent API] Session ${currentSessionId} not found in memory, recreating.`);
+          await sessionService.createSession({ 
+            appName: "SabiRight", 
+            userId: userId!, 
+            sessionId: currentSessionId 
           });
         }
       }
 
+      const events = runner.runAsync({
+        userId,
+        sessionId: currentSessionId,
+        newMessage: { role: 'user', parts: [{ text: message }] },
+      });
+
+      let finalResponse = "";
+      for await (const event of events) {
+        const structuredEvents = toStructuredEvents(event);
+        for (const se of structuredEvents) {
+          if (se.type === EventType.CONTENT) {
+            finalResponse += se.content;
+          } else if (se.type === EventType.ERROR) {
+            console.error(`[Agent API] ADK Error Event:`, se.error);
+            if (!finalResponse) {
+                throw new Error(se.error?.message || "AI Agent encountered an error");
+            }
+          }
+        }
+      }
+
+      // Deduct credits
       await storage.deductCredits(userId, 1, 'civic_guard', `Legal AI query: ${message.substring(0, 50)}`);
-      res.json({ response: text });
+
+      // Save to chat if chatId/sessionId provided
+      const sid = sessionId || chatId;
+      if (sid) {
+        await storage.addSabiGuardMessage(sid, "user", message);
+        await storage.addSabiGuardMessage(sid, "ai", finalResponse);
+        
+        // Update user used storage (count bytes)
+        const bytes = Buffer.byteLength(message + finalResponse, 'utf8');
+        await storage.updateChatStorageUsed(userId, bytes);
+      }
+
+      res.json({ response: finalResponse });
     } catch (err: any) {
-      console.error('[Civic Chat] Error:', err.message, err.stack);
-      if (err.status === 429) {
-        return res.status(429).json({ error: err.message });
-      }
-      if (err.status === 503) {
-        return res.status(503).json({ error: err.message });
-      }
-      res.status(500).json({ 
-        error: 'Internal server error processing chat',
+      console.error('[Civic Chat Agent] Error:', err.message, err.stack);
+      res.status(err.status || 500).json({ 
+        error: "Agent execution failed", 
         message: err.message 
       });
     }
@@ -3061,10 +3120,14 @@ export async function registerRoutes(
     res.json(leads);
   });
 
-  app.get("/api/vendor/:vendorId/bookings", async (req, res) => {
-    const { vendorId } = req.params;
-    const bookings = await storage.getVendorBookings(vendorId);
-    res.json(bookings);
+  app.get("/api/vendor/:vendorId/bookings", async (req, res, next) => {
+    try {
+      const { vendorId } = req.params;
+      const bookings = await storage.getBookingsByVendorId(vendorId);
+      res.json(bookings);
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post("/api/vendor/leads", async (req, res) => {
@@ -3856,7 +3919,6 @@ export async function registerRoutes(
   // Flagged Posts Management
   app.get("/api/admin/flagged-posts", adminAuth, async (req, res, next) => {
     try {
-      const admin = require('firebase-admin');
       const db = admin.firestore();
       const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID || 'legal-13d13';
       
@@ -3901,7 +3963,7 @@ export async function registerRoutes(
 
   app.post("/api/forum/posts", userAuth, emailVerifiedAuth, async (req, res, next) => {
     const { content, city, author } = req.body;
-    const userId = req.userId;
+    const userId = req.userId!;
     
     if (!content) {
       return res.status(400).json({ error: 'Content required' });
@@ -3942,7 +4004,7 @@ export async function registerRoutes(
   app.post("/api/forum/posts/:postId/flag", userAuth, async (req, res, next) => {
     try {
       const { postId } = req.params;
-      const userId = req.userId;
+      const userId = req.userId!;
       
       const postData = await storage.getForumPost(postId);
       if (!postData) {
@@ -4211,7 +4273,8 @@ export async function registerRoutes(
       const subscription = await storage.createSubscription({
         userId,
         planId,
-        status: 'active'
+        status: 'active',
+        startDate: new Date().toISOString()
       });
 
       res.json({
@@ -4374,7 +4437,7 @@ export async function registerRoutes(
 
       let wallet = await storage.getWalletByUserId(userId);
       if (!wallet) {
-        wallet = await storage.createWallet(userId);
+        wallet = await storage.createWallet(userId, 'NGN');
       }
 
       const transaction = await storage.topUpWallet(
@@ -4418,16 +4481,33 @@ export async function registerRoutes(
     try {
       const { serviceId, userId, vendorId, totalAmount, description, scheduledDate, milestones } = req.body;
       
-      if (!serviceId || !userId || !vendorId || !totalAmount) {
+      if (!serviceId || !userId || !vendorId || totalAmount === undefined) {
         return res.status(400).json({ error: 'Missing required fields: serviceId, userId, vendorId, totalAmount' });
       }
+
+      // Automatically fetch the user's most recent SabiGuard chat to generate a Pre-Case File summary
+      let preCaseSummary = "";
+      try {
+        const chats = await storage.getSabiGuardChats(userId);
+        if (chats && chats.length > 0) {
+          const latestChat = chats[0];
+          const messages = await storage.getSabiGuardMessages(latestChat.id);
+          if (messages && messages.length > 0) {
+            preCaseSummary = await summarizeCaseForProfessional(messages, userId);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to generate pre-case summary:', err);
+      }
+
+      const fullDescription = preCaseSummary ? `${description}\n\n---\n\n${preCaseSummary}` : description;
 
       const booking = await storage.createBooking({
         serviceId,
         userId,
         vendorId,
         totalAmount: totalAmount.toString(),
-        description,
+        description: fullDescription,
         scheduledDate: scheduledDate ? new Date(scheduledDate).toISOString() : null
       });
 
@@ -4743,7 +4823,7 @@ export async function registerRoutes(
 
       const newMessage = await storage.createBookingMessage({
         bookingId: id,
-        senderId,
+        senderId: senderId!,
         message,
         attachments: attachments || [],
         isAdminMessage: !!isAdmin
@@ -4786,8 +4866,7 @@ export async function registerRoutes(
         bookingId: id,
         senderId: 'system',
         message: 'A dispute has been opened. Please provide all evidence to enable admin settle the escrow.',
-        isAdminMessage: true,
-        createdAt: new Date()
+        isAdminMessage: true
       });
 
       res.json(dispute);
@@ -4857,6 +4936,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "userId is required" });
       }
       const chats = await storage.getSabiGuardChats(userId);
+      console.log('CHATS RETURNED TO UI:', chats.length);
       res.json(chats);
     } catch (error) {
       next(error);
@@ -5004,6 +5084,7 @@ export async function registerRoutes(
         // MOAT Integration: Use chat data for threat analysis
         if (query.length > 50) {
           await storage.createMoatData({
+            title: "Chat Intelligence - " + (chatId || "Unknown Chat"),
             category: "chat_intel",
             source: "sabiguard_chat",
             content: query,
@@ -5041,7 +5122,7 @@ export async function registerRoutes(
   app.get("/api/sabiguard/history/:userId", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
-      const history = await storage.getCreditLog(userId, 50);
+      const history = await storage.getCreditLog(userId);
       const sabiguardHistory = history.filter(log => log.description?.includes("SabiGuard"));
       res.json(sabiguardHistory);
     } catch (error) {
@@ -5077,11 +5158,14 @@ export async function registerRoutes(
       // Create route (uses existing route storage)
       const route = await storage.createRoute({
         userId,
-        origin,
-        destination,
-        waypoints: waypoints || [],
-        status: "active",
-        createdAt: new Date()
+        routeName: `Route from ${origin} to ${destination}`,
+        startLocation: origin,
+        endLocation: destination,
+        startLat: 0,
+        startLng: 0,
+        endLat: 0,
+        endLng: 0,
+        status: "active"
       });
   
       // Send notification
@@ -5136,7 +5220,7 @@ export async function registerRoutes(
       await storage.deductCredits(userId, sabiworkCost, "SabiWork job recommendations", "SabiWork job recommendations");
   
       // Get job recommendations (uses existing vendor services)
-      const allServices = await storage.getVendorServices();
+      const allServices = await storage.getVendorServices({});
       const recommendations = allServices
         .filter(service => 
           (service.type?.toLowerCase().includes("job")) ||
@@ -5182,10 +5266,8 @@ export async function registerRoutes(
         userId,
         vendorId: service.vendorId,
         serviceId,
-        status: "pending",
         coverLetter,
-        resume,
-        createdAt: new Date()
+        resume
       });
   
       // Send notification to both user and vendor
@@ -5215,7 +5297,7 @@ export async function registerRoutes(
   app.get("/api/sabiwork/history/:userId", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
-      const history = await storage.getCreditLog(userId, 50);
+      const history = await storage.getCreditLog(userId);
       const sabiworkHistory = history.filter(log => log.description?.includes("SabiWork"));
       res.json(sabiworkHistory);
     } catch (error) {
@@ -5967,8 +6049,7 @@ export async function registerRoutes(
           bookingId: updatedDispute.bookingId,
           senderId: adminId!,
           message: 'An administrator has joined the dispute. User and vendor interaction is now restricted.',
-          isAdminMessage: true,
-          createdAt: new Date()
+          isAdminMessage: true
         });
       }
 
@@ -6092,10 +6173,9 @@ export async function registerRoutes(
 
       const message = await storage.createBookingMessage({
         bookingId: dispute.bookingId,
-        senderId: userId,
-        content,
-        isAdminMessage: isAdmin,
-        timestamp: new Date()
+        senderId: userId!,
+        message: content,
+        isAdminMessage: !!isAdmin
       });
       
       res.json(message);
@@ -6104,7 +6184,6 @@ export async function registerRoutes(
     }
   });
 
-  // Admin Generated Jobs API
   app.get("/api/admin/generated-jobs", adminAuth, async (req, res, next) => {
     try {
       const jobs = await storage.getGeneratedJobs();

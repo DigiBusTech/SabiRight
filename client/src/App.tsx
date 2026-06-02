@@ -22,14 +22,18 @@ import Contact from "@/pages/Contact";
 import AppLayout from "@/pages/app/Layout";
 import Dashboard from "@/pages/app/Dashboard";
 import CivicGuard from "@/pages/app/Civic";
+import Marketplace from "@/pages/app/Marketplace";
 import Forum from "@/pages/app/Forum";
 import PlanManagement from "@/pages/app/PlanManagement";
 import TrafficAlerts from "@/pages/app/TrafficAlerts";
 import EmailVerification from "@/pages/app/EmailVerification";
 import Wallet from "@/pages/app/Wallet";
+import ProfessionalDashboard from "@/pages/app/ProfessionalDashboard";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import Login from "@/pages/auth/Login";
 import LegalPage from "@/pages/LegalPage";
+import Bookings from "@/pages/app/Bookings";
+import BookingDetail from "@/pages/app/BookingDetail";
 import Settings from "@/pages/app/Settings";
 import Notifications from "@/pages/app/Notifications";
 import Credits from "@/pages/app/Credits";
@@ -58,6 +62,9 @@ function Router() {
       {/* App Routes */}
       <Route path="/app">
         <AppLayout><Dashboard /></AppLayout>
+      </Route>
+      <Route path="/app/marketplace">
+        <AppLayout><Marketplace /></AppLayout>
       </Route>
       <Route path="/app/civic">
         <AppLayout><CivicGuard /></AppLayout>
@@ -88,6 +95,15 @@ function Router() {
       </Route>
       <Route path="/app/payment">
         <AppLayout><Payment /></AppLayout>
+      </Route>
+      <Route path="/app/professional-dashboard">
+        <AppLayout><ProfessionalDashboard /></AppLayout>
+      </Route>
+      <Route path="/app/bookings">
+        <AppLayout><Bookings /></AppLayout>
+      </Route>
+      <Route path="/app/bookings/:id">
+        <AppLayout><BookingDetail /></AppLayout>
       </Route>
       <Route path="/admin">
         <AppLayout><AdminDashboard /></AppLayout>

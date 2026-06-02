@@ -35,7 +35,7 @@ interface ServiceProvider {
   reason?: string;
 }
 
-const CATEGORIES = ["All Services", "Lawyers", "Plumbers", "Health", "Movers", "Real Estate", "Electricians", "Cleaners"];
+const CATEGORIES = ["All Services", "Lawyers", "Accountants", "Real Estate Agents", "Apartment Owners", "Tax Experts", "Company Registration", "Other"];
 
 declare global {
   interface Window {
@@ -205,7 +205,8 @@ export default function Marketplace() {
     
     const matchesCategory = 
       category === "All Services" ||
-      type.toLowerCase().includes(category.toLowerCase().slice(0, -1));
+      type.toLowerCase().includes(category.toLowerCase()) || 
+      category.toLowerCase().includes(type.toLowerCase());
     
     return matchesSearch && matchesCategory;
   });
@@ -259,14 +260,8 @@ export default function Marketplace() {
   const handleCreateBooking = async () => {
     if (!user || !bookingProvider) return;
     
-    const amount = parseFloat(bookingAmount);
-    if (!amount || amount <= 0) {
-      toast({ title: "Invalid amount", description: "Please enter a valid amount", variant: "destructive" });
-      return;
-    }
-    
     if (!bookingDescription.trim()) {
-      toast({ title: "Description required", description: "Please describe what you need", variant: "destructive" });
+      toast({ title: "Description required", description: "Please describe your legal issue", variant: "destructive" });
       return;
     }
     
@@ -274,7 +269,7 @@ export default function Marketplace() {
     try {
       const token = await user.getIdToken();
       
-      // Create booking
+      // Create a contact request / chat initiation
       const bookingRes = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 
@@ -285,61 +280,39 @@ export default function Marketplace() {
           serviceId: bookingProvider.id,
           userId: user.uid,
           vendorId: bookingProvider.vendorId,
-          totalAmount: amount,
+          totalAmount: 0,
           description: bookingDescription,
-          scheduledDate: bookingDate || null,
-          milestones: [
-            { title: "Initial Payment", description: "Deposit to start work", amountPercent: 50 },
-            { title: "Final Payment", description: "Upon completion", amountPercent: 50 }
-          ]
+          scheduledDate: null,
+          milestones: []
         })
       });
       
       if (!bookingRes.ok) {
         const error = await bookingRes.json();
-        throw new Error(error.error || 'Failed to create booking');
+        throw new Error(error.error || 'Failed to start conversation');
       }
       
       const booking = await bookingRes.json();
       
-      // Fund escrow if wallet has balance
-      if (wallet && parseFloat(wallet.balance) >= amount) {
-        try {
-          await fetch(`/api/bookings/${booking.id}/escrow/fund`, {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({ amount })
-          });
-          toast({ title: "Escrow Funded", description: "Your payment is secured in escrow" });
-        } catch (e) {
-          toast({ title: "Booking Created", description: "Please fund the escrow from the booking page" });
-        }
-      }
-      
       queryClient.invalidateQueries({ queryKey: ['bookings'] });
-      queryClient.invalidateQueries({ queryKey: ['wallet'] });
       
       setShowBookingModal(false);
       setSelectedProvider(null);
       
       toast({ 
-        title: "Booking Created!", 
-        description: `Your booking with ${bookingProvider.name} has been created. You can now chat and track progress.`
+        title: "Message Sent!", 
+        description: `Your conversation with ${bookingProvider.name} has started.`
       });
       
-      // Navigate to booking detail
+      // Navigate to chat/booking detail
       setLocation(`/app/bookings/${booking.id}`);
       
-      // Show survey dialog after a short delay to let navigation start
       setTimeout(() => {
         setShowSurveyDialog(true);
       }, 1000);
       
     } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to create booking", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to contact professional", variant: "destructive" });
     } finally {
       setIsCreatingBooking(false);
     }
@@ -361,7 +334,7 @@ export default function Marketplace() {
 
       <motion.div variants={itemVariants} className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">Vetted Service Marketplace</h2>
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Vetted Service Marketplace</h2>
           <p className="text-sm md:text-base text-slate-500">Find verified professionals with smart proximity routing powered by real-time traffic data.</p>
         </div>
         {userLocation && (
@@ -480,7 +453,7 @@ export default function Marketplace() {
                     <div className="flex justify-between items-start mb-4 gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-bold text-base md:text-lg text-slate-900 truncate">{provider.name}</h3>
+                          <h3 className="font-bold text-base md:text-lg text-slate-900 dark:text-slate-100 truncate">{provider.name}</h3>
                           {provider.verified && (
                             <div className="h-4 w-4 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0" title="Verified">
                               <Check className="h-2.5 w-2.5 text-white stroke-[4px]" />
@@ -566,7 +539,7 @@ export default function Marketplace() {
                   <div className="flex-1">
                     <div className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-2">
                       <div>
-                        <h2 className="text-2xl font-bold text-slate-900">{selectedProvider.name}</h2>
+                        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{selectedProvider.name}</h2>
                         <p className="text-lg text-slate-600 mt-1">{selectedProvider.type}</p>
                       </div>
                       {selectedProvider.verified && (
@@ -593,7 +566,7 @@ export default function Marketplace() {
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-semibold text-slate-700">Distance:</span>
-                    <span className="text-lg font-bold text-slate-900">{selectedProvider.distanceKm} km</span>
+                    <span className="text-lg font-bold text-slate-900 dark:text-slate-100">{selectedProvider.distanceKm} km</span>
                   </div>
                   {selectedProvider.reason && (
                     <div className="pt-3 border-t border-blue-200">
@@ -698,8 +671,8 @@ export default function Marketplace() {
                 <CardContent className="p-4 sm:p-6">
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Book Service</h2>
-                  <p className="text-sm text-slate-500 mt-1">Request service from {bookingProvider.name}</p>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Contact Professional</h2>
+                  <p className="text-sm text-slate-500 mt-1">Start a conversation with {bookingProvider.name}</p>
                 </div>
                 <button 
                   onClick={() => setShowBookingModal(false)}
@@ -710,92 +683,47 @@ export default function Marketplace() {
                 </button>
               </div>
 
-              {/* Escrow Info Banner */}
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+              {/* Information Banner */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                 <div className="flex items-start gap-3">
-                  <Shield className="h-5 w-5 text-green-600 mt-0.5" />
+                  <Shield className="h-5 w-5 text-blue-600 mt-0.5" />
                   <div>
-                    <p className="font-semibold text-green-800">Secure Escrow Protection</p>
-                    <p className="text-sm text-green-700 mt-1">
-                      Your payment is held securely in escrow until milestones are completed. 
-                      Chat directly with the vendor and request refunds if needed.
+                    <p className="font-semibold text-blue-800">Secure Communication</p>
+                    <p className="text-sm text-blue-700 mt-1">
+                      Chat directly with the professional. SabiGuard will summarize your case file to assist them.
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* Wallet Balance */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Wallet className="h-5 w-5 text-blue-600" />
-                    <span className="font-semibold text-blue-800">Wallet Balance</span>
-                  </div>
-                  <span className="text-lg font-bold text-blue-900">
-                    ₦{parseFloat(wallet?.balance || '0').toLocaleString()}
-                  </span>
-                </div>
-                {parseFloat(wallet?.balance || '0') < parseFloat(bookingAmount || '0') && (
-                  <p className="text-xs text-blue-700 mt-2">
-                    Insufficient balance. <a href="/app/wallet" className="underline font-semibold">Top up wallet</a> to auto-fund escrow.
-                  </p>
-                )}
-              </div>
-
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="description">What do you need? *</Label>
+                  <Label htmlFor="description">What do you need help with? *</Label>
                   <Textarea 
                     id="description"
-                    placeholder="Describe the service you need in detail..."
+                    placeholder="Briefly describe your legal issue or instructions..."
                     value={bookingDescription}
                     onChange={(e) => setBookingDescription(e.target.value)}
                     className="mt-1"
-                    rows={3}
+                    rows={4}
                     data-testid="input-booking-description"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="amount">Total Amount (₦) *</Label>
-                    <Input 
-                      id="amount"
-                      type="number"
-                      placeholder="e.g. 50000"
-                      value={bookingAmount}
-                      onChange={(e) => setBookingAmount(e.target.value)}
-                      className="mt-1"
-                      data-testid="input-booking-amount"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="date">Preferred Date</Label>
-                    <Input 
-                      id="date"
-                      type="date"
-                      value={bookingDate}
-                      onChange={(e) => setBookingDate(e.target.value)}
-                      className="mt-1"
-                      data-testid="input-booking-date"
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-slate-50 rounded-lg p-4">
+                <div className="bg-slate-50 rounded-lg p-4 mt-4">
                   <p className="text-sm font-semibold text-slate-700 mb-2">What happens next?</p>
                   <div className="space-y-2 text-sm text-slate-600">
                     <div className="flex items-center gap-2">
                       <MessageCircle className="h-4 w-4 text-primary" />
-                      <span>Chat with the vendor to discuss details</span>
+                      <span>Chat directly to discuss case details</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Wallet className="h-4 w-4 text-green-600" />
-                      <span>Fund escrow to secure your booking</span>
+                      <Zap className="h-4 w-4 text-blue-600" />
+                      <span>Professional reviews your AI-summarized case file</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Shield className="h-4 w-4 text-blue-600" />
-                      <span>Milestones released as work completes</span>
+                      <Shield className="h-4 w-4 text-green-600" />
+                      <span>Proceed with professional consultation directly</span>
                     </div>
                   </div>
                 </div>
@@ -811,12 +739,12 @@ export default function Marketplace() {
                   Cancel
                 </Button>
                 <Button 
-                  className="flex-1 h-12 text-base bg-primary hover:bg-primary/90 text-white font-bold rounded-xl"
+                  className="flex-1 h-12 text-base bg-primary hover:bg-primary/90 text-white font-bold rounded-xl flex items-center justify-center gap-2"
                   onClick={handleCreateBooking}
-                  disabled={isCreatingBooking || !bookingDescription.trim() || !bookingAmount}
+                  disabled={isCreatingBooking || !bookingDescription.trim()}
                   data-testid="button-create-booking"
                 >
-                  {isCreatingBooking ? "Creating..." : "Create Booking"}
+                  {isCreatingBooking ? "Sending..." : "Send Message"}
                 </Button>
               </div>
             </CardContent>
@@ -842,7 +770,7 @@ function getMockProviders(): ServiceProvider[] {
       id: "1",
       vendorId: "v1",
       name: "Barrister Adebayo",
-      type: "Lawyer",
+      type: "Lawyers",
       specialization: "Civil Rights & Family Law",
       location: "VI, Lagos",
       latitude: 6.4281,
@@ -857,9 +785,9 @@ function getMockProviders(): ServiceProvider[] {
     {
       id: "2",
       vendorId: "v2",
-      name: "Barrister Obi",
-      type: "Lawyer",
-      specialization: "Corporate & Tax Law",
+      name: "Chukwudi & Associates",
+      type: "Accountants",
+      specialization: "Corporate Accounting",
       location: "Ikoyi, Lagos",
       latitude: 6.4513,
       longitude: 3.4647,
@@ -867,15 +795,15 @@ function getMockProviders(): ServiceProvider[] {
       reviewCount: 89,
       verified: true,
       contactPhone: "+234 801 987 6543",
-      contactEmail: "obi@legalpractice.ng",
+      contactEmail: "info@chukwudiassoc.ng",
       priceRange: "₦₦₦₦"
     },
     {
       id: "3",
       vendorId: "v3",
-      name: "FixIt Pro Plumbing",
-      type: "Plumber",
-      specialization: "Residential & Commercial Plumbing",
+      name: "Ngozi Finance Consulting",
+      type: "Tax Experts",
+      specialization: "Investment Advisory",
       location: "Lekki, Lagos",
       latitude: 6.4469,
       longitude: 3.5753,
@@ -883,15 +811,15 @@ function getMockProviders(): ServiceProvider[] {
       reviewCount: 234,
       verified: true,
       contactPhone: "+234 909 876 5432",
-      contactEmail: "info@fixitpro.ng",
+      contactEmail: "ngozi@financeconsult.ng",
       priceRange: "₦₦"
     },
     {
       id: "4",
       vendorId: "v4",
-      name: "Dr. Chioma Healthcare",
-      type: "Health Professional",
-      specialization: "General Practice & Diagnostics",
+      name: "AdeTax Solutions",
+      type: "Tax Experts",
+      specialization: "Corporate & Personal Tax",
       location: "Ikeja, Lagos",
       latitude: 6.5833,
       longitude: 3.3333,
@@ -899,15 +827,15 @@ function getMockProviders(): ServiceProvider[] {
       reviewCount: 312,
       verified: true,
       contactPhone: "+234 808 123 4567",
-      contactEmail: "chioma@healthcareng.ng",
+      contactEmail: "contact@adetax.ng",
       priceRange: "₦₦₦"
     },
     {
       id: "5",
       vendorId: "v5",
-      name: "SafeMove Logistics",
-      type: "Mover",
-      specialization: "Residential Relocation",
+      name: "Lagos Housing Experts",
+      type: "Real Estate Agents",
+      specialization: "Residential Properties",
       location: "Ajah, Lagos",
       latitude: 6.5074,
       longitude: 3.5963,
@@ -915,15 +843,15 @@ function getMockProviders(): ServiceProvider[] {
       reviewCount: 178,
       verified: true,
       contactPhone: "+234 702 345 6789",
-      contactEmail: "service@safemove.ng",
+      contactEmail: "info@lagoshousing.ng",
       priceRange: "₦₦"
     },
     {
       id: "6",
       vendorId: "v6",
-      name: "Agent Taiwo Properties",
-      type: "Real Estate Agent",
-      specialization: "Residential & Commercial Properties",
+      name: "FastReg Services",
+      type: "Company Registration",
+      specialization: "CAC Registration",
       location: "Yaba, Lagos",
       latitude: 6.5007,
       longitude: 3.3575,
@@ -931,7 +859,7 @@ function getMockProviders(): ServiceProvider[] {
       reviewCount: 156,
       verified: true,
       contactPhone: "+234 805 567 8901",
-      contactEmail: "taiwo@propertyagent.ng",
+      contactEmail: "register@fastreg.ng",
       priceRange: "₦₦₦"
     }
   ];

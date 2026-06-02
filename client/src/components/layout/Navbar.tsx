@@ -82,14 +82,6 @@ export function Navbar() {
         </div>
 
         <div className="hidden md:flex items-center gap-4">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={toggleTheme} 
-              className="rounded-full w-10 h-10 text-slate-500 hover:text-primary"
-            >
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </Button>
             <Link href="/app" className="inline-flex">
               <Button className="rounded-xl font-bold shadow-lg hover:shadow-primary/20 transition-all">
                 Launch App
@@ -99,14 +91,6 @@ export function Navbar() {
 
         {/* Mobile Toggle */}
         <div className="flex items-center gap-2 md:hidden">
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={toggleTheme} 
-            className="rounded-full w-9 h-9 text-slate-500"
-          >
-            {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
           <button
             className="text-slate-900 dark:text-white"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
