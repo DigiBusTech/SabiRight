@@ -70,36 +70,39 @@ app.use((req, res, next) => {
   next();
 });
 
-(async () => {
-  const server = createServer(app);
+const server = createServer(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  const status = err.status || err.statusCode || 500;
+  const message = err.message || "Internal Server Error";
 
-    if (!res.headersSent) {
-      res.status(status).json({ message });
-    }
-  });
-
-  await registerRoutes(server, app);
-
-  // Serve static files in production
-  if (process.env.NODE_ENV === "development") {
-    // Vite dev server setup
-  } else {
-    const publicDir = path.resolve(process.cwd(), "dist/public");
-    app.use(express.static(publicDir));
-    app.get("*", (req, res) => {
-      if (req.path.startsWith("/api")) {
-        return res.status(404).json({ error: "API endpoint not found" });
-      }
-      res.sendFile(path.join(publicDir, "index.html"));
-    });
+  if (!res.headersSent) {
+    res.status(status).json({ message });
   }
+});
 
+// Setup routes
+registerRoutes(server, app).catch(console.error);
+
+// Serve static files in production
+if (process.env.NODE_ENV === "development") {
+  // Vite dev server setup
+} else {
+  const publicDir = path.resolve(process.cwd(), "dist/public");
+  app.use(express.static(publicDir));
+  app.get("*", (req, res) => {
+    if (req.path.startsWith("/api")) {
+      return res.status(404).json({ error: "API endpoint not found" });
+    }
+    res.sendFile(path.join(publicDir, "index.html"));
+  });
+}
+
+if (!process.env.VERCEL) {
   const PORT = Number(process.env.PORT) || 3000;
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`serving on port ${PORT}`);
   });
-})();
+}
+
+export default app;
