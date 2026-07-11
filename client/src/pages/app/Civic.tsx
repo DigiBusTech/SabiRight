@@ -184,9 +184,19 @@ export default function CivicGuard() {
   const { data: sessions, isLoading: isLoadingSessions } = useQuery<ChatSession[]>({
     queryKey: ['sabiguard-chats', user?.uid],
     queryFn: async () => {
-      const token = await user?.getIdToken();
-      const res = await fetch(`/api/sabiguard/chats?userId=${user?.uid}`, { headers: { Authorization: `Bearer ${token}` } });
-      return res.json();
+      try {
+        const token = await user?.getIdToken();
+        const res = await fetch(`/api/sabiguard/chats?userId=${user?.uid}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) {
+          console.error("[Civic] Failed to fetch sabiguard-chats:", res.status);
+          return [];
+        }
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+      } catch (err) {
+        console.error("[Civic] Error in sabiguard-chats query:", err);
+        return [];
+      }
     },
     enabled: !!user?.uid,
   });
@@ -198,10 +208,20 @@ export default function CivicGuard() {
   const { data: chatMessages } = useQuery<Message[]>({
     queryKey: ['sabiguard-messages', currentChatId],
     queryFn: async () => {
-      if (!user || !currentChatId) return [];
-      const token = await user?.getIdToken();
-      const res = await fetch(`/api/sabiguard/chats/${currentChatId}/messages`, { headers: { Authorization: `Bearer ${token}` } });
-      return res.json();
+      try {
+        if (!user || !currentChatId) return [];
+        const token = await user?.getIdToken();
+        const res = await fetch(`/api/sabiguard/chats/${currentChatId}/messages`, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) {
+          console.error("[Civic] Failed to fetch sabiguard-messages:", res.status);
+          return [];
+        }
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+      } catch (err) {
+        console.error("[Civic] Error in sabiguard-messages query:", err);
+        return [];
+      }
     },
     enabled: !!currentChatId && !!user,
   });

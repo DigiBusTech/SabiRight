@@ -25,6 +25,9 @@ if (admin.apps.length === 0) {
   } else if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     try {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+      if (serviceAccount.private_key) {
+        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+      }
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
         projectId: serviceAccount.project_id || 'legal-13d13'
