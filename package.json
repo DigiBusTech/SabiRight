@@ -4,6 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "postinstall": "vite build",
     "dev:client": "vite dev --port 5001",
     "dev": "cross-env NODE_ENV=development tsx watch --ignore *.log server/index.ts",
     "build": "vite build && tsc",
