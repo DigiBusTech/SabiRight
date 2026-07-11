@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ShieldCheck, Menu, X, Bell, Moon, Sun } from "lucide-react";
+import { ShieldCheck, Menu, X, Bell } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { useQuery } from "@tanstack/react-query";
 
@@ -10,7 +10,7 @@ export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [location] = useLocation();
-  const { theme, toggleTheme } = useTheme();
+  const { theme } = useTheme();
 
   const { data: settings = [] } = useQuery<any[]>({
     queryKey: ['settings'],

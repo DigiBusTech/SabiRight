@@ -10,12 +10,12 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Sparkles, X, Briefcase, Calendar, Clock, Loader2, ChevronRight } from "lucide-react";
+import { Sparkles, X, MessageSquare, AlertTriangle, Clock, Loader2, ChevronRight } from "lucide-react";
 import { Link } from "wouter";
 
 interface Suggestion {
   id: string;
-  type: "job" | "event" | "booking";
+  type: "forum" | "traffic" | "booking";
   title: string;
   description: string;
   actionText: string;
@@ -60,57 +60,24 @@ export default function AISuggestions({ isOpen, onClose }: AISuggestionsProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: events = [] } = useQuery({
-    queryKey: ["events"],
+  const { data: forumPosts = [] } = useQuery({
+    queryKey: ["forumPosts", profile?.city],
     queryFn: async () => {
-      const res = await fetch("/api/events");
+      const url = profile?.city ? `/api/forum/posts?city=${encodeURIComponent(profile.city)}` : "/api/forum/posts";
+      const res = await fetch(url);
       return res.ok ? res.json() : [];
     },
   });
 
-  const { data: savedEventIds = [] } = useQuery({
-    queryKey: ["savedEvents", user?.uid],
+  const { data: trafficCard } = useQuery({
+    queryKey: [`traffic-card-${user?.uid}`],
     queryFn: async () => {
-      if (!user) return [];
+      if (!user) return null;
       const token = await user.getIdToken();
-      const res = await fetch(`/api/events/saved/${user.uid}`, {
+      const res = await fetch(`/api/dashboard/traffic/${user.uid}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      return res.ok ? res.json() : [];
-    },
-    enabled: !!user?.uid,
-  });
-
-  const { data: allJobs = [] } = useQuery({
-    queryKey: ["jobs"],
-    queryFn: async () => {
-      const res = await fetch("/api/jobs");
-      return res.ok ? res.json() : [];
-    },
-  });
-
-  const { data: savedJobs = [] } = useQuery({
-    queryKey: ["savedJobs", user?.uid],
-    queryFn: async () => {
-      if (!user) return [];
-      const token = await user.getIdToken();
-      const res = await fetch(`/api/jobs/saved/${user.uid}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      return res.ok ? res.json() : [];
-    },
-    enabled: !!user?.uid,
-  });
-
-  const { data: appliedJobs = [] } = useQuery({
-    queryKey: ["appliedJobs", user?.uid],
-    queryFn: async () => {
-      if (!user) return [];
-      const token = await user.getIdToken();
-      const res = await fetch(`/api/jobs/applied/${user.uid}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      return res.ok ? res.json() : [];
+      return res.ok ? res.json() : null;
     },
     enabled: !!user?.uid,
   });
@@ -140,39 +107,22 @@ export default function AISuggestions({ isOpen, onClose }: AISuggestionsProps) {
           (b: any) => b.status === "pending" || b.status === "in_progress"
         );
         
-        const registeredEvents = events.filter((e: any) => 
-          savedEventIds.includes(e.id)
-        );
-        
-        const upcomingEvents = events.filter((e: any) => {
-          if (savedEventIds.includes(e.id)) return false;
-          if (!userCity) return true;
-          return e.location?.toLowerCase().includes(userCity.toLowerCase());
-        }).slice(0, 3);
-        
-        const availableJobs = allJobs.filter((j: any) => {
-          const savedJobIds = savedJobs.map((sj: any) => sj.jobId || sj.id);
-          const appliedJobIds = appliedJobs.map((aj: any) => aj.jobId || aj.id);
-          return !savedJobIds.includes(j.id) && !appliedJobIds.includes(j.id);
-        }).slice(0, 3);
+        const hotForumTopics = forumPosts
+          .filter((p: any) => !p.shadowedForReview)
+          .slice(0, 5);
 
         const contextData = {
           userCity,
-          savedJobsCount: savedJobs.length,
-          appliedJobsCount: appliedJobs.length,
           pendingBookingsCount: pendingBookings.length,
-          registeredEventsCount: registeredEvents.length,
-          upcomingEventsNearby: upcomingEvents.map((e: any) => ({
-            id: e.id,
-            title: e.title,
-            date: e.date,
-            location: e.location,
-          })),
-          availableJobs: availableJobs.map((j: any) => ({
-            id: j.id,
-            title: j.title,
-            company: j.company,
-            location: j.location,
+          trafficStatus: trafficCard?.status || "normal",
+          trafficLocation: trafficCard?.location || "",
+          trafficDescription: trafficCard?.description || "",
+          hotForumTopics: hotForumTopics.map((p: any) => ({
+            id: p.id,
+            content: p.content?.slice(0, 60),
+            author: p.author,
+            upvotes: p.upvotes || 0,
+            city: p.city || "",
           })),
           pendingBookings: pendingBookings.map((b: any) => ({
             id: b.id,
@@ -182,37 +132,37 @@ export default function AISuggestions({ isOpen, onClose }: AISuggestionsProps) {
           })),
         };
 
-        const prompt = `You are a helpful assistant for a Nigerian civic services app called SabiRight. Based on the user's activity data, generate 2-3 personalized, actionable suggestions.
+        const prompt = `You are a helpful assistant for a Nigerian civic services app called SabiRight. Based on the user's activity and real-time civic/forum/traffic data, generate 2-3 personalized, actionable suggestions.
 
 User Data:
 - City: ${contextData.userCity || "Not set"}
-- Saved Jobs: ${contextData.savedJobsCount}
-- Applied Jobs: ${contextData.appliedJobsCount}
 - Pending Bookings: ${contextData.pendingBookingsCount}
-- Registered Events: ${contextData.registeredEventsCount}
+- Live City Traffic Status: Location: ${contextData.trafficLocation}, Status: ${contextData.trafficStatus}, Description: ${contextData.trafficDescription}
 
-Available opportunities:
-${JSON.stringify(contextData.upcomingEventsNearby, null, 2)}
-${JSON.stringify(contextData.availableJobs, null, 2)}
+Hot Forum Topics:
+${JSON.stringify(contextData.hotForumTopics, null, 2)}
+
+Available bookings to suggest:
 ${JSON.stringify(contextData.pendingBookings, null, 2)}
 
 Generate suggestions in this exact JSON format (array of objects):
 [
   {
     "id": "unique-id-string",
-    "type": "job" | "event" | "booking",
+    "type": "forum" | "traffic" | "booking",
     "title": "Short catchy title",
     "description": "Brief helpful description (max 100 chars)",
-    "actionText": "Button text like 'View Job' or 'See Event'",
-    "actionLink": "/app/jobs" or "/app/events" or "/app/bookings"
+    "actionText": "Button text like 'Join Forum', 'Avoid Route' or 'Check Booking'",
+    "actionLink": "/app/forum" or "/app/civic" or "/app/bookings"
   }
 ]
 
 Rules:
-- Only suggest if there's relevant data
-- Be specific and mention actual event/job names if available
-- For pending bookings, suggest completing or checking on them
-- Keep it concise and actionable
+- Remove all suggestions for jobs and events.
+- Suggest "top or hot topics in the community/forum" (actionLink: "/app/forum") and highlight/suggest action around active discussions.
+- Suggest avoiding specific streets or traffic jam/checkpoint routes in their city based on traffic status (actionLink: "/app/civic").
+- For pending bookings, suggest checking or completing them.
+- Keep suggestions extremely concise, specific, and actionable.
 - Return ONLY valid JSON array, no markdown or extra text`;
 
         const result = await runGemini(prompt);
@@ -232,25 +182,25 @@ Rules:
             });
           }
           
-          if (upcomingEvents.length > 0) {
+          if (trafficCard && trafficCard.status !== "normal" && trafficCard.status !== "cleared") {
             fallbackSuggestions.push({
-              id: `event-${upcomingEvents[0].id}`,
-              type: "event",
-              title: "Upcoming Event Near You",
-              description: upcomingEvents[0].title || "Check out events in your area",
-              actionText: "See Events",
-              actionLink: "/app/events",
+              id: `traffic-${Date.now()}`,
+              type: "traffic",
+              title: "Traffic Warning",
+              description: trafficCard.description || `Heavy traffic / checkpoint reported in ${userCity || 'your city'}`,
+              actionText: "Check Route",
+              actionLink: "/app/civic",
             });
           }
           
-          if (availableJobs.length > 0) {
+          if (hotForumTopics.length > 0) {
             fallbackSuggestions.push({
-              id: `job-${availableJobs[0].id}`,
-              type: "job",
-              title: "New Job Opportunity",
-              description: availableJobs[0].title || "New jobs matching your profile",
-              actionText: "View Jobs",
-              actionLink: "/app/jobs",
+              id: `forum-${hotForumTopics[0].id}`,
+              type: "forum",
+              title: "Trending Forum Topic",
+              description: hotForumTopics[0].content ? `${hotForumTopics[0].content.slice(0, 50)}...` : "Join active community discussions",
+              actionText: "Go to Forum",
+              actionLink: "/app/forum",
             });
           }
           
@@ -283,7 +233,7 @@ Rules:
     };
 
     generateSuggestions();
-  }, [isOpen, user, profile, events, savedEventIds, allJobs, savedJobs, appliedJobs, customerBookings]);
+  }, [isOpen, user, profile, forumPosts, trafficCard, customerBookings]);
 
   const handleDismiss = (id: string) => {
     dismissSuggestion(id);
@@ -297,12 +247,12 @@ Rules:
 
   const getIcon = (type: string) => {
     switch (type) {
-      case "job":
-        return <Briefcase className="h-5 w-5 text-blue-600" />;
-      case "event":
-        return <Calendar className="h-5 w-5 text-purple-600" />;
+      case "forum":
+        return <MessageSquare className="h-5 w-5 text-blue-600" />;
+      case "traffic":
+        return <AlertTriangle className="h-5 w-5 text-amber-600" />;
       case "booking":
-        return <Clock className="h-5 w-5 text-orange-600" />;
+        return <Clock className="h-5 w-5 text-purple-600" />;
       default:
         return <Sparkles className="h-5 w-5 text-primary" />;
     }
@@ -310,12 +260,12 @@ Rules:
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case "job":
+      case "forum":
         return "bg-blue-50 border-blue-200";
-      case "event":
-        return "bg-purple-50 border-purple-200";
+      case "traffic":
+        return "bg-amber-50 border-amber-200";
       case "booking":
-        return "bg-orange-50 border-orange-200";
+        return "bg-purple-50 border-purple-200";
       default:
         return "bg-slate-50 border-slate-200";
     }
@@ -368,7 +318,7 @@ Rules:
                 </button>
 
                 <div className="flex items-start gap-3 pr-6">
-                  <div className="flex-shrink-0 mt-0.5">{getIcon(suggestion.type)}</div>
+                  <div className="shrink-0 mt-0.5">{getIcon(suggestion.type)}</div>
                   <div className="flex-1 min-w-0">
                     <h4 className="font-semibold text-sm mb-1">{suggestion.title}</h4>
                     <p className="text-xs text-slate-600 mb-3">{suggestion.description}</p>

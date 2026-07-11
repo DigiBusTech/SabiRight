@@ -119,26 +119,27 @@ export default function TrafficAlerts() {
         const data = res.ok ? await res.json() : { value: '' };
         const apiKey = data.value;
         
-        if (apiKey) {
-          const script = document.createElement('script');
-          script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry`;
-          script.async = true;
-          script.defer = true;
-          document.head.appendChild(script);
-          script.onload = () => {
-            initMap();
-            initAutocomplete();
-          };
-          script.onerror = () => {
-            console.error("Failed to load Google Maps API script");
-            toast({
-              title: "Maps Error",
-              description: "Failed to load Google Maps. Please check your internet connection and API key.",
-              variant: "destructive"
-            });
-          };
-        } else {
-          console.warn("No Google Maps API key found in settings");
+        // Always load Google Maps API script so window.google is initialized and features function properly,
+        // using the configured API key if available, or loading without a key if not set.
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey || ''}&libraries=places,geometry`;
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+        script.onload = () => {
+          initMap();
+          initAutocomplete();
+        };
+        script.onerror = () => {
+          console.error("Failed to load Google Maps API script");
+          toast({
+            title: "Maps Error",
+            description: "Failed to load Google Maps. Please check your internet connection and API key.",
+            variant: "destructive"
+          });
+        };
+        if (!apiKey) {
+          console.warn("No Google Maps API key found in settings; loading in developer/fallback mode");
         }
       } catch (e) {
         console.error('Error fetching Google Maps API key:', e);
@@ -264,7 +265,7 @@ export default function TrafficAlerts() {
     const directionsRenderer = new window.google.maps.DirectionsRenderer({
       map,
       polylineOptions: {
-        strokeColor: "#1e40af",
+        strokeColor: selectedRoute?.lastStatus === 'active' ? "#dc2626" : "#1e40af",
         strokeWeight: 5,
         strokeOpacity: 0.7
       },
@@ -487,10 +488,10 @@ export default function TrafficAlerts() {
                         route.lastStatus === 'cleared' 
                           ? 'bg-green-100 text-green-800 border-green-300'
                           : route.lastStatus === 'active'
-                          ? 'bg-red-100 text-red-800 border-red-300'
+                          ? 'bg-red-100 text-red-800 border-red-300 shadow-sm animate-pulse'
                           : 'bg-yellow-100 text-yellow-800 border-yellow-300'
                       }`}>
-                        {(route.lastStatus || 'UNKNOWN').toUpperCase()}
+                        {route.lastStatus === 'active' ? 'CONGESTED' : route.lastStatus === 'cleared' ? 'CLEARED' : 'UNKNOWN'}
                       </Badge>
                     </div>
                     <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
@@ -556,10 +557,10 @@ export default function TrafficAlerts() {
                       <p className="text-2xl font-bold">
                         <span className={
                           selectedRoute.lastStatus === 'cleared' ? 'text-green-600'
-                          : selectedRoute.lastStatus === 'active' ? 'text-red-600'
+                          : selectedRoute.lastStatus === 'active' ? 'text-red-600 animate-pulse'
                           : 'text-yellow-600'
                         }>
-                          {(selectedRoute.lastStatus || 'UNKNOWN').toUpperCase()}
+                          {selectedRoute.lastStatus === 'active' ? 'CONGESTED / BLOCKED' : selectedRoute.lastStatus === 'cleared' ? 'CLEARED' : 'UNKNOWN'}
                         </span>
                       </p>
                     </div>
@@ -633,7 +634,7 @@ export default function TrafficAlerts() {
                           }`}
                         >
                           <div className="flex items-start gap-3">
-                            <AlertCircle className={`h-5 w-5 flex-shrink-0 ${
+                            <AlertCircle className={`h-5 w-5 shrink-0 ${
                               alert.severity === 'high' ? 'text-red-600'
                               : alert.severity === 'medium' ? 'text-yellow-600'
                               : 'text-green-600'

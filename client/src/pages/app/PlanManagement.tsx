@@ -21,6 +21,20 @@ interface Plan {
   features: string[];
 }
 
+const USER_FEATURES = [
+  { id: "ai_chat", label: "Right-To-Know AI Chat" },
+  { id: "civic_alerts", label: "Real-time Civic & Traffic Alerts" },
+  { id: "community_forum", label: "Community Forum Access" },
+  { id: "job_applications", label: "Job Postings & Applications" }
+];
+
+const VENDOR_FEATURES = [
+  { id: "service_listings", label: "Marketplace Service Listings" },
+  { id: "lead_view", label: "Direct Customer Leads" },
+  { id: "client_demographics", label: "Client Demographics & Stats" },
+  { id: "ai_growth_suggestions", label: "AI Approach Suggestions" }
+];
+
 export default function PlanManagement() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -182,16 +196,21 @@ export default function PlanManagement() {
 
                 {/* Features */}
                 <div className="space-y-2">
-                  <p className="text-xs font-bold text-slate-600 uppercase">Features</p>
-                  <ul className="space-y-2">
-                    {plan.features && plan.features.slice(0, 5).map((feature: string, i: number) => (
-                      <li key={i} className="flex items-center gap-2 text-sm">
-                        <Check className="h-4 w-4 text-green-600" />
-                        <span className="text-slate-700 capitalize">
-                          {feature.replace(/_/g, ' ')}
-                        </span>
-                      </li>
-                    ))}
+                  <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">Features & Benefits</p>
+                  <ul className="space-y-2.5">
+                    {(userType === 'vendor' ? VENDOR_FEATURES : USER_FEATURES).map((item) => {
+                      const hasFeature = Array.isArray(plan.features) && plan.features.includes(item.id);
+                      return (
+                        <li key={item.id} className={`flex items-center gap-2.5 text-sm ${hasFeature ? 'text-slate-800' : 'text-slate-400 line-through font-light'}`}>
+                          {hasFeature ? (
+                            <Check className="h-4 w-4 text-green-600 bg-green-50 rounded-full p-0.5 shrink-0" />
+                          ) : (
+                            <X className="h-4 w-4 text-red-500 bg-red-50 rounded-full p-0.5 shrink-0" />
+                          )}
+                          <span>{item.label}</span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
 

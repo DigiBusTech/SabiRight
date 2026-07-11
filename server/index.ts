@@ -7,16 +7,47 @@ import path from "path";
 
 // Initialize Firebase Admin
 const serviceAccountPath = path.join(process.cwd(), 'legal-13d13-firebase-adminsdk-fbsvc-e736182a52.json');
-if (fs.existsSync(serviceAccountPath)) {
-  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: 'legal-13d13'
-  });
-  admin.firestore().settings({ ignoreUndefinedProperties: true });
-  console.log("Firebase Admin initialized with service account (Project: legal-13d13).");
+if (admin.apps.length === 0) {
+  if (fs.existsSync(serviceAccountPath)) {
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: 'legal-13d13'
+    });
+    admin.firestore().settings({ ignoreUndefinedProperties: true });
+    console.log("Firebase Admin initialized with service account (Project: legal-13d13).");
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    try {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: serviceAccount.project_id || 'legal-13d13'
+      });
+      admin.firestore().settings({ ignoreUndefinedProperties: true });
+      console.log("Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT_JSON env var.");
+    } catch (err) {
+      console.error("Failed to initialize Firebase Admin from FIREBASE_SERVICE_ACCOUNT_JSON env var:", err);
+    }
+  } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    try {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: process.env.FIREBASE_PROJECT_ID || 'legal-13d13',
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        }),
+        projectId: process.env.FIREBASE_PROJECT_ID || 'legal-13d13'
+      });
+      admin.firestore().settings({ ignoreUndefinedProperties: true });
+      console.log("Firebase Admin initialized via FIREBASE_PRIVATE_KEY and FIREBASE_CLIENT_EMAIL env vars.");
+    } catch (err) {
+      console.error("Failed to initialize Firebase Admin from individual env vars:", err);
+    }
+  } else {
+    console.warn("Firebase service account file not found and no environment variables present. Firebase features may fail.");
+  }
 } else {
-  console.warn("Firebase service account file not found. Firebase features may fail.");
+  console.log("Firebase Admin already initialized.");
 }
 
 const app = express();
@@ -60,7 +91,7 @@ app.use((req, res, next) => {
 
   await registerRoutes(server, app);
 
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   server.listen(PORT, "0.0.0.0", () => {
     console.log(`serving on port ${PORT}`);
   });

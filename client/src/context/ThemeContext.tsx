@@ -11,13 +11,16 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('light');
+  const [theme, setThemeState] = useState<Theme>(() => {
+    const saved = localStorage.getItem('theme');
+    return (saved === 'dark' || saved === 'light') ? saved : 'light';
+  });
 
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
-    root.classList.add('light');
-    localStorage.setItem('theme', 'light');
+    root.classList.add(theme);
+    localStorage.setItem('theme', theme);
 
     // Update Favicon
     const updateFavicon = async () => {
@@ -26,8 +29,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const settings = await res.json();
           const lightFav = settings.site_favicon;
+          const darkFav = settings.site_favicon_dark || lightFav;
           
-          const faviconUrl = lightFav || "/favicon.png";
+          const faviconUrl = (theme === 'dark' ? darkFav : lightFav) || "/favicon.png";
             
           const link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
           if (link) {
@@ -44,14 +48,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       }
     };
     updateFavicon();
-  }, []);
+  }, [theme]);
 
   const toggleTheme = () => {
-    // Light mode is forced
+    setThemeState((prev) => (prev === 'light' ? 'dark' : 'light'));
   };
 
   const setTheme = (newTheme: Theme) => {
-    // Light mode is forced
+    setThemeState(newTheme);
   };
 
   return (

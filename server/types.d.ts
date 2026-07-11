@@ -459,7 +459,7 @@ export interface IFirestoreStorage {
   getUserRoutes(userId: string): Promise<Route[]>;
   createRoute(route: Omit<Route, 'id' | 'createdAt'>): Promise<Route>;
   getRoute(routeId: string): Promise<Route | null>;
-  updateRouteStatus(routeId: string, status: string): Promise<void>;
+  updateRouteStatus(routeId: string, status: string, recommendation?: string, cloakedStreets?: string[]): Promise<void>;
   deleteRoute(routeId: string): Promise<void>;
   getRouteAlerts(routeId: string): Promise<Alert[]>;
   createAlert(alert: Omit<Alert, 'id' | 'createdAt' | 'acknowledged'>): Promise<Alert>;

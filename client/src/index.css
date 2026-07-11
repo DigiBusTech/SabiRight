@@ -145,15 +145,181 @@
 .text-gradient {
   background: linear-gradient(to right, #2563eb, #9333ea);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.phone-mockup {
-  border: 12px solid #111827;
-  border-radius: 40px;
+/* Hyper HD Realistic 3D Mobile Mockup styles */
+.hyper-phone-container {
+  position: relative;
+  width: 320px;
+  perspective: 1200px;
+  transform-style: preserve-3d;
+}
+
+.hyper-phone-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9 / 19.5;
+  background: #0f172a;
+  border-radius: 44px;
+  padding: 10px; /* bezel size */
+  box-shadow: 
+    0px 25px 50px -12px rgba(0, 0, 0, 0.5),
+    inset 0 0 4px rgba(255, 255, 255, 0.3),
+    0 0 1px 2px rgba(255, 255, 255, 0.2);
+  transform: rotateY(-8deg) rotateX(4deg) rotateZ(1deg);
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.hyper-phone-frame:hover {
+  transform: rotateY(-2deg) rotateX(2deg) rotateZ(0deg) scale(1.02);
+}
+
+/* Brushed titanium metallic edge on the side */
+.hyper-phone-frame::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -8px;
+  width: 12px;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    #64748b 0%,
+    #94a3b8 15%,
+    #cbd5e1 30%,
+    #64748b 45%,
+    #475569 60%,
+    #94a3b8 75%,
+    #475569 100%
+  );
+  border-radius: 0 44px 44px 0;
+  transform: translateZ(-6px) rotateY(90deg);
+  transform-origin: left center;
+  box-shadow: inset -2px 0 5px rgba(0,0,0,0.4);
+}
+
+/* Volume/Power Buttons on the metallic edge */
+.hyper-phone-button {
+  position: absolute;
+  background: linear-gradient(to bottom, #94a3b8, #475569);
+  border-radius: 2px;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+.hyper-phone-button.volume-up {
+  top: 120px;
+  right: -10px;
+  width: 4px;
+  height: 32px;
+  transform: translateZ(-3px);
+}
+.hyper-phone-button.volume-down {
+  top: 164px;
+  right: -10px;
+  width: 4px;
+  height: 32px;
+  transform: translateZ(-3px);
+}
+.hyper-phone-button.power {
+  top: 140px;
+  left: -4px;
+  width: 3px;
+  height: 48px;
+  border-radius: 2px 0 0 2px;
+}
+
+.hyper-phone-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 36px;
   overflow: hidden;
-  background: #fff;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.2);
+}
+
+/* Glass reflection shine overlay */
+.hyper-phone-screen::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.15) 0%,
+    rgba(255, 255, 255, 0.05) 40%,
+    rgba(255, 255, 255, 0) 41%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Dynamic Island */
+.dynamic-island {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 22px;
+  background: #000000;
+  border-radius: 20px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  box-shadow: inset 0 1px 2px rgba(255,255,255,0.2);
+}
+.dynamic-island::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  background: #0d123a;
+  border-radius: 50%;
+  opacity: 0.8;
+}
+.dynamic-island::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: #0f172a;
+  border-radius: 50%;
+  box-shadow: inset 0 0 3px rgba(255,255,255,0.4);
+}
+
+/* Page transitions & scroll animation keyframes */
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up-fade 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.fade-in-section {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fade-in-section.is-visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 /* Scrollbar hiding */

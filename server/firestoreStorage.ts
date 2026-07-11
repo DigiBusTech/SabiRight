@@ -1,4 +1,6 @@
 import admin from "firebase-admin";
+import fs from "fs";
+import path from "path";
 import type { 
   IFirestoreStorage, UserProfile, UserCredits, AdminSetting, 
   VendorService, Professional, ProfessionalCredentials, ProfessionalLocation, ProfessionalWallet, ProfessionalApplication, ProfessionalService, MoatData, UserPlan, CreditPackage, Route, 
@@ -8,6 +10,49 @@ import type {
 } from "./types.d.ts";
 
 export const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID || "legal-13d13";
+
+// Ensure Firebase is initialized
+const serviceAccountPath = path.join(process.cwd(), 'legal-13d13-firebase-adminsdk-fbsvc-e736182a52.json');
+if (admin.apps.length === 0) {
+  if (fs.existsSync(serviceAccountPath)) {
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: 'legal-13d13'
+    });
+    admin.firestore().settings({ ignoreUndefinedProperties: true });
+    console.log("[firestoreStorage] Firebase Admin initialized with service account.");
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    try {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: serviceAccount.project_id || 'legal-13d13'
+      });
+      admin.firestore().settings({ ignoreUndefinedProperties: true });
+      console.log("[firestoreStorage] Firebase Admin initialized via env var.");
+    } catch (err) {
+      console.error("[firestoreStorage] Failed to initialize via env var:", err);
+    }
+  } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+    try {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: process.env.FIREBASE_PROJECT_ID || 'legal-13d13',
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        }),
+        projectId: process.env.FIREBASE_PROJECT_ID || 'legal-13d13'
+      });
+      admin.firestore().settings({ ignoreUndefinedProperties: true });
+      console.log("[firestoreStorage] Firebase Admin initialized via individual credentials.");
+    } catch (err) {
+      console.error("[firestoreStorage] Failed to initialize via individual credentials:", err);
+    }
+  } else {
+    console.warn("[firestoreStorage] Firebase Admin not initialized. Features may fail.");
+  }
+}
 
 const getCollection = (name: string) => {
   // Check both root and artifacts path to ensure compatibility with different environments
@@ -69,7 +114,7 @@ export const firestoreStorage: IFirestoreStorage = {
     // 2. Get reward settings from Firestore
     // Default values if settings not found
     let signupReward = 10;
-    let bonusReward = 50;
+    let bonusReward = 20;
 
     try {
       const signupSetting = await this.getAdminSetting('credit_reward_referral');
@@ -154,13 +199,41 @@ export const firestoreStorage: IFirestoreStorage = {
     const doc = await getCollection('plans').doc(planId).get();
     return doc.exists ? { id: doc.id, ...doc.data() } as UserPlan : null;
   },
-  async refreshDailyCredits(userId: string, dailyCredits: number) { return; },
+  async refreshDailyCredits(userId: string, dailyCredits: number) {
+    const creditsRef = getCollection('credits').doc(userId);
+    const now = new Date();
+    const todayStr = now.toDateString();
+    
+    await admin.firestore().runTransaction(async (transaction) => {
+      const doc = await transaction.get(creditsRef);
+      if (!doc.exists) {
+        transaction.set(creditsRef, {
+          totalCredits: dailyCredits,
+          usedCredits: 0,
+          lastRefreshDate: todayStr,
+          renewalDate: now
+        }, { merge: true });
+        return;
+      }
+      
+      const data = doc.data() as any;
+      const lastRefresh = data.lastRefreshDate;
+      if (lastRefresh !== todayStr) {
+        transaction.update(creditsRef, {
+          usedCredits: 0,
+          totalCredits: Math.max(data.totalCredits || 0, dailyCredits),
+          lastRefreshDate: todayStr,
+          renewalDate: now
+        });
+      }
+    });
+  },
   async getCreditLog(userId: string) {
     const snapshot = await getCollection('creditLogs').where('userId', '==', userId).orderBy('createdAt', 'desc').get();
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
   async setUserCredits(userId: string, totalCredits: number) {
-    await getCollection('credits').doc(userId).set({ totalCredits }, { merge: true });
+    await getCollection('credits').doc(userId).set({ totalCredits, usedCredits: 0 }, { merge: true });
   },
   async getCreditPackages() {
     const pkgSnapshot = await getCollection('creditPackages').get();
@@ -186,7 +259,24 @@ export const firestoreStorage: IFirestoreStorage = {
   },
   async createSubscription(sub: Omit<Subscription, 'id' | 'createdAt'>) {
     const id = `sub-${Date.now()}`;
-    const newSub = { id, createdAt: new Date(), ...sub };
+    let endDate: string | undefined = undefined;
+    try {
+      const plan = await this.getPlanById(sub.planId);
+      if (plan) {
+        const now = Date.now();
+        if (plan.type === 'free') {
+          // Free tier has a 14 day trial
+          endDate = new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString();
+        } else if (plan.billingCycle === 'yearly') {
+          endDate = new Date(now + 365 * 24 * 60 * 60 * 1000).toISOString();
+        } else {
+          endDate = new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString();
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching plan for subscription end date:', e);
+    }
+    const newSub = { id, createdAt: new Date(), endDate, ...sub };
     await getCollection('subscriptions').doc(id).set(newSub);
     return newSub as Subscription;
   },
@@ -439,8 +529,11 @@ export const firestoreStorage: IFirestoreStorage = {
     const doc = await getCollection('routes').doc(id).get();
     return doc.exists ? { id: doc.id, ...doc.data() } as Route : null;
   },
-  async updateRouteStatus(id: string, status: string) {
-    await getCollection('routes').doc(id).set({ status }, { merge: true });
+  async updateRouteStatus(id: string, status: string, recommendation?: string, cloakedStreets?: string[]) {
+    const updateData: any = { status };
+    if (recommendation !== undefined) updateData.recommendation = recommendation;
+    if (cloakedStreets !== undefined) updateData.cloakedStreets = cloakedStreets;
+    await getCollection('routes').doc(id).set(updateData, { merge: true });
   },
   async deleteRoute(id: string) {
     await getCollection('routes').doc(id).delete();
@@ -729,7 +822,7 @@ export const firestoreStorage: IFirestoreStorage = {
   },
   async getBookingsByUserId(userId: string) {
     const snap = await getCollection('bookings').where('userId', '==', userId).get();
-    return snap.docs.map(doc => doc.data());
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
   async getNotificationsByUserId(userId: string, limit?: number) {
     const snap = await getCollection('notifications').where('userId', '==', userId).get();

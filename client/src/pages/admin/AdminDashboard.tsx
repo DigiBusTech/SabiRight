@@ -53,6 +53,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
+import { GeneralSettings } from "./components/GeneralSettings";
 
 const getAdminHeaders = async () => {
   const token = await auth.currentUser?.getIdToken();
@@ -74,6 +75,20 @@ const formatFirestoreDate = (date: any) => {
   const d = new Date(date);
   return isNaN(d.getTime()) ? new Date() : d;
 };
+
+export const USER_FEATURES = [
+  { id: "ai_chat", label: "Right-To-Know AI Chat" },
+  { id: "civic_alerts", label: "Real-time Civic & Traffic Alerts" },
+  { id: "community_forum", label: "Community Forum Access" },
+  { id: "job_applications", label: "Job Postings & Applications" }
+];
+
+export const VENDOR_FEATURES = [
+  { id: "service_listings", label: "Marketplace Service Listings" },
+  { id: "lead_view", label: "Direct Customer Leads" },
+  { id: "client_demographics", label: "Client Demographics & Stats" },
+  { id: "ai_growth_suggestions", label: "AI Approach Suggestions" }
+];
 
 const PaymentItem = ({ payment, isManual }: { payment: any; isManual: boolean }) => {
   const queryClient = useQueryClient();
@@ -1516,7 +1531,7 @@ export default function AdminDashboard() {
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [creditAmount, setCreditAmount] = useState("");
-  const [newPlan, setNewPlan] = useState({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '' });
+  const [newPlan, setNewPlan] = useState<any>({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '', billingCycle: 'monthly', features: [] });
   const [editingPlan, setEditingPlan] = useState<any>(null);
   const [editingPackage, setEditingPackage] = useState<any>(null);
   const [resolvingDispute, setResolvingDispute] = useState<any>(null);
@@ -2763,527 +2778,8 @@ export default function AdminDashboard() {
 
                   {/* Settings Tab */}
                   <TabsContent value="settings" className="mt-0">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Platform Branding</CardTitle>
-                  <p className="text-sm text-slate-500">Configure your platform's visual identity for light and dark modes.</p>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid md:grid-cols-2 gap-6">
-                    {/* Site Title */}
-                    <div className="space-y-2">
-                      <Label htmlFor="site_title">Site Title</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="site_title"
-                          placeholder="SabiRight"
-                          value={localSettings['site_title'] ?? getSetting('site_title')}
-                          onChange={(e) => handleSettingChange('site_title', e.target.value)}
-                        />
-                        <Button size="sm" onClick={() => handleSaveSetting('site_title', 'branding')}>
-                          <Save className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Contact Email */}
-                    <div className="space-y-2">
-                      <Label htmlFor="contact_email">Support Email</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="contact_email"
-                          placeholder="support@sabiright.com"
-                          value={localSettings['contact_email'] ?? getSetting('contact_email')}
-                          onChange={(e) => handleSettingChange('contact_email', e.target.value)}
-                        />
-                        <Button size="sm" onClick={() => handleSaveSetting('contact_email', 'contact')}>
-                          <Save className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid md:grid-cols-2 gap-8 pt-4 border-t">
-                    {/* Light Mode Branding */}
-                    <div className="space-y-6">
-                      <h4 className="font-bold text-sm flex items-center gap-2">
-                        <Star className="h-4 w-4 text-amber-500" /> Light Mode Assets
-                      </h4>
-                      
-                      {/* Light Logo */}
-                      <div className="space-y-2">
-                        <Label htmlFor="site_logo">Light Logo URL</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            id="site_logo"
-                            placeholder="https://example.com/logo-light.png"
-                            value={localSettings['site_logo'] ?? getSetting('site_logo')}
-                            onChange={(e) => handleSettingChange('site_logo', e.target.value)}
-                          />
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => document.getElementById('logo-light-upload')?.click()}
-                          >
-                            <Upload className="h-4 w-4" />
-                          </Button>
-                          <input type="file" id="logo-light-upload" className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, 'site_logo')} />
-                          <Button size="sm" onClick={() => handleSaveSetting('site_logo', 'branding')}>
-                            <Save className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="h-20 border rounded bg-slate-50 flex items-center justify-center p-2">
-                          {(localSettings['site_logo'] ?? getSetting('site_logo')) ? <img src={localSettings['site_logo'] ?? getSetting('site_logo')} className="max-h-full" /> : <span className="text-xs text-slate-400">No logo</span>}
-                        </div>
-                      </div>
-
-                      {/* Light Favicon */}
-                      <div className="space-y-2">
-                        <Label htmlFor="site_favicon">Light Favicon URL</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            id="site_favicon"
-                            placeholder="https://example.com/favicon-light.ico"
-                            value={localSettings['site_favicon'] ?? getSetting('site_favicon')}
-                            onChange={(e) => handleSettingChange('site_favicon', e.target.value)}
-                          />
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => document.getElementById('fav-light-upload')?.click()}
-                          >
-                            <Upload className="h-4 w-4" />
-                          </Button>
-                          <input type="file" id="fav-light-upload" className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, 'site_favicon')} />
-                          <Button size="sm" onClick={() => handleSaveSetting('site_favicon', 'branding')}>
-                            <Save className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Dark Mode Branding */}
-                    <div className="space-y-6">
-                      <h4 className="font-bold text-sm flex items-center gap-2">
-                        <Star className="h-4 w-4 text-indigo-500 fill-indigo-500" /> Dark Mode Assets
-                      </h4>
-                      
-                      {/* Dark Logo */}
-                      <div className="space-y-2">
-                        <Label htmlFor="site_logo_dark">Dark Logo URL</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            id="site_logo_dark"
-                            placeholder="https://example.com/logo-dark.png"
-                            value={localSettings['site_logo_dark'] ?? getSetting('site_logo_dark')}
-                            onChange={(e) => handleSettingChange('site_logo_dark', e.target.value)}
-                          />
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => document.getElementById('logo-dark-upload')?.click()}
-                          >
-                            <Upload className="h-4 w-4" />
-                          </Button>
-                          <input type="file" id="logo-dark-upload" className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, 'site_logo_dark')} />
-                          <Button size="sm" onClick={() => handleSaveSetting('site_logo_dark', 'branding')}>
-                            <Save className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <div className="h-20 border rounded bg-slate-900 flex items-center justify-center p-2">
-                          {(localSettings['site_logo_dark'] ?? getSetting('site_logo_dark')) ? <img src={localSettings['site_logo_dark'] ?? getSetting('site_logo_dark')} className="max-h-full" /> : <span className="text-xs text-slate-400">No logo</span>}
-                        </div>
-                      </div>
-
-                      {/* Dark Favicon */}
-                      <div className="space-y-2">
-                        <Label htmlFor="site_favicon_dark">Dark Favicon URL</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            id="site_favicon_dark"
-                            placeholder="https://example.com/favicon-dark.ico"
-                            value={localSettings['site_favicon_dark'] ?? getSetting('site_favicon_dark')}
-                            onChange={(e) => handleSettingChange('site_favicon_dark', e.target.value)}
-                          />
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => document.getElementById('fav-dark-upload')?.click()}
-                          >
-                            <Upload className="h-4 w-4" />
-                          </Button>
-                          <input type="file" id="fav-dark-upload" className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, 'site_favicon_dark')} />
-                          <Button size="sm" onClick={() => handleSaveSetting('site_favicon_dark', 'branding')}>
-                            <Save className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Video Snippet Management</CardTitle>
-                  <p className="text-sm text-slate-500">Manage the video featured on the homepage.</p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="video_demo_url">Homepage Video URL (YouTube Link)</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="video_demo_url"
-                        placeholder="https://www.youtube.com/watch?v=..."
-                        value={localSettings['video_demo_url'] ?? getSetting('video_demo_url')}
-                        onChange={(e) => handleSettingChange('video_demo_url', e.target.value)}
-                      />
-                      <Button size="sm" onClick={() => handleSaveSetting('video_demo_url', 'branding')}>
-                        <Save className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Paste a YouTube link here. The platform will automatically convert it to an embeddable format.</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Social Media Links</CardTitle>
-                  <p className="text-sm text-slate-500">Configure the social media links shown in the footer.</p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid md:grid-cols-2 gap-4">
-                    {['facebook', 'twitter', 'instagram', 'linkedin', 'youtube', 'whatsapp'].map((platform) => (
-                      <div key={platform} className="space-y-2">
-                        <Label htmlFor={`social_${platform}`} className="capitalize">{platform}</Label>
-                        <div className="flex gap-2">
-                          <Input
-                            id={`social_${platform}`}
-                            placeholder={`https://${platform}.com/sabiright`}
-                            value={localSettings[`social_${platform}`] ?? getSetting(`social_${platform}`)}
-                            onChange={(e) => handleSettingChange(`social_${platform}`, e.target.value)}
-                          />
-                          <Button size="sm" onClick={() => handleSaveSetting(`social_${platform}`, 'social')}>
-                            <Save className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Color Settings</CardTitle>
-                  <p className="text-sm text-slate-500">Manage the primary and secondary colors for your platform branding.</p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid md:grid-cols-2 gap-6">
-                    {/* Primary Color */}
-                    <div className="space-y-2">
-                      <Label htmlFor="primary_color">Primary Color</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="primary_color"
-                          type="color"
-                          className="w-12 h-10 p-1"
-                          value={localSettings['primary_color'] ?? getSetting('primary_color') ?? '#3b82f6'}
-                          onChange={(e) => handleSettingChange('primary_color', e.target.value)}
-                        />
-                        <Input
-                          placeholder="#3b82f6"
-                          value={localSettings['primary_color'] ?? getSetting('primary_color') ?? '#3b82f6'}
-                          onChange={(e) => handleSettingChange('primary_color', e.target.value)}
-                        />
-                        <Button size="sm" onClick={() => handleSaveSetting('primary_color', 'branding')}>
-                          <Save className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Secondary Color */}
-                    <div className="space-y-2">
-                      <Label htmlFor="secondary_color">Secondary Color</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="secondary_color"
-                          type="color"
-                          className="w-12 h-10 p-1"
-                          value={localSettings['secondary_color'] ?? getSetting('secondary_color') ?? '#1e293b'}
-                          onChange={(e) => handleSettingChange('secondary_color', e.target.value)}
-                        />
-                        <Input
-                          placeholder="#1e293b"
-                          value={localSettings['secondary_color'] ?? getSetting('secondary_color') ?? '#1e293b'}
-                          onChange={(e) => handleSettingChange('secondary_color', e.target.value)}
-                        />
-                        <Button size="sm" onClick={() => handleSaveSetting('secondary_color', 'branding')}>
-                          <Save className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>SEO & Metadata</CardTitle>
-                  <p className="text-sm text-slate-500">Optimize how your platform appears in search engines.</p>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-2">
-                    <Label htmlFor="seo_description">Meta Description</Label>
-                    <div className="flex gap-2">
-                      <Textarea
-                        id="seo_description"
-                        placeholder="SabiRight is a comprehensive platform for..."
-                        value={localSettings['seo_description'] ?? getSetting('seo_description')}
-                        onChange={(e) => handleSettingChange('seo_description', e.target.value)}
-                      />
-                      <Button size="sm" onClick={() => handleSaveSetting('seo_description', 'seo')}>
-                        <Save className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="seo_keywords">Meta Keywords</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="seo_keywords"
-                        placeholder="AI, Governance, Community, Nigeria"
-                        value={localSettings['seo_keywords'] ?? getSetting('seo_keywords')}
-                        onChange={(e) => handleSettingChange('seo_keywords', e.target.value)}
-                      />
-                      <Button size="sm" onClick={() => handleSaveSetting('seo_keywords', 'seo')}>
-                        <Save className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-[10px] text-slate-500">Comma-separated list of keywords for SEO.</p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="og_image">Open Graph Image URL (SEO)</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="og_image"
-                        placeholder="https://example.com/og-image.jpg"
-                        value={localSettings['og_image'] ?? getSetting('og_image')}
-                        onChange={(e) => handleSettingChange('og_image', e.target.value)}
-                      />
-                      <div className="flex gap-2">
-                        <input
-                          type="file"
-                          id="og-image-upload"
-                          className="hidden"
-                          accept="image/*"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              const formData = new FormData();
-                              formData.append('file', file);
-                              try {
-                                const res = await fetch('/api/upload', {
-                                  method: 'POST',
-                                  body: formData
-                                });
-                                const data = await res.json();
-                                if (data.url) {
-                                  handleSettingChange('og_image', data.url);
-                                  toast({ title: "Uploaded", description: "OG Image uploaded. Click save to apply." });
-                                }
-                              } catch (err) {
-                                toast({ title: "Upload Failed", description: "Failed to upload image", variant: "destructive" });
-                              }
-                            }
-                          }}
-                        />
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => document.getElementById('og-image-upload')?.click()}
-                        >
-                          <Upload className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <Button size="sm" onClick={() => handleSaveSetting('og_image', 'seo')}>
-                        <Save className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <p className="text-[10px] text-slate-500">The image displayed when your site is shared on social media (1200x630 recommended).</p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Footer Information</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-2">
-                      <Label htmlFor="footer_text">Footer Copyright Text</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="footer_text"
-                          placeholder="© 2024 SabiRight. All rights reserved."
-                          value={localSettings['footer_text'] ?? getSetting('footer_text')}
-                          onChange={(e) => handleSettingChange('footer_text', e.target.value)}
-                        />
-                        <Button size="sm" onClick={() => handleSaveSetting('footer_text', 'branding')}>
-                          <Save className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t space-y-4">
-                      <Label className="text-sm font-bold">Social Media Links</Label>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {Object.entries(socialLinks).map(([platform, value]) => (
-                          <div key={platform} className="space-y-1">
-                            <Label htmlFor={`social_${platform}`} className="text-xs capitalize">{platform}</Label>
-                            <Input
-                              id={`social_${platform}`}
-                              placeholder={`https://${platform}.com/yourprofile`}
-                              value={value}
-                              onChange={(e) => setSocialLinks(prev => ({ ...prev, [platform]: e.target.value }))}
-                              className="h-8 text-xs"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <Button 
-                        size="sm" 
-                        className="w-full mt-2"
-                        onClick={() => {
-                          saveSetting.mutate({ 
-                            key: 'social_links', 
-                            value: JSON.stringify(socialLinks), 
-                            category: 'branding' 
-                          });
-                        }}
-                      >
-                        <Save className="h-4 w-4 mr-2" /> Save Social Links
-                      </Button>
-                    </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-red-200 bg-red-50/30">
-                <CardHeader>
-                  <CardTitle className="text-red-700">Data Management</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border border-red-100 rounded-lg bg-white">
-                    <div>
-                      <h4 className="font-bold text-slate-800">Export All Data</h4>
-                      <p className="text-sm text-slate-500">Download a complete backup of the system database (JSON format).</p>
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      className="border-red-200 text-red-700 hover:bg-red-50"
-                      onClick={() => setConfirmAction({
-                        type: 'export',
-                        title: 'Export Database',
-                        description: 'Are you sure you want to export the entire database? This may contain sensitive information.'
-                      })}
-                    >
-                      <Download className="h-4 w-4 mr-2" /> Export Database
-                    </Button>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border border-blue-100 rounded-lg bg-white">
-                    <div>
-                      <h4 className="font-bold text-blue-800">Export MOAT Data</h4>
-                      <p className="text-sm text-slate-500">Download MOAT intelligence data for model training (JSON format).</p>
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      className="border-blue-200 text-blue-700 hover:bg-blue-50"
-                      onClick={handleExportMoatData}
-                    >
-                      <Download className="h-4 w-4 mr-2" /> Export MOAT Data
-                    </Button>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 border border-red-100 rounded-lg bg-white">
-                    <div>
-                      <h4 className="font-bold text-red-700">Clear System Cache</h4>
-                      <p className="text-sm text-slate-500">Force refresh all system caches and sessions.</p>
-                    </div>
-                    <Button 
-                      variant="destructive" 
-                      size="sm"
-                      onClick={() => setConfirmAction({
-                        type: 'cache',
-                        title: 'Clear System Cache',
-                        description: 'This will force all users to re-authenticate and clear temporary server data. Continue?'
-                      })}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" /> Clear Cache
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Push Notification Configuration Guide */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Smartphone className="h-5 w-5 text-purple-500" />
-                    Push Notification Configuration Guide
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                    <h4 className="font-semibold text-sm mb-2">Step 1: Firebase Project Setup</h4>
-                    <p className="text-sm text-slate-600 mb-2">
-                      1. Go to the <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Firebase Console</a>.<br />
-                      2. Select your project or create a new one.<br />
-                      3. Go to <strong>Project Settings</strong> (gear icon) &gt; <strong>Service Accounts</strong>.<br />
-                      4. Click <strong>Generate New Private Key</strong> and download the JSON file.
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                    <h4 className="font-semibold text-sm mb-2">Step 2: Server-Side Configuration</h4>
-                    <p className="text-sm text-slate-600 mb-2">
-                      1. Open your server environment variables or <code>.env</code> file.<br />
-                      2. Add the content of the downloaded JSON file to <code>FIREBASE_SERVICE_ACCOUNT</code>.<br />
-                      3. Ensure <code>FIREBASE_PROJECT_ID</code> is also set correctly.
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                    <h4 className="font-semibold text-sm mb-2">Step 3: Client-Side Configuration</h4>
-                    <p className="text-sm text-slate-600 mb-2">
-                      1. Go to <strong>Project Settings</strong> &gt; <strong>General</strong> &gt; <strong>Your Apps</strong>.<br />
-                      2. Add a Web App if you haven't already.<br />
-                      3. Copy the <code>firebaseConfig</code> object and update it in your client-side config file.<br />
-                      4. Go to <strong>Cloud Messaging</strong> tab and generate a <strong>VAPID key</strong> in the Web configuration section.
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                    <h4 className="font-semibold text-sm mb-2">Step 4: User Subscription</h4>
-                    <p className="text-sm text-slate-600 mb-2">
-                      Users will be prompted to allow notifications when they log in or visit the settings page. Once they allow, their device token is securely stored and linked to their profile.
-                    </p>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 text-amber-600 bg-amber-50 p-3 rounded border border-amber-200">
-                    <AlertTriangle className="h-5 w-5" />
-                    <p className="text-xs font-medium">
-                      Note: Push notifications require a secure (HTTPS) connection or localhost to work in modern browsers.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
+                    <GeneralSettings />
+                  </TabsContent>
 
           {/* API Keys Tab */}
           <TabsContent value="api-keys">
@@ -3776,6 +3272,19 @@ export default function AdminDashboard() {
                     </div>
 
                     <div className="space-y-1.5">
+                      <Label>Billing Cycle</Label>
+                      <select
+                        className="w-full h-10 px-3 border rounded-md text-sm"
+                        value={newPlan.billingCycle || 'monthly'}
+                        onChange={(e) => setNewPlan({ ...newPlan, billingCycle: e.target.value })}
+                      >
+                        <option value="monthly">Monthly Pay</option>
+                        <option value="yearly">Yearly Pay</option>
+                      </select>
+                      <p className="text-[10px] text-slate-500">Billing frequency</p>
+                    </div>
+
+                    <div className="space-y-1.5">
                       <Label>Price (NGN)</Label>
                       <Input
                         type="number"
@@ -3783,7 +3292,7 @@ export default function AdminDashboard() {
                         value={newPlan.price}
                         onChange={(e) => setNewPlan({ ...newPlan, price: parseInt(e.target.value) || 0 })}
                       />
-                      <p className="text-[10px] text-slate-500">Monthly billing amount in Naira</p>
+                      <p className="text-[10px] text-slate-500">Billing amount in Naira</p>
                     </div>
 
                     <div className="space-y-1.5">
@@ -3807,6 +3316,35 @@ export default function AdminDashboard() {
                       <p className="text-[10px] text-slate-500">Short summary of plan features</p>
                     </div>
                   </div>
+
+                  {/* Select Plan Features */}
+                  <div className="mt-6 border-t pt-4">
+                    <Label className="text-sm font-bold text-slate-700">Select Plan Features / Benefits</Label>
+                    <p className="text-xs text-slate-500 mb-4">Toggle features that are active/available in this subscription tier</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+                      {(newPlan.userType === 'vendor' ? VENDOR_FEATURES : USER_FEATURES).map((f) => {
+                        const isChecked = Array.isArray(newPlan.features) && newPlan.features.includes(f.id);
+                        return (
+                          <div key={f.id} className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                            <Checkbox 
+                              id={`feat-${f.id}`}
+                              checked={isChecked}
+                              onCheckedChange={(checked) => {
+                                const currentFeats = Array.isArray(newPlan.features) ? [...newPlan.features] : [];
+                                if (checked) {
+                                  setNewPlan({ ...newPlan, features: [...currentFeats, f.id] });
+                                } else {
+                                  setNewPlan({ ...newPlan, features: currentFeats.filter(id => id !== f.id) });
+                                }
+                              }}
+                            />
+                            <Label htmlFor={`feat-${f.id}`} className="text-xs font-semibold cursor-pointer text-slate-700">{f.label}</Label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <Button 
                     className="mt-6" 
                     onClick={() => createPlan.mutate(newPlan)}
@@ -3831,23 +3369,61 @@ export default function AdminDashboard() {
                         <div key={plan.id} className="p-4 border rounded-lg">
                           {editingPlan?.id === plan.id ? (
                             <div className="space-y-3">
-                              <div className="grid md:grid-cols-3 gap-3">
+                              <div className="grid md:grid-cols-4 gap-3">
                                 <Input
                                   value={editingPlan.name}
                                   onChange={(e) => setEditingPlan({ ...editingPlan, name: e.target.value })}
+                                  placeholder="Plan Name"
                                 />
                                 <Input
                                   type="number"
                                   value={editingPlan.price}
                                   onChange={(e) => setEditingPlan({ ...editingPlan, price: parseInt(e.target.value) || 0 })}
+                                  placeholder="Price"
                                 />
                                 <Input
                                   type="number"
                                   value={editingPlan.credits}
                                   onChange={(e) => setEditingPlan({ ...editingPlan, credits: parseInt(e.target.value) || 0 })}
+                                  placeholder="Credits"
                                 />
+                                <select
+                                  className="h-10 px-3 border rounded-md text-sm bg-white"
+                                  value={editingPlan.billingCycle || 'monthly'}
+                                  onChange={(e) => setEditingPlan({ ...editingPlan, billingCycle: e.target.value })}
+                                >
+                                  <option value="monthly">Monthly</option>
+                                  <option value="yearly">Yearly</option>
+                                </select>
                               </div>
-                              <div className="flex gap-2">
+                              {/* Edit Features Selection */}
+                              <div className="border-t pt-3 mt-3">
+                                <Label className="text-xs font-bold text-slate-700">Edit Plan Features</Label>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                                  {(plan.userType === 'vendor' ? VENDOR_FEATURES : USER_FEATURES).map((f) => {
+                                    const isChecked = Array.isArray(editingPlan.features) && editingPlan.features.includes(f.id);
+                                    return (
+                                      <div key={f.id} className="flex items-center gap-2.5 p-2 rounded-lg border border-slate-100 bg-white">
+                                        <Checkbox 
+                                          id={`edit-feat-${f.id}`}
+                                          checked={isChecked}
+                                          onCheckedChange={(checked) => {
+                                            const currentFeats = Array.isArray(editingPlan.features) ? [...editingPlan.features] : [];
+                                            if (checked) {
+                                              setEditingPlan({ ...editingPlan, features: [...currentFeats, f.id] });
+                                            } else {
+                                              setEditingPlan({ ...editingPlan, features: currentFeats.filter(id => id !== f.id) });
+                                            }
+                                          }}
+                                        />
+                                        <Label htmlFor={`edit-feat-${f.id}`} className="text-xs cursor-pointer">{f.label}</Label>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2 pt-3">
                                 <Button size="sm" onClick={() => updatePlan.mutate({ 
                                   planId: plan.id, 
                                   updates: { 
@@ -3856,7 +3432,9 @@ export default function AdminDashboard() {
                                     credits: editingPlan.credits,
                                     type: editingPlan.type,
                                     userType: editingPlan.userType,
-                                    description: editingPlan.description
+                                    description: editingPlan.description,
+                                    billingCycle: editingPlan.billingCycle || 'monthly',
+                                    features: editingPlan.features || []
                                   }
                                 })}>
                                   Save
@@ -3871,7 +3449,7 @@ export default function AdminDashboard() {
                               <div>
                                 <p className="font-bold">{plan.name}</p>
                                 <p className="text-sm text-slate-500">
-                                  {plan.type} - {plan.userType} | NGN {plan.price || 0} | {plan.credits || 0} credits
+                                  {plan.type} - {plan.userType} | NGN {plan.price || 0} / {plan.billingCycle || 'monthly'} | {plan.credits || 0} credits
                                 </p>
                               </div>
                               <div className="flex gap-2">

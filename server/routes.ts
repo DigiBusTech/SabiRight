@@ -1,4 +1,4 @@
-import type { Express, Request, Response, NextFunction } from "express";
+ import type { Express, Request, Response, NextFunction } from "express";
 import "../server/types.d.ts";
 import express from "express";
 import admin from "firebase-admin";
@@ -229,7 +229,7 @@ export async function registerRoutes(
         'hero_title', 'hero_subtitle', 'video_demo_url', 'seo_title', 
         'privacy_policy', 'terms_of_service', 'cookie_policy',
         'frontend_page_content', 'frontend_page_content_about', 'frontend_page_content_contact', 'frontend_page_content_footer',
-        'credit_reward_referral', 'referral_reward_credits'
+        'credit_reward_referral', 'referral_reward_credits', 'active_languages'
       ];
       
       const publicSettings = settings.filter(s => 
@@ -253,7 +253,7 @@ export async function registerRoutes(
         'hero_title', 'hero_subtitle', 'video_demo_url', 'seo_title', 
         'privacy_policy', 'terms_of_service', 'cookie_policy',
         'frontend_page_content', 'frontend_page_content_about', 'frontend_page_content_contact', 'frontend_page_content_footer',
-        'credit_reward_referral', 'referral_reward_credits'
+        'credit_reward_referral', 'referral_reward_credits', 'active_languages'
       ];
       
       const filteredSettings = settings.filter(s => allowedKeys.includes(s.key));
@@ -269,7 +269,7 @@ export async function registerRoutes(
     try {
       const settings = await storage.getAdminSettings();
       const mapsKey = settings.find(s => s.key === 'google_maps_api_key');
-      res.json({ value: mapsKey?.value || '' });
+      res.json({ value: mapsKey?.value || process.env.GOOGLE_MAPS_API_KEY || '' });
     } catch (error) {
       next(error);
     }
@@ -320,11 +320,12 @@ export async function registerRoutes(
       
       const updatedCredits = await storage.getUserCredits(userId);
       const total = updatedCredits?.totalCredits ?? 0;
+      const used = updatedCredits?.usedCredits ?? 0;
       
       res.json({
         totalCredits: total,
-        usedCredits: 0,
-        availableCredits: total,
+        usedCredits: used,
+        availableCredits: Math.max(0, total - used),
         renewalDate: updatedCredits?.renewalDate
       });
     } catch (error) {
@@ -507,7 +508,7 @@ export async function registerRoutes(
       const cloakedStreets = result.cloakedStreets || [];
 
       // Update route status in database
-      await storage.updateRouteStatus(routeId, status);
+      await storage.updateRouteStatus(routeId, status, recommendation, cloakedStreets);
 
       // Create an alert for the user
       await storage.createAlert({
@@ -638,7 +639,7 @@ export async function registerRoutes(
           expiry: '1 hour',
           userName: userProfile?.displayName || userProfile?.email || 'User'
         },
-        channels: ['email', 'in_app']
+        channels: ['email']
       });
 
       await storage.updateEmailVerificationStatus(userId, 'pending');
@@ -976,7 +977,72 @@ export async function registerRoutes(
   app.get("/api/dashboard/traffic/:userId", async (req, res, next) => {
     try {
       const { userId } = req.params;
-      const traffic = await storage.getDashboardTraffic(userId);
+      let traffic = await storage.getDashboardTraffic(userId);
+      
+      // If there is no traffic information, let's automatically generate it using the user's city!
+      if (!traffic || !traffic.location || !traffic.description) {
+        const profile = await storage.getUserProfile(userId);
+        const city = profile?.city || 'Lagos';
+        
+        let liveContext = "";
+        try {
+          const searchKey = await storage.getAdminSetting('tavily_api_key');
+          const query = `current traffic updates and road alerts in ${city}, Nigeria today`;
+          
+          if (searchKey?.value) {
+            const searchRes = await fetch('https://api.tavily.com/search', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                api_key: searchKey.value,
+                query: query,
+                search_depth: "basic",
+                max_results: 3
+              })
+            });
+            if (searchRes.ok) {
+              const searchData = await searchRes.json() as any;
+              liveContext = searchData.results.map((r: any) => r.content).join('\n');
+            }
+          }
+        } catch (searchErr) {
+          console.error('Traffic internet search failed on initial load:', searchErr);
+        }
+
+        const prompt = `Generate a realistic, concise traffic update for ${city}, Nigeria. 
+        ${liveContext ? `Use this real-time info if relevant: ${liveContext}` : "If no real-time info, use highly probable current patterns."}
+        
+        Include:
+        1. A specific location (e.g., a major road or bridge).
+        2. A status (one of: 'active', 'cleared', 'normal').
+        3. A brief description of the situation.
+        
+        Format the response as JSON: {"location": "...", "status": "active|cleared|normal", "description": "..."}`;
+
+        let trafficUpdate;
+        try {
+          const aiResponse = await generateAIResponse(prompt);
+          const cleanedResponse = aiResponse?.replace(/```json|```/g, '').trim();
+          trafficUpdate = JSON.parse(cleanedResponse || '{}');
+        } catch (aiError) {
+          console.error('AI Traffic Generation Error on initial load:', aiError);
+          trafficUpdate = {
+            location: `${city} Major Route`,
+            status: 'normal',
+            description: 'Traffic is moving normally.'
+          };
+        }
+
+        await storage.updateDashboardTraffic(
+          userId, 
+          trafficUpdate.location || "Major Route", 
+          trafficUpdate.status || "normal", 
+          trafficUpdate.description || "Traffic is moving normally."
+        );
+        
+        traffic = await storage.getDashboardTraffic(userId);
+      }
+      
       res.json(traffic || {});
     } catch (error) {
       next(error);
@@ -988,24 +1054,37 @@ export async function registerRoutes(
       const { userId } = req.params;
       const { city } = req.body;
 
+      // Ensure city is resolved
+      let targetCity = city;
+      if (!targetCity) {
+        const profile = await storage.getUserProfile(userId);
+        targetCity = profile?.city;
+      }
+      if (!targetCity) {
+        targetCity = 'Lagos';
+      }
+
       const credits = await storage.getUserCredits(userId);
       if (!credits) {
         return res.status(402).json({ error: 'No credits account' });
       }
 
-      const availableCredits = credits.totalCredits || 0;
-      if (availableCredits < 1) {
+      const costSetting = await storage.getAdminSetting('credit_cost_traffic_alert');
+      const cost = costSetting?.value ? Number(costSetting.value) : 1;
+
+      const availableCredits = (credits.totalCredits || 0) - (credits.usedCredits || 0);
+      if (availableCredits < cost) {
         return res.status(402).json({ error: 'Insufficient credits for refresh' });
       }
 
       // Deduct credits
-      await storage.deductCredits(userId, 1, 'traffic_refresh', 'Daily traffic alert refresh');
+      await storage.deductCredits(userId, cost, 'traffic_refresh', 'Daily traffic alert refresh');
 
       // Attempt to get live data via internet search first
       let liveContext = "";
       try {
         const searchKey = await storage.getAdminSetting('tavily_api_key');
-        const query = `current traffic updates and road alerts in ${city || 'Lagos'}, Nigeria today`;
+        const query = `current traffic updates and road alerts in ${targetCity}, Nigeria today`;
         
         if (searchKey?.value) {
           const searchRes = await fetch('https://api.tavily.com/search', {
@@ -1028,7 +1107,7 @@ export async function registerRoutes(
       }
 
       // Generate live traffic update using AI
-      const prompt = `Generate a realistic, concise traffic update for ${city || 'Lagos'}, Nigeria. 
+      const prompt = `Generate a realistic, concise traffic update for ${targetCity}, Nigeria. 
       ${liveContext ? `Use this real-time info if relevant: ${liveContext}` : "If no real-time info, use highly probable current patterns."}
       
       Include:
@@ -1041,14 +1120,13 @@ export async function registerRoutes(
       let trafficUpdate;
       try {
         const aiResponse = await generateAIResponse(prompt);
-        // Clean up the response in case AI adds markdown
         const cleanedResponse = aiResponse?.replace(/```json|```/g, '').trim();
         trafficUpdate = JSON.parse(cleanedResponse || '{}');
       } catch (aiError) {
         console.error('AI Traffic Generation Error:', aiError);
         // Fallback to more generic location if AI fails
         trafficUpdate = {
-          location: city ? `${city} Major Route` : 'City Center',
+          location: `${targetCity} Major Route`,
           status: 'normal',
           description: 'Traffic information currently being updated. Please check again soon.'
         };
@@ -1784,7 +1862,7 @@ export async function registerRoutes(
   // Admin: Create plan
   app.post("/api/admin/plans", adminAuth, async (req, res, next) => {
     try {
-      const { name, type, userType, price, credits, features, description } = req.body;
+      const { name, type, userType, price, credits, features, description, billingCycle } = req.body;
       
       if (!name || !type) {
         return res.status(400).json({ error: 'Name and type are required' });
@@ -1797,8 +1875,9 @@ export async function registerRoutes(
         price: price || 0,
         credits: credits || 10,
         features: features || [],
-        description: description || ''
-      });
+        description: description || '',
+        billingCycle: billingCycle || 'monthly'
+      } as any);
 
       res.json(plan);
     } catch (error) {
@@ -2920,7 +2999,7 @@ export async function registerRoutes(
   // AI Civic Chat API (SabiRight Citizen Education) - Unified to use Autonomous Agent
   app.post("/api/ai/civic/chat", userAuth, async (req, res, next) => {
     try {
-      const { message, sessionId, chatId } = req.body;
+      const { message, sessionId, chatId, language } = req.body;
       const userId = req.userId;
       
       if (!userId || !message) {
@@ -2928,13 +3007,17 @@ export async function registerRoutes(
       }
 
       // Check credits
+      const costSetting = await storage.getAdminSetting('credit_cost_ai_query');
+      const cost = costSetting?.value ? Number(costSetting.value) : 1;
+
       const credits = await storage.getUserCredits(userId);
-      if (!credits || (credits.totalCredits ?? 0) < 1) {
+      const availableCredits = (credits?.totalCredits ?? 0) - (credits?.usedCredits ?? 0);
+      if (availableCredits < cost) {
         return res.status(402).json({ error: 'Insufficient credits' });
       }
 
-      // Initialize the Legal Agent (using MCP tools)
-      const agent = await getLegalAgent();
+      // Initialize the Legal Agent (using MCP tools with Target Language selection)
+      const agent = await getLegalAgent(language || "English");
       const runner = new Runner({
         appName: "SabiRight",
         agent,
@@ -2962,29 +3045,77 @@ export async function registerRoutes(
         }
       }
 
-      const events = runner.runAsync({
-        userId,
-        sessionId: currentSessionId,
-        newMessage: { role: 'user', parts: [{ text: message }] },
-      });
-
       let finalResponse = "";
-      for await (const event of events) {
-        const structuredEvents = toStructuredEvents(event);
-        for (const se of structuredEvents) {
-          if (se.type === EventType.CONTENT) {
-            finalResponse += se.content;
-          } else if (se.type === EventType.ERROR) {
-            console.error(`[Agent API] ADK Error Event:`, se.error);
-            if (!finalResponse) {
-                throw new Error(se.error?.message || "AI Agent encountered an error");
+      try {
+        // Prepend clear target language directive to the user's message parts
+        const directiveText = language && language.toLowerCase() !== 'english'
+          ? `[Preferred Output Language: ${language} - conduct this response strictly in ${language}]. ${message}`
+          : message;
+
+        const events = runner.runAsync({
+          userId,
+          sessionId: currentSessionId,
+          newMessage: { role: 'user', parts: [{ text: directiveText }] },
+        });
+
+        for await (const event of events) {
+          const structuredEvents = toStructuredEvents(event);
+          for (const se of structuredEvents) {
+            if (se.type === EventType.CONTENT) {
+              finalResponse += se.content;
+            } else if (se.type === EventType.ERROR) {
+              console.error(`[Agent API] ADK Error Event:`, se.error);
+              if (!finalResponse) {
+                  throw new Error(se.error?.message || "AI Agent encountered an error");
+              }
             }
           }
         }
+      } catch (adkErr: any) {
+        console.error(`[Civic Chat Agent] ADK Agent run failed: ${adkErr.message}. Falling back to unified AI provider...`);
+        
+        // Retrieve and format past chat messages for conversational history
+        let formattedHistory = "";
+        try {
+          const sid = sessionId || chatId || currentSessionId;
+          if (sid) {
+            const chatHistoryDocs = await storage.getSabiGuardMessages(sid);
+            if (chatHistoryDocs && chatHistoryDocs.length > 0) {
+              formattedHistory = chatHistoryDocs
+                .map((m: any) => `${m.role === 'user' ? 'User' : 'AI'}: ${m.text || m.content || ""}`)
+                .join('\n');
+            }
+          }
+        } catch (historyErr) {
+          console.error('[Civic Chat Agent] Failed to retrieve history for fallback:', historyErr);
+        }
+
+        // Fallback: Use the main platform AI provider (like Groq) with the agent instructions injected
+        let fallbackInstruction = `You are the "SabiRight AI Agent", a general civic and legal responder for Nigerians. Your mission is to provide INSTANT, actionable, and verified civic guidance.
+
+STRICT OPERATING RULES:
+1. PERSONALIZED GREETING: Always start your very first response with "Hello! I am your SabiRight AI Agent. How can I help you with your civic enquiry today?". If the user has already been greeted in the conversation history, or if this is a follow-up conversation, DO NOT output this greeting.
+2. CIVIC GUIDE & DE-ESCALATION: For any physical encounter (police, landlords, etc.), you MUST provide a step-by-step guide to peacefully de-escalate the situation and avoid violence or misunderstanding.
+3. EXPLICIT CITATIONS: You MUST cite specific sections of the 1999 Constitution of Nigeria (e.g., Section 34 right to liberty), Police Act 2020, or other relevant Nigerian laws (Tenancy laws, real estate laws, etc.) in every legal response. DO NOT give advice without citing the exact law protecting the citizen.
+4. RESPONSE STYLE: Keep your response extremely precise, brief, and use bullet points because citizens in high-stress civic encounters need immediate, easy-to-read answers.
+5. PROFESSIONAL REFERRAL LOGIC: If a situation requires a lawyer, real estate agent, accountant, etc., you must ASK the user first: "Would you like me to connect you with a verified professional in your area?"
+6. TRIGGERING CARDS: IF AND ONLY IF the user explicitly confirms they want a professional (e.g., "Yes, I need a lawyer"), you must reply with a concluding sentence containing the exact phrase "[SHOW_PROFESSIONALS]". This exact phrase is required to show the cards in the UI.`;
+
+        if (language && language.toLowerCase() !== 'english') {
+          fallbackInstruction += `\n7. MULTILINGUAL OUT: You must conduct the entire conversation and output all responses strictly in ${language}. Maintain complete legal and factual accuracy, but use the natural phrasing, idioms, and tone appropriate for that language so an everyday youth can easily understand it. If you need to translate greetings or specific constitutional rights, do so in natural phrasing of ${language}.`;
+        }
+
+        const fallbackPrompt = `${fallbackInstruction}
+
+${formattedHistory ? `Here is the conversation history:\n${formattedHistory}` : ""}
+User: ${message}
+AI:`;
+
+        finalResponse = await generateAIResponse(fallbackPrompt) || "Hello! I am your SabiRight AI Agent. I'm currently experiencing high traffic, please try asking again in a few moments.";
       }
 
       // Deduct credits
-      await storage.deductCredits(userId, 1, 'civic_guard', `Legal AI query: ${message.substring(0, 50)}`);
+      await storage.deductCredits(userId, cost, 'civic_guard', `Legal AI query: ${message.substring(0, 50)}`);
 
       // Save to chat if chatId/sessionId provided
       const sid = sessionId || chatId;
@@ -3016,8 +3147,12 @@ export async function registerRoutes(
       return res.status(400).json({ error: 'User ID and role required' });
     }
 
+    const costSetting = await storage.getAdminSetting('credit_cost_job_application');
+    const cost = costSetting?.value ? Number(costSetting.value) : 2;
+
     const credits = await storage.getUserCredits(userId);
-      if (!credits || (credits.totalCredits ?? 0) < 1) {
+    const availableCredits = (credits?.totalCredits ?? 0) - (credits?.usedCredits ?? 0);
+    if (availableCredits < cost) {
       return res.status(402).json({ error: 'Insufficient credits' });
     }
 
@@ -3098,9 +3233,9 @@ export async function registerRoutes(
         return res.status(500).json({ error: 'No valid job opportunities found. Please try a different role or location.' });
       }
 
-      await storage.deductCredits(userId, 1, 'job_search', `AI job search: ${role} in ${location}`);
+      await storage.deductCredits(userId, cost, 'job_search', `AI job search: ${role} in ${location}`);
 
-      res.json({ jobs: savedJobs, creditsUsed: 1 });
+      res.json({ jobs: savedJobs, creditsUsed: cost });
     } catch (err: any) {
       console.error('[AI Jobs] Error:', err.message);
       res.status(503).json({ error: err.message });
@@ -3109,9 +3244,82 @@ export async function registerRoutes(
 
   // Vendor Analytics API
   app.get("/api/vendor/:vendorId/stats", async (req, res) => {
-    const { vendorId } = req.params;
-    const stats = await storage.getVendorStats(vendorId);
-    res.json(stats);
+    try {
+      const { vendorId } = req.params;
+      const leads = await storage.getVendorLeads(vendorId);
+      const bookings = await storage.getBookingsByVendorId(vendorId);
+      
+      const totalLeads = leads.length;
+      const totalBookings = bookings.length;
+      const totalEarnings = bookings.reduce((sum: number, b: any) => sum + (parseFloat(b.amount || b.totalAmount || 0)), 0);
+      
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      
+      const thisMonthLeads = leads.filter((l: any) => {
+        const d = new Date(l.createdAt || Date.now());
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      }).length;
+      
+      const thisMonthBookingsList = bookings.filter((b: any) => {
+        const d = new Date(b.createdAt || Date.now());
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      });
+      
+      const thisMonthBookings = thisMonthBookingsList.length;
+      const thisMonthEarnings = thisMonthBookingsList.reduce((sum: number, b: any) => sum + (parseFloat(b.amount || b.totalAmount || 0)), 0);
+      
+      res.json({
+        totalLeads,
+        totalBookings,
+        totalEarnings,
+        thisMonthLeads,
+        thisMonthBookings,
+        thisMonthEarnings
+      });
+    } catch (err: any) {
+      console.error('Error calculating vendor stats:', err);
+      res.json({ totalLeads: 0, totalBookings: 0, totalEarnings: 0, thisMonthLeads: 0, thisMonthBookings: 0, thisMonthEarnings: 0 });
+    }
+  });
+
+  // Vendor AI Recommendations
+  app.get("/api/vendor/:vendorId/ai-suggestions", async (req, res, next) => {
+    try {
+      const { vendorId } = req.params;
+      const leads = await storage.getVendorLeads(vendorId);
+      const bookings = await storage.getBookingsByVendorId(vendorId);
+      
+      const totalLeads = leads.length;
+      const totalBookings = bookings.length;
+      const totalEarnings = bookings.reduce((sum: number, b: any) => sum + (parseFloat(b.amount || b.totalAmount || 0)), 0);
+      
+      const bookingStatusCounts = bookings.reduce((acc: any, b: any) => {
+        const s = b.status || 'pending';
+        acc[s] = (acc[s] || 0) + 1;
+        return acc;
+      }, { pending: 0, confirmed: 0, completed: 0, cancelled: 0 });
+
+      const prompt = `As an expert business growth consultant, analyze these professional dashboard statistics for a service provider on SabiRight:
+      - Total Leads (customer inquiries): ${totalLeads}
+      - Total Bookings (hires): ${totalBookings}
+      - Total Business Revenue: NGN ${totalEarnings}
+      - Booking Status Breakdown: Pending: ${bookingStatusCounts.pending}, Confirmed: ${bookingStatusCounts.confirmed}, Completed: ${bookingStatusCounts.completed}, Cancelled: ${bookingStatusCounts.cancelled}
+
+      Based on these numbers, generate short, highly actionable, bulleted professional approach suggestions (3-4 points max) to help them increase conversions, lower cancellation rates (if any are high), and scale their revenue. Make your tone encouraging and professional. Keep each point clear and practical. No formatting wrappers except clean bullets.`;
+
+      let suggestions = "• Focus on prompt follow-ups to increase lead conversion rate.\n• Build clear communication with clients during the pending stage to solidify confirmed bookings.\n• Encourage completed clients to leave positive reviews to boost marketplace visibility.";
+      try {
+        const aiResponse = await generateAIResponse(prompt);
+        if (aiResponse) suggestions = aiResponse;
+      } catch (aiErr) {
+        console.error('Error generating vendor AI suggestions:', aiErr);
+      }
+
+      res.json({ suggestions });
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get("/api/vendor/:vendorId/leads", async (req, res) => {
@@ -4479,19 +4687,24 @@ export async function registerRoutes(
   // Create a booking (user books vendor service)
   app.post("/api/bookings", async (req, res, next) => {
     try {
-      const { serviceId, userId, vendorId, totalAmount, description, scheduledDate, milestones } = req.body;
+      const { serviceId, userId, vendorId, totalAmount, description, scheduledDate, milestones, chatId } = req.body;
       
       if (!serviceId || !userId || !vendorId || totalAmount === undefined) {
         return res.status(400).json({ error: 'Missing required fields: serviceId, userId, vendorId, totalAmount' });
       }
 
-      // Automatically fetch the user's most recent SabiGuard chat to generate a Pre-Case File summary
+      // Automatically fetch the user's SabiGuard chat to generate a Pre-Case File summary
       let preCaseSummary = "";
       try {
-        const chats = await storage.getSabiGuardChats(userId);
-        if (chats && chats.length > 0) {
-          const latestChat = chats[0];
-          const messages = await storage.getSabiGuardMessages(latestChat.id);
+        let targetChatId = chatId;
+        if (!targetChatId) {
+          const chats = await storage.getSabiGuardChats(userId);
+          if (chats && chats.length > 0) {
+            targetChatId = chats[0].id;
+          }
+        }
+        if (targetChatId) {
+          const messages = await storage.getSabiGuardMessages(targetChatId);
           if (messages && messages.length > 0) {
             preCaseSummary = await summarizeCaseForProfessional(messages, userId);
           }
@@ -4811,8 +5024,8 @@ export async function registerRoutes(
       const senderId = req.userId;
       const isAdmin = req.isAdmin;
       
-      if (!message) {
-        return res.status(400).json({ error: 'message is required' });
+      if (!message && (!attachments || attachments.length === 0)) {
+        return res.status(400).json({ error: 'message or attachments is required' });
       }
 
       // Check if an admin has joined a dispute for this booking
@@ -5039,9 +5252,11 @@ export async function registerRoutes(
       }
   
       // Check and deduct credits
+      const costSetting = await storage.getAdminSetting('credit_cost_marketplace_feature');
+      const sabiguardCost = costSetting?.value ? Number(costSetting.value) : 5;
+
       const userCredits = await storage.getUserCredits(userId);
-      const sabiguardCost = 5; // 5 credits per query
-      const available = userCredits?.totalCredits || 0;
+      const available = (userCredits?.totalCredits || 0) - (userCredits?.usedCredits || 0);
   
       if (available < sabiguardCost) {
         return res.status(400).json({ 
@@ -5140,9 +5355,11 @@ export async function registerRoutes(
       }
   
       // Check and deduct credits
+      const costSetting = await storage.getAdminSetting('credit_cost_event_creation');
+      const sabimoveCost = costSetting?.value ? Number(costSetting.value) : 3;
+
       const userCredits = await storage.getUserCredits(userId);
-      const sabimoveCost = 3; // 3 credits per route
-      const available = userCredits?.totalCredits || 0;
+      const available = (userCredits?.totalCredits || 0) - (userCredits?.usedCredits || 0);
   
       if (available < sabimoveCost) {
         return res.status(400).json({ 
@@ -5204,9 +5421,11 @@ export async function registerRoutes(
       const { userId, skills, location, jobType } = req.body;
   
       // Check and deduct credits
+      const costSetting = await storage.getAdminSetting('credit_cost_job_application');
+      const sabiworkCost = costSetting?.value ? Number(costSetting.value) : 2;
+
       const userCredits = await storage.getUserCredits(userId);
-      const sabiworkCost = 2; // 2 credits per recommendation request
-      const available = userCredits?.totalCredits || 0;
+      const available = (userCredits?.totalCredits || 0) - (userCredits?.usedCredits || 0);
   
       if (available < sabiworkCost) {
         return res.status(400).json({ 

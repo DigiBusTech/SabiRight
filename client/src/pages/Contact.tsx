@@ -21,7 +21,7 @@ export default function Contact() {
   const contactContent = getSetting('contact_content');
   
   const email = getSetting('contact_email') || "support@sabiright.com";
-  const phone = getSetting('footer_phone') || "+234 (0) 123 456 789";
+  const phone = getSetting('footer_phone') || "+234 7026619186";
   const address = getSetting('footer_address') || "Lagos, Nigeria";
 
   return (
@@ -43,8 +43,10 @@ export default function Contact() {
             <header className="bg-white text-center pb-20">
               <div className="max-w-7xl mx-auto px-6">
                 <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.8, ease: "easeOut" }}
                 >
                   <h1 className="text-5xl lg:text-7xl font-black mb-6">Get in <span className="text-primary">Touch</span></h1>
                   <p className="text-xl text-slate-600 max-w-2xl mx-auto">Have questions or need support? Our team is here to help you navigate your civic journey.</p>

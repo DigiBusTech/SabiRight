@@ -151,7 +151,20 @@ export default function AppLayout({ children }: AppLayoutProps) {
               {location === '/app' ? 'Dashboard' : location.split('/').pop()?.replace('-', ' ') || 'Dashboard'}
             </h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              className="text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl h-9 w-9"
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? (
+                <Sun className="h-5 w-5 text-yellow-500" />
+              ) : (
+                <Moon className="h-5 w-5 text-slate-700" />
+              )}
+            </Button>
             <NotificationBell />
           </div>
         </header>

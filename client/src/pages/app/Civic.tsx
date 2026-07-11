@@ -5,7 +5,8 @@ import { ScrollArea } from "../../components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import { 
   Send, Sparkles, User, ShieldCheck, Mic, AlertCircle, Plus, 
-  MessageSquare, History, Trash2, Download, Store, MapPin
+  MessageSquare, History, Trash2, Download, Store, MapPin,
+  Volume2, VolumeX
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../context/AuthContext";
@@ -39,6 +40,47 @@ interface ChatSession {
   updatedAt: string;
 }
 
+function LoadingMessage() {
+  const messages = [
+    "Securely initializing citizen portal...",
+    "Consulting digital civic guidelines...",
+    "Aligning with constitutional rights...",
+    "Reviewing local policies and traditional laws...",
+    "Formulating your SabiRight response..."
+  ];
+  
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setIndex((prev) => (prev + 1) % messages.length);
+    }, 1500);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <Avatar className="h-8 w-8 bg-primary text-white shrink-0 animate-pulse shadow-sm">
+        <ShieldCheck className="h-4 w-4" />
+      </Avatar>
+      <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl rounded-tl-none flex items-center gap-3 max-w-[85%] shadow-sm">
+        {/* Pulsing shield glow indicator */}
+        <div className="relative flex items-center justify-center h-5 w-5 shrink-0">
+          <div className="absolute inset-0 rounded-full bg-primary/20 animate-ping" />
+          <ShieldCheck className="h-4 w-4 text-primary animate-pulse" />
+        </div>
+        
+        {/* Elegant cross-fading, sliding text */}
+        <div className="h-5 overflow-hidden flex items-center">
+          <p key={index} className="text-xs font-semibold text-slate-600 animate-in fade-in slide-in-from-bottom-1 duration-500">
+            {messages[index]}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CivicGuard() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
@@ -52,6 +94,53 @@ export default function CivicGuard() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [, setLocation] = useLocation();
+  const [preferredLanguage, setPreferredLanguage] = useState("English");
+  
+  const [isAutoSpeak, setIsAutoSpeak] = useState(false);
+  const [currentlySpeakingIndex, setCurrentlySpeakingIndex] = useState<number | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Stop reading text when component is unmounted
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const handleSpeak = (text: string, index: number) => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      toast({ title: "NOT SUPPORTED", description: "Text-to-speech not supported on this browser.", variant: "destructive" });
+      return;
+    }
+
+    if (currentlySpeakingIndex === index) {
+      window.speechSynthesis.cancel();
+      setCurrentlySpeakingIndex(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    
+    // Clean markdown and UI trigger labels out of text for clean TTS reading
+    const cleanText = text.replace(/\[SHOW_PROFESSIONALS\]/g, "")
+                          .replace(/[*#_`~]/g, "")
+                          .replace(/[-+•]\s+/g, "") // remove bullet markers for smooth text reading
+                          .trim();
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    
+    utterance.onend = () => {
+      setCurrentlySpeakingIndex(null);
+    };
+    utterance.onerror = () => {
+      setCurrentlySpeakingIndex(null);
+    };
+
+    setCurrentlySpeakingIndex(index);
+    window.speechSynthesis.speak(utterance);
+  };
 
   const { data: storageInfo } = useQuery({
     queryKey: [`storage-${user?.uid}`],
@@ -69,6 +158,29 @@ export default function CivicGuard() {
   const storageFormatted = (storageUsed / 1024).toFixed(1) + ' KB';
   const limitFormatted = (storageLimit / 1024).toFixed(0) + ' KB';
 
+  const { data: publicSettings = {} } = useQuery<any>({
+    queryKey: ['/api/settings/public'],
+    queryFn: async () => {
+      const res = await fetch('/api/settings/public');
+      if (!res.ok) return {};
+      return res.json();
+    }
+  });
+
+  // Get dynamic active languages list
+  const activeLangsList = (() => {
+    const raw = publicSettings['active_languages'];
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return ["English", "Nigerian Pidgin", "Hausa", "Yoruba", "Igbo"];
+  })();
+
   const { data: sessions, isLoading: isLoadingSessions } = useQuery<ChatSession[]>({
     queryKey: ['sabiguard-chats', user?.uid],
     queryFn: async () => {
@@ -80,6 +192,7 @@ export default function CivicGuard() {
   });
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
 
   const { data: chatMessages } = useQuery<Message[]>({
@@ -120,7 +233,8 @@ export default function CivicGuard() {
           totalAmount: 0,
           description: "Referred from SabiGuard AI Assistant.",
           scheduledDate: null,
-          milestones: []
+          milestones: [],
+          chatId: currentChatId
         })
       });
       if (!bookingRes.ok) throw new Error("Failed to contact professional");
@@ -230,21 +344,72 @@ export default function CivicGuard() {
   });
 
   const toggleListening = () => {
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      setIsListening(false);
+      return;
+    }
+
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) {
       toast({ title: "NOT SUPPORTED", description: "Browser speech not supported.", className: "bg-red-600 text-white border-none shadow-2xl rounded-2xl p-6 font-bold" });
       return;
     }
-    const recognition = new SR();
-    recognition.onresult = (e: any) => setInput(e.results[0][0].transcript);
-    recognition.start();
-    setIsListening(true);
-    recognition.onend = () => setIsListening(false);
+    
+      try {
+        const recognition = new SR();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        
+        if (preferredLanguage === "Hausa") {
+          recognition.lang = 'ha-NG';
+        } else if (preferredLanguage === "Yoruba") {
+          recognition.lang = 'yo-NG';
+        } else if (preferredLanguage === "Igbo") {
+          recognition.lang = 'ig-NG';
+        } else if (preferredLanguage === "Nigerian Pidgin") {
+          recognition.lang = 'pcm-NG';
+        } else {
+          recognition.lang = 'en-NG';
+        }
+        
+        recognition.onstart = () => {
+        setIsListening(true);
+      };
+      
+      recognition.onresult = (e: any) => {
+        const transcript = e.results[0][0].transcript;
+        if (transcript) {
+          setInput(prev => prev ? prev + " " + transcript : transcript);
+        }
+      };
+      
+      recognition.onerror = (e: any) => {
+        console.error("Speech recognition error", e);
+        setIsListening(false);
+      };
+      
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error(err);
+      setIsListening(false);
+    }
   };
 
   const handleSend = async () => {
     if (!input.trim()) return;
-    if ((credits?.totalCredits || 0) < 1) {
+    if ((credits?.availableCredits || 0) < 1) {
       toast({ 
         title: "NOT COMPLETED", 
         description: "Insufficient credits. Please upgrade.",
@@ -259,7 +424,7 @@ export default function CivicGuard() {
     setMessages(p => [...p, { role: "user", text: txt }]);
     try {
       const token = await user?.getIdToken();
-      const res = await fetch('/api/ai/civic/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ message: txt, chatId: cid, city: profile?.city || "Lagos", isUrgent }) });
+      const res = await fetch('/api/ai/civic/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ message: txt, chatId: cid, city: profile?.city || "Lagos", isUrgent, language: preferredLanguage }) });
       const d = await res.json();
       if (!res.ok) {
         throw new Error(d.error || "AI service error");
@@ -267,21 +432,32 @@ export default function CivicGuard() {
       setMessages(p => [...p, { role: "ai", text: d.response }]);
       refetchCredits();
       queryClient.invalidateQueries({ queryKey: ['sabiguard-messages', cid] });
+
+      // Automatically speak the response if auto-speak toggle is enabled
+      if (isAutoSpeak) {
+        // Use a short timeout to let state render first and select the correct index (messages.length + 1)
+        setTimeout(() => {
+          handleSpeak(d.response, messages.length + 1);
+        }, 100);
+      }
     } catch (e: any) {
       toast({ title: "ERROR", description: e.message || "AI service unavailable.", variant: "destructive", className: "bg-red-600 text-white border-none shadow-2xl rounded-2xl p-6 font-bold" });
     } finally { setIsTyping(false); }
   };
 
   useEffect(() => { 
-    if (bottomRef.current && messages.length > 0) {
-      bottomRef.current.scrollIntoView({ behavior: 'auto' }); 
+    if (scrollContainerRef.current && messages.length > 0) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
   }, [messages]);
   
   // Separate effect for typing to avoid forced scrolls on every single character
   useEffect(() => { 
-    if (isTyping && bottomRef.current) {
-        bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (isTyping && scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({
+          top: scrollContainerRef.current.scrollHeight,
+          behavior: 'smooth'
+        });
     }
   }, [isTyping]);
 
@@ -326,29 +502,88 @@ export default function CivicGuard() {
 
   return (
     <div className="h-full flex flex-col md:grid md:grid-cols-12 gap-6 overflow-hidden">
-      <div className="hidden md:flex md:col-span-4 lg:col-span-3 flex-col bg-white border rounded-3xl p-5 shadow-sm overflow-hidden"><SidebarContent /></div>
-      <div className={cn("flex flex-col bg-white rounded-3xl border shadow-sm overflow-hidden h-full md:col-span-8 lg:col-span-9 transition-all", isUrgent ? "ring-2 ring-red-500 border-red-500 ring-inset" : "")}>
-        <div className={cn("p-4 border-b flex items-center justify-between transition-colors", isUrgent ? "bg-red-50" : "bg-slate-50/50")}>
+      <div className="hidden md:flex md:col-span-4 lg:col-span-3 flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm overflow-hidden"><SidebarContent /></div>
+      <div className={cn("flex flex-col bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden h-full md:col-span-8 lg:col-span-9 transition-all", isUrgent ? "ring-2 ring-red-500 border-red-500 ring-inset" : "")}>
+        <div className={cn("p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors", isUrgent ? "bg-red-50 dark:bg-red-950/20" : "bg-slate-50/50 dark:bg-slate-900/50")}>
           <div className="flex items-center gap-3">
-            <div className={cn("p-2 rounded-lg transition-colors", isUrgent ? "bg-red-100 text-red-600" : "bg-primary/10 text-primary")}><Sparkles className="h-5 w-5" /></div>
-            <div><h2 className="font-bold text-sm">SabiGuard AI Agent</h2><p className="text-[10px] text-slate-500">{isUrgent ? "🚨 Urgent Assistance Mode" : "Law-based Guidance"}</p></div>
+            <div className={cn("p-2 rounded-lg transition-colors", isUrgent ? "bg-red-100 dark:bg-red-900/30 text-red-600" : "bg-primary/10 text-primary")}><Sparkles className="h-5 w-5" /></div>
+            <div><h2 className="font-bold text-sm text-slate-800 dark:text-slate-100">SabiRight AI Agent</h2><p className="text-[10px] text-slate-500 dark:text-slate-400">{isUrgent ? "🚨 Urgent Assistance Mode" : "Law-based Guidance"}</p></div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setIsUrgent(!isUrgent)} className={cn("text-[11px] h-8 font-bold transition-all px-3", isUrgent ? "bg-red-600 text-white border-red-600 hover:bg-red-700 shadow-md" : "hover:bg-slate-100")}>{isUrgent ? "Disable Urgent" : "Enable Urgent"}</Button>
+            {/* Language Selector Dropdown */}
+            <select
+              value={preferredLanguage}
+              onChange={(e) => setPreferredLanguage(e.target.value)}
+              className="text-[11px] font-bold h-8 border border-slate-200 dark:border-slate-700 rounded-lg px-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none focus:border-primary cursor-pointer transition-all shadow-xs hover:border-slate-300 dark:hover:border-slate-600"
+            >
+              {activeLangsList.includes("English") && <option value="English">English 🇬🇧</option>}
+              {activeLangsList.includes("Nigerian Pidgin") && <option value="Nigerian Pidgin">Pidgin 🇳🇬</option>}
+              {activeLangsList.includes("Hausa") && <option value="Hausa">Hausa 🇳🇬</option>}
+              {activeLangsList.includes("Yoruba") && <option value="Yoruba">Yoruba 🇳🇬</option>}
+              {activeLangsList.includes("Igbo") && <option value="Igbo">Igbo 🇳🇬</option>}
+            </select>
+
+            {/* Auto-Speak (Voice Readout) Toggle button */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                const newVal = !isAutoSpeak;
+                setIsAutoSpeak(newVal);
+                if (!newVal && typeof window !== 'undefined' && window.speechSynthesis) {
+                  window.speechSynthesis.cancel();
+                  setCurrentlySpeakingIndex(null);
+                }
+              }} 
+              className={cn("text-[11px] h-8 font-bold transition-all px-2 sm:px-3 gap-1", isAutoSpeak ? "bg-primary text-white border-primary hover:bg-primary/95 shadow-sm animate-pulse" : "hover:bg-slate-100")}
+            >
+              {isAutoSpeak ? <Volume2 className="h-3.5 w-3.5 shrink-0" /> : <VolumeX className="h-3.5 w-3.5 shrink-0" />}
+              <span className="hidden sm:inline">{isAutoSpeak ? "Voice On" : "Voice Off"}</span>
+            </Button>
+
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setIsUrgent(!isUrgent)} 
+              className={cn("text-[11px] h-8 font-bold transition-all px-2 sm:px-3 flex items-center gap-1", isUrgent ? "bg-red-600 text-white border-red-600 hover:bg-red-700 shadow-md" : "hover:bg-slate-100")}
+            >
+              <AlertCircle className={cn("h-3.5 w-3.5 shrink-0", isUrgent ? "text-white" : "text-red-500")} />
+              <span className="hidden sm:inline">{isUrgent ? "Disable Urgent" : "Enable Urgent"}</span>
+              <span className="sm:hidden">{isUrgent ? "Urgent" : "Normal"}</span>
+            </Button>
             <Sheet open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-              <SheetTrigger asChild><Button variant="outline" size="sm" className="md:hidden flex items-center gap-2 h-8 px-3 border-primary/20 bg-primary/5 text-primary"><History className="h-4 w-4" /><span className="text-[11px] font-bold">History</span></Button></SheetTrigger>
-              <SheetContent side="right" className="w-[310px] p-0 border-none shadow-2xl"><div className="h-full flex flex-col p-5 bg-white"><SidebarContent /></div></SheetContent>
+              <SheetTrigger asChild><Button variant="outline" size="sm" className="md:hidden flex items-center gap-1.5 h-8 px-2 sm:px-3 border-primary/20 dark:border-primary/40 bg-primary/5 dark:bg-primary/10 text-primary"><History className="h-4 w-4 shrink-0" /><span className="text-[11px] font-bold hidden sm:inline">History</span></Button></SheetTrigger>
+              <SheetContent side="right" className="w-[310px] p-0 border-none shadow-2xl"><div className="h-full flex flex-col p-5 bg-white dark:bg-slate-900"><SidebarContent /></div></SheetContent>
             </Sheet>
-            <Button variant="outline" size="sm" onClick={() => { setMessages([]); setCurrentChatId(null); }} className="h-8 w-8 p-0 md:flex hidden hover:bg-slate-100"><Plus className="h-4 w-4" /></Button>
+            <Button variant="outline" size="sm" onClick={() => { setMessages([]); setCurrentChatId(null); }} className="h-8 w-8 p-0 md:flex hidden hover:bg-slate-100 dark:hover:bg-slate-800"><Plus className="h-4 w-4" /></Button>
           </div>
         </div>
-        <ScrollArea className="flex-1 p-4" key={currentChatId || 'new'}>
+        <div className="flex-1 overflow-y-auto p-4" ref={scrollContainerRef} key={currentChatId || 'new'}>
           <div className="space-y-6">
-          {messages.length === 0 && (<div className="text-center text-slate-400 mt-20"><ShieldCheck className="h-10 w-10 mx-auto mb-4 opacity-20" /><p className="text-sm">How can I help you with Nigerian law today?</p></div>)}
+          {messages.length === 0 && (<div className="text-center text-slate-400 dark:text-slate-500 mt-20"><ShieldCheck className="h-10 w-10 mx-auto mb-4 opacity-20" /><p className="text-sm">How can I help you with Nigerian law today?</p></div>)}
           {messages.map((m, i) => (
             <div key={i} className={cn("flex gap-3 max-w-[90%] animate-in fade-in slide-in-from-bottom-2 duration-300", m.role === "user" ? "ml-auto flex-row-reverse" : "")}>
-              <Avatar className={cn("h-8 w-8 shrink-0 shadow-sm", m.role === "ai" ? "bg-primary" : "bg-slate-200")}><AvatarFallback className="text-[10px]">{m.role === "ai" ? "AI" : "U"}</AvatarFallback></Avatar>
-              <div className={cn("p-4 rounded-2xl text-sm shadow-sm prose prose-sm max-w-none transition-colors", m.role === "user" ? (isUrgent ? "bg-red-600 text-white" : "bg-primary text-white") : "bg-slate-50 border rounded-tl-none")}>
+              <Avatar className={cn("h-8 w-8 shrink-0 shadow-sm", m.role === "ai" ? "bg-primary" : "bg-slate-200 dark:bg-slate-800")}><AvatarFallback className="text-[10px]">{m.role === "ai" ? "AI" : "U"}</AvatarFallback></Avatar>
+              <div className={cn("p-4 rounded-2xl text-sm shadow-sm prose prose-sm max-w-none transition-colors relative group", m.role === "user" ? (isUrgent ? "bg-red-600 text-white animate-pulse" : "bg-primary text-white") : "bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl rounded-tl-none text-slate-800 dark:text-slate-100")}>
+                {/* Speaker icon to read this message out loud manually */}
+                {m.role === "ai" && (
+                  <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-primary hover:text-primary-dark rounded-full bg-slate-100/80 hover:bg-slate-200 shadow-sm"
+                      onClick={() => handleSpeak(m.text || m.content || "", i)}
+                      title="Read out response"
+                    >
+                      {currentlySpeakingIndex === i ? (
+                        <VolumeX className="h-4 w-4 text-red-500 animate-pulse" />
+                      ) : (
+                        <Volume2 className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                )}
+
                 <ReactMarkdown>{(m.text || m.content || "").replace("[SHOW_PROFESSIONALS]", "")}</ReactMarkdown>
                 {m.role === "ai" && ((m.text || m.content || "").includes("[SHOW_PROFESSIONALS]")) && suggestedProfessionals && suggestedProfessionals.length > 0 && (
                   <div className="mt-4 border-t pt-4 border-slate-200">
@@ -382,12 +617,12 @@ export default function CivicGuard() {
               </div>
             </div>
           ))}
-          {isTyping && (<div className="flex gap-3"><Avatar className="h-8 w-8 bg-primary text-white shrink-0 animate-pulse shadow-sm"><ShieldCheck className="h-4 w-4" /></Avatar><div className="bg-slate-50 border p-4 rounded-2xl rounded-tl-none flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span><span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-75"></span><span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce delay-150"></span></div></div>)}
+          {isTyping && <LoadingMessage />}
           <div ref={bottomRef} />
-        </div></ScrollArea>
-        <div className="p-4 border-t bg-white">
+        </div></div>
+        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex gap-3">
-            <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder={isUrgent ? "Describe emergency..." : "Ask about your rights..."} className={cn("flex-1 rounded-xl h-12 bg-slate-50 border-slate-100 transition-colors focus-visible:ring-primary", isUrgent ? "bg-red-50/50 border-red-100" : "")} />
+            <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder={isUrgent ? "Describe emergency..." : "Ask about your rights..."} className={cn("flex-1 rounded-xl h-12 bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-900 dark:text-slate-100 transition-colors focus-visible:ring-primary", isUrgent ? "bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30" : "")} />
             <Button type="button" size="icon" variant="outline" onClick={toggleListening} className={cn("h-12 w-12 rounded-xl transition-all", isListening ? "bg-red-500 text-white border-red-500 shadow-lg shadow-red-200" : "text-slate-400")}><Mic className="h-5 w-5" /></Button>
             <Button type="submit" id="send-message-btn" size="icon" className={cn("h-12 w-12 rounded-xl shadow-lg transition-all", isUrgent ? "bg-red-600 hover:bg-red-700" : "bg-primary hover:bg-primary/90")}><Send className="h-5 w-5" /></Button></form></div>
       </div>

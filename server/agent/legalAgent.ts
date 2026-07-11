@@ -6,42 +6,45 @@ import path from 'path';
 /**
  * Initializes the legal agent with the appropriate API key and MCP tools.
  */
-export async function getLegalAgent() {
+export async function getLegalAgent(targetLanguage: string = "English") {
   const providerSetting = await storage.getAdminSetting('ai_provider');
   const provider = providerSetting?.value || 'google';
   
-  console.error(`[LegalAgent] Using AI provider: ${provider}`);
+  console.error(`[LegalAgent] System active provider is set to: ${provider}`);
 
   let apiKey: string | undefined;
   let modelName = 'gemini-2.0-flash';
 
-  if (provider === 'google' || provider === 'gemini') {
-    const apiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
-    apiKey = apiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
-  } else if (provider === 'groq') {
-    const apiKeySetting = await storage.getAdminSetting('groq_api_key');
-    apiKey = apiKeySetting?.value || process.env.GROQ_API_KEY;
-    modelName = 'llama3-70b-8192'; // Example Groq model
-  } else if (provider === 'openai') {
-    const apiKeySetting = await storage.getAdminSetting('openai_api_key');
-    apiKey = apiKeySetting?.value || process.env.OPENAI_API_KEY;
-    modelName = 'gpt-4o';
-  } else if (provider === 'anthropic') {
-    const apiKeySetting = await storage.getAdminSetting('anthropic_api_key');
-    apiKey = apiKeySetting?.value || process.env.ANTHROPIC_API_KEY;
-    modelName = 'claude-3-5-sonnet-20240620';
+  // IMPORTANT: The Google ADK framework and its Gemini connection wrapper (imported from '@google/adk')
+  // are built exclusively for Google Gemini models and use Google's APIs. Passing non-Gemini keys (like Groq)
+  // or non-Gemini model names to the Gemini class constructor will fail.
+  // Therefore, the Civic Chat/Legal Agent must always run on a Google Gemini model.
+  const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
+  apiKey = geminiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+
+  if (apiKey) {
+    console.error(`[LegalAgent] Successfully loaded Google Gemini API key. Routing ADK to gemini-2.0-flash.`);
+  } else {
+    console.error(`[LegalAgent] Google Gemini API key not found. Trying active provider (${provider}) credentials as fallback...`);
+    if (provider === 'google' || provider === 'gemini') {
+      // already tried, but just in case
+    } else if (provider === 'groq') {
+      const apiKeySetting = await storage.getAdminSetting('groq_api_key');
+      apiKey = apiKeySetting?.value || process.env.GROQ_API_KEY;
+      modelName = 'llama3-70b-8192';
+    } else if (provider === 'openai') {
+      const apiKeySetting = await storage.getAdminSetting('openai_api_key');
+      apiKey = apiKeySetting?.value || process.env.OPENAI_API_KEY;
+      modelName = 'gpt-4o';
+    } else if (provider === 'anthropic') {
+      const apiKeySetting = await storage.getAdminSetting('anthropic_api_key');
+      apiKey = apiKeySetting?.value || process.env.ANTHROPIC_API_KEY;
+      modelName = 'claude-3-5-sonnet-20240620';
+    }
   }
 
   if (!apiKey) {
-    console.error(`[LegalAgent] API key for ${provider} not configured. Falling back to Gemini if possible.`);
-    // Fallback logic
-    const fallbackKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
-    if (fallbackKey) {
-        apiKey = fallbackKey;
-        modelName = 'gemini-1.5-flash';
-    } else {
-        throw new Error(`API key for ${provider} not configured. Please check admin settings.`);
-    }
+    throw new Error(`Google Gemini API key is required for the SabiRight ADK Legal Agent. Please configure it in the Admin Dashboard.`);
   }
 
   const model = new Gemini({
@@ -53,12 +56,7 @@ export async function getLegalAgent() {
   const mcpServerPath = path.join(process.cwd(), 'server', 'agent', 'legalMcpServer.ts');
   const tools = await getMcpTools(mcpServerPath);
 
-  return new LlmAgent({
-    name: 'SabiRight_First_Aid_Kit',
-    model,
-    description: 'Urgent Nigerian Legal First Aid responder for civic conflicts and immediate rights verification.',
-    tools: tools, // Now using tools provided via MCP
-    instruction: `You are the "SabiRight AI Agent", a general civic and legal responder for Nigerians. Your mission is to provide INSTANT, actionable, and verified civic guidance.
+  let systemInstruction = `You are the "SabiRight AI Agent", a general civic and legal responder for Nigerians. Your mission is to provide INSTANT, actionable, and verified civic guidance.
 
 STRICT OPERATING RULES:
 1. PERSONALIZED GREETING: Always start your very first response with "Hello! I am your SabiRight AI Agent. How can I help you with your civic enquiry today?". If the user provides their city or name in the context, mention it (e.g., "Hello! I am your SabiRight AI Agent. How can I help you with your civic enquiry in Lagos today?").
@@ -68,7 +66,18 @@ STRICT OPERATING RULES:
 5. NO HALLUCINATIONS: You MUST NOT answer based on internal training data. If you don't find it via the tools, you don't know it.
 6. PROFESSIONAL REFERRAL LOGIC: Do NOT immediately suggest a professional unless absolutely necessary. If a situation requires a lawyer, real estate agent, accountant, etc., you must ASK the user first: "Would you like me to connect you with a verified professional in your area?"
 7. TRIGGERING CARDS: IF AND ONLY IF the user explicitly confirms they want a professional (e.g., "Yes, I need a lawyer"), you must reply with a concluding sentence containing the exact phrase "[SHOW_PROFESSIONALS]". This exact phrase is required to show the cards in the UI. Example: "Here are some verified professionals from our directory. [SHOW_PROFESSIONALS]"
-8. URGENT MODE: If the user has enabled "Urgent Mode", you MUST end EVERY single response with the question: "Would you like me to connect you with a verified professional in your area?"`,
+8. URGENT MODE: If the user has enabled "Urgent Mode", you MUST end EVERY single response with the question: "Would you like me to connect you with a verified professional in your area?"`;
+
+  if (targetLanguage && targetLanguage.toLowerCase() !== 'english') {
+    systemInstruction += `\n\n9. MULTILINGUAL OUT: You must conduct the entire conversation and output all responses strictly in ${targetLanguage}. Maintain complete legal and factual accuracy, but use the natural phrasing, idioms, and tone appropriate for that language so an everyday youth can easily understand it. (e.g., if target language is Nigerian Pidgin, write entirely in Pidgin). If you need to translate greetings or specific constitutional rights, do so in natural phrasing of ${targetLanguage}.`;
+  }
+
+  return new LlmAgent({
+    name: 'SabiRight_First_Aid_Kit',
+    model,
+    description: 'Urgent Nigerian Legal First Aid responder for civic conflicts and immediate rights verification.',
+    tools: tools, // Now using tools provided via MCP
+    instruction: systemInstruction,
   });
 }
 

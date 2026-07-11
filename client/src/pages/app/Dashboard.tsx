@@ -160,7 +160,7 @@ export default function Dashboard() {
   });
 
   const handleRefreshTraffic = async () => {
-    if (!user || !trafficCard) return;
+    if (!user) return;
 
     setIsRefreshing(true);
     try {
@@ -173,9 +173,9 @@ export default function Dashboard() {
         },
         body: JSON.stringify({
           city: profile?.city || selectedCity || "Lagos",
-          location: trafficCard.location || (selectedCity ? `${selectedCity} Route` : "Major Route"),
-          status: trafficCard.status || "normal",
-          description: trafficCard.description || "Updating traffic info..."
+          location: trafficCard?.location || (selectedCity ? `${selectedCity} Route` : "Major Route"),
+          status: trafficCard?.status || "normal",
+          description: trafficCard?.description || "Updating traffic info..."
         })
       });
 
@@ -193,7 +193,7 @@ export default function Dashboard() {
     }
   };
 
-  const availableCredits = credits?.totalCredits || 0;
+  const availableCredits = Math.max(0, (credits?.totalCredits || 0) - (credits?.usedCredits || 0));
 
   return (
     <motion.div 
@@ -207,16 +207,16 @@ export default function Dashboard() {
       {/* Email Verification Warning Banner */}
       {profile?.emailVerificationStatus !== 'verified' && (
         <motion.div variants={itemVariants} whileHover={{ scale: 1.005 }}>
-          <Card className="bg-amber-50 border-amber-200 shadow-sm overflow-hidden">
+          <Card className="bg-amber-50/80 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/30 text-amber-900 dark:text-amber-200 shadow-sm overflow-hidden">
             <CardContent className="p-4">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  <div className="h-10 w-10 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center shrink-0">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-amber-900">Email Verification Required</h3>
-                    <p className="text-xs text-amber-700">Verify your email to unlock all features, including becoming a vendor and full marketplace access.</p>
+                    <h3 className="text-sm font-bold text-amber-900 dark:text-amber-200">Email Verification Required</h3>
+                    <p className="text-xs text-amber-700 dark:text-amber-300">Verify your email to unlock all features, including becoming a vendor and full marketplace access.</p>
                   </div>
                 </div>
                 <Link href="/app/verify-email">
@@ -242,14 +242,14 @@ export default function Dashboard() {
 
       {/* City Selection Card */}
       <motion.div variants={itemVariants} id="location-card">
-        <Card className="border-2 border-slate-200 shadow-sm">
+        <Card className="border-2 border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-slate-700">
+            <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-slate-700 dark:text-slate-200">
               <MapPin className="h-4 w-4" /> Your Location
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-slate-600">Select your city to see local events, jobs, and services near you.</p>
+            <p className="text-sm text-slate-600 dark:text-slate-400">Select your city to see local traffic alerts, verified professionals, and services near you.</p>
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
@@ -288,7 +288,7 @@ export default function Dashboard() {
 
       {/* Sabi Civic Guard (after Your Location) */}
       <motion.div variants={itemVariants} id="civic-inline">
-        <div className="rounded-2xl border bg-white overflow-hidden min-h-[400px]">
+        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden min-h-[400px]">
           <div className="max-h-[600px] overflow-auto">
              <CivicGuard />
           </div>
@@ -305,24 +305,24 @@ export default function Dashboard() {
           <motion.div variants={itemVariants} id="traffic-card">
             <Card className={`shadow-sm border-2 ${
               trafficCard?.status === 'cleared'
-                ? 'bg-green-50/50 border-green-200'
+                ? 'bg-green-50/50 dark:bg-green-950/20 border-green-200 dark:border-green-900/30'
                 : trafficCard?.status === 'active'
-                ? 'bg-red-50/50 border-red-200'
-                : 'bg-yellow-50/50 border-yellow-200'
+                ? 'bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-900/30'
+                : 'bg-yellow-50/50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-900/30'
             }`}>
               <CardHeader className="pb-2">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <CardTitle className={`text-sm font-bold uppercase tracking-wider flex items-center gap-2 ${
                     trafficCard?.status === 'cleared'
-                      ? 'text-green-600'
+                      ? 'text-green-600 dark:text-green-400'
                       : trafficCard?.status === 'active'
-                      ? 'text-red-600'
-                      : 'text-yellow-600'
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-yellow-600 dark:text-yellow-400'
                   }`}>
                     <AlertTriangle className="h-4 w-4" /> Traffic Alert
                   </CardTitle>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold bg-white px-2 py-1 rounded-full border">{(profile?.city || selectedCity || "LAGOS").toUpperCase()}</span>
+                    <span className="text-[10px] font-bold bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 px-2 py-1 rounded-full border border-slate-200 dark:border-slate-700">{(profile?.city || selectedCity || "LAGOS").toUpperCase()}</span>
                     <Badge className={`text-xs ${
                       trafficCard?.status === 'cleared'
                         ? 'bg-green-600 text-white'
@@ -338,15 +338,15 @@ export default function Dashboard() {
               <CardContent className="space-y-3">
                 {trafficCard ? (
                   <div>
-                    <div className="text-xl md:text-2xl font-bold mb-1">{trafficCard.location}</div>
-                    <p className="text-xs md:text-sm text-slate-600">
+                    <div className="text-xl md:text-2xl font-bold mb-1 text-slate-800 dark:text-slate-100">{trafficCard.location}</div>
+                    <p className="text-xs md:text-sm text-slate-600 dark:text-slate-300">
                       {trafficCard.description}
                     </p>
                   </div>
                 ) : (
                   <div className="py-4 text-center">
-                    <p className="text-sm text-slate-500 italic">No recent traffic alerts for your area.</p>
-                    <p className="text-[10px] text-slate-400 mt-1">Select your city above to get localized updates.</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 italic">No recent traffic alerts for your area.</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Select your city above to get localized updates.</p>
                   </div>
                 )}
                 
@@ -378,12 +378,12 @@ export default function Dashboard() {
             {profile?.isAdmin && (
               <motion.div variants={itemVariants} whileHover={{ scale: 1.02 }}>
                 <Link href="/admin">
-                  <Card className="bg-red-50 border-red-100 hover:border-red-300 transition-colors cursor-pointer h-full">
+                  <Card className="bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30 hover:border-red-300 dark:hover:border-red-800 transition-colors cursor-pointer h-full">
                     <CardContent className="p-4 flex items-start gap-3 md:flex-col md:items-start md:gap-0">
-                      <ShieldCheck className="h-6 w-6 text-red-600 mb-0 md:mb-2 flex-shrink-0" />
+                      <ShieldCheck className="h-6 w-6 text-red-600 dark:text-red-400 mb-0 md:mb-2 shrink-0" />
                       <div>
-                        <h4 className="font-bold text-sm mb-1">Admin Dashboard</h4>
-                        <p className="text-xs text-slate-600">Manage platform and users</p>
+                        <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-1">Admin Dashboard</h4>
+                        <p className="text-xs text-slate-600 dark:text-slate-300">Manage platform and users</p>
                       </div>
                     </CardContent>
                   </Card>
@@ -401,12 +401,12 @@ export default function Dashboard() {
             
             <motion.div variants={itemVariants} whileHover={{ scale: 1.02 }}>
               <Link href="/app/forum">
-                <Card className="bg-pink-50 border-pink-100 hover:border-pink-300 transition-colors cursor-pointer h-full">
+                <Card className="bg-pink-50/50 dark:bg-pink-950/20 border-pink-100 dark:border-pink-900/30 hover:border-pink-300 dark:hover:border-pink-800 transition-colors cursor-pointer h-full">
                   <CardContent className="p-4 flex items-start gap-3 md:flex-col md:items-start md:gap-0">
-                    <TrendingUp className="h-6 w-6 text-pink-600 mb-0 md:mb-2 flex-shrink-0" />
+                    <TrendingUp className="h-6 w-6 text-pink-600 dark:text-pink-400 mb-0 md:mb-2 shrink-0" />
                     <div>
-                      <h4 className="font-bold text-sm mb-1">Community</h4>
-                      <p className="text-xs text-slate-600">Join discussions & forums</p>
+                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm mb-1">Community</h4>
+                      <p className="text-xs text-slate-600 dark:text-slate-300">Join discussions & forums</p>
                     </div>
                   </CardContent>
                 </Card>
@@ -422,19 +422,19 @@ export default function Dashboard() {
 
           {/* Credits Card */}
           <motion.div variants={itemVariants} id="credits-card">
-            <Card className="bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200">
+            <Card className="bg-linear-to-br from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 border-amber-200 dark:border-amber-900/30 bg-white dark:bg-slate-900">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="h-10 w-10 bg-amber-100 rounded-xl flex items-center justify-center">
-                    <CreditCard className="h-5 w-5 text-amber-600" />
+                  <div className="h-10 w-10 bg-amber-100 dark:bg-amber-900/30 rounded-xl flex items-center justify-center">
+                    <CreditCard className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                   </div>
                   <div>
-                    <p className="text-xs text-slate-600">Available Credits</p>
-                    <p className="text-2xl font-bold text-amber-600">{availableCredits}</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400">Available Credits</p>
+                    <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{availableCredits}</p>
                   </div>
                 </div>
                 <Link href="/app/credits">
-                  <Button variant="outline" size="sm" className="w-full border-amber-300 text-amber-700 hover:bg-amber-100">
+                  <Button variant="outline" size="sm" className="w-full border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-950/50">
                     Get More Credits
                   </Button>
                 </Link>
@@ -474,11 +474,11 @@ export default function Dashboard() {
       {/* Become a Vendor CTA - after Traffic Alert */}
       {!profile?.isVendor && (
         <motion.div variants={itemVariants} whileHover={{ scale: 1.01 }}>
-          <Card className="bg-gradient-to-r from-orange-500 to-amber-500 text-white border-0 shadow-lg overflow-hidden">
+          <Card className="bg-linear-to-r from-orange-500 to-amber-500 text-white border-0 shadow-lg overflow-hidden">
             <CardContent className="p-4 md:p-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-start gap-4">
-                  <div className="h-12 w-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <div className="h-12 w-12 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
                     <Store className="h-6 w-6" />
                   </div>
                   <div>
@@ -499,20 +499,20 @@ export default function Dashboard() {
 
       {/* Refer & Earn Card (moved to bottom) */}
       <motion.div variants={itemVariants} whileHover={{ scale: 1.01 }}>
-        <Card className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white border-0 shadow-lg overflow-hidden">
+        <Card className="bg-linear-to-r from-blue-600 to-indigo-700 text-white border-0 shadow-lg overflow-hidden">
           <CardContent className="p-4 md:p-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex items-start gap-4">
-                <div className="h-12 w-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                <div className="h-12 w-12 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
                   <Gift className="h-6 w-6" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold mb-1">Refer & Earn Credits</h3>
-                  <p className="text-white/80 text-sm">Share your code with friends. They get a signup bonus, and you get 50 credits when they join!</p>
+                  <p className="text-white/80 text-sm">Share your code with friends. They get a signup bonus, and you get 20 credits when they join!</p>
                 </div>
               </div>
               
-              <div className="bg-white/10 p-3 rounded-xl border border-white/20 flex flex-col sm:flex-row items-center justify-between gap-4 w-full md:min-w-[240px]">
+              <div className="bg-white/10 p-3 rounded-xl border border-white/20 flex flex-col sm:flex-row items-center justify-between gap-4 w-full md:min-w-60">
                 {referralCode ? (
                   <>
                     <div className="flex flex-col items-center sm:items-start w-full sm:w-auto">
