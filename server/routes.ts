@@ -1,5 +1,4 @@
  import type { Express, Request, Response, NextFunction } from "express";
-import "../server/types.d.ts";
 import express from "express";
 import admin from "firebase-admin";
 import nodemailer from "nodemailer";
