@@ -14,7 +14,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "jsx": "react-jsx",
-    "types": ["node", "@types/express"],
+    "types": ["node", "express"],
     "paths": {
       "@/*": ["./client/src/*"],
       "@server/*": ["./server/*"]
