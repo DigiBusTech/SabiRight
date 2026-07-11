@@ -75,7 +75,8 @@ In the **Configure Project** screen, make sure your settings match the following
 * **Build Command**: `npm run build && npx vite build`  
   *(This ensures that first, the TypeScript backend compiles, and second, Vite builds your React client assets directly into `dist/public`).*
 * **Output Directory**: `dist`
-* **Install Command**: `npm install` (or `pnpm install` / `yarn install`)
+* **Install Command**: `pnpm install --no-frozen-lockfile`  
+  *(Crucial for SabiRight as we use pnpm. Bypasses the frozen-lockfile check to avoid deployment failures caused by an outdated lockfile tree).*
 
 ### Step 5: Configure Environment Variables
 Expand the **Environment Variables** accordion and add the following required properties:
@@ -118,3 +119,11 @@ Once your deployment is complete, verify that Firestore was initialized successf
 * **Vite static files not showing up (404 errors)**
   * **Cause**: Express server started before Vite compiled its build into `dist/public`.
   * **Solution**: Make sure the build command is set to `npm run build && npx vite build` (or similar sequence to build both elements), and verify your Vercel deployment includes `dist/public` folder files.
+
+* **Error: `ERR_PNPM_OUTDATED_LOCKFILE` during Vercel's installation phase**
+  * **Cause**: By default, Vercel runs pnpm with `--frozen-lockfile` enabled in CI/CD environments. If your `package.json` contains any slight discrepancies from `pnpm-lock.yaml`, the installation process will crash.
+  * **Solution**: In your Vercel Dashboard, go to your Project **Settings** > **General** > **Build & Development Settings**, turn ON the toggle to override the **Install Command**, and enter:
+    ```bash
+    pnpm install --no-frozen-lockfile
+    ```
+    This instructs Vercel to dynamically resolve and install packages without erroring on lockfile discrepancies.
