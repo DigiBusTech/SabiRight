@@ -1674,7 +1674,7 @@ export async function registerRoutes(
       const { FIREBASE_APP_ID } = await import('./firestoreStorage.js');
       const admin = await import('firebase-admin');
       
-      await admin.default.firestore()
+      await admin.firestore()
         .collection('artifacts')
         .doc(FIREBASE_APP_ID)
         .collection('profiles')

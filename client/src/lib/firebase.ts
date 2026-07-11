@@ -21,5 +21,5 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// App ID constant from original code
-export const FIREBASE_APP_ID = 'legal-13d13';
+// App ID constant from original code with dynamic env support for Vercel
+export const FIREBASE_APP_ID = import.meta.env.VITE_FIREBASE_APP_ID || 'legal-13d13';
