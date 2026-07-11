@@ -9,6 +9,7 @@ vite.config.ts.*
 !package-lock.json
 !tsconfig.json
 !firestore_debug.json
+!vercel.json
 
 # Irrelevant folders excluded from web application
 android/

@@ -82,14 +82,21 @@ app.use((req, res, next) => {
     }
   });
 
-  // importantly only setup vite in development and after setting up routes
-  if (process.env.NODE_ENV === "development") {
-    // We would setup vite here if needed for the client
-  } else {
-    // Serve static files in production
-  }
-
   await registerRoutes(server, app);
+
+  // Serve static files in production
+  if (process.env.NODE_ENV === "development") {
+    // Vite dev server setup
+  } else {
+    const publicDir = path.resolve(process.cwd(), "dist/public");
+    app.use(express.static(publicDir));
+    app.get("*", (req, res) => {
+      if (req.path.startsWith("/api")) {
+        return res.status(404).json({ error: "API endpoint not found" });
+      }
+      res.sendFile(path.join(publicDir, "index.html"));
+    });
+  }
 
   const PORT = Number(process.env.PORT) || 3000;
   server.listen(PORT, "0.0.0.0", () => {
