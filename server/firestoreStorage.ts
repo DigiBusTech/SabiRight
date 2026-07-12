@@ -11,18 +11,29 @@ import type {
 
 export const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID || "legal-13d13";
 
-// Ensure Firebase is initialized
+// Ensure Firebase is initialized with robust fallbacks
 const serviceAccountPath = path.join(process.cwd(), 'legal-13d13-firebase-adminsdk-fbsvc-e736182a52.json');
 if (admin.apps.length === 0) {
+  let initialized = false;
+
+  // Stage 1: Local file
   if (fs.existsSync(serviceAccountPath)) {
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      projectId: 'legal-13d13'
-    });
-    admin.firestore().settings({ ignoreUndefinedProperties: true });
-    console.log("[firestoreStorage] Firebase Admin initialized with service account.");
-  } else if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    try {
+      const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+        projectId: 'legal-13d13'
+      });
+      admin.firestore().settings({ ignoreUndefinedProperties: true });
+      console.log("[firestoreStorage] Firebase Admin initialized with service account.");
+      initialized = true;
+    } catch (err) {
+      console.error("[firestoreStorage] Failed to initialize via local service account JSON:", err);
+    }
+  }
+
+  // Stage 2: JSON string from environment (with fallback safety if JSON is malformed)
+  if (!initialized && process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     try {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
       if (serviceAccount.private_key) {
@@ -33,11 +44,15 @@ if (admin.apps.length === 0) {
         projectId: serviceAccount.project_id || 'legal-13d13'
       });
       admin.firestore().settings({ ignoreUndefinedProperties: true });
-      console.log("[firestoreStorage] Firebase Admin initialized via env var.");
+      console.log("[firestoreStorage] Firebase Admin initialized via env var JSON.");
+      initialized = true;
     } catch (err) {
-      console.error("[firestoreStorage] Failed to initialize via env var:", err);
+      console.error("[firestoreStorage] Failed to initialize via FIREBASE_SERVICE_ACCOUNT_JSON:", err);
     }
-  } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+  }
+
+  // Stage 3: Individual credentials
+  if (!initialized && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
     try {
       let privateKey = process.env.FIREBASE_PRIVATE_KEY;
       if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
@@ -53,10 +68,13 @@ if (admin.apps.length === 0) {
       });
       admin.firestore().settings({ ignoreUndefinedProperties: true });
       console.log("[firestoreStorage] Firebase Admin initialized via individual credentials.");
+      initialized = true;
     } catch (err) {
       console.error("[firestoreStorage] Failed to initialize via individual credentials:", err);
     }
-  } else {
+  }
+
+  if (!initialized) {
     console.warn("[firestoreStorage] Firebase Admin not initialized. Features may fail.");
   }
 }
