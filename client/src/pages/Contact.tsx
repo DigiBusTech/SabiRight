@@ -25,7 +25,7 @@ export default function Contact() {
   const address = getSetting('footer_address') || "Lagos, Nigeria";
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100">
       <Navbar />
 
       <main className="pt-36 pb-24">
@@ -34,13 +34,13 @@ export default function Contact() {
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="prose prose-slate lg:prose-xl max-w-none bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-slate-100"
+              className="prose prose-slate dark:prose-invert lg:prose-xl max-w-none bg-white dark:bg-slate-900 p-8 md:p-12 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800"
               dangerouslySetInnerHTML={{ __html: contactContent }}
             />
           </div>
         ) : (
           <>
-            <header className="bg-white text-center pb-20">
+            <header className="bg-white dark:bg-slate-950 text-center pb-20">
               <div className="max-w-7xl mx-auto px-6">
                 <motion.div
                   initial={{ opacity: 0, y: 30 }}
@@ -48,39 +48,40 @@ export default function Contact() {
                   viewport={{ once: true }}
                   transition={{ duration: 0.8, ease: "easeOut" }}
                 >
-                  <h1 className="text-5xl lg:text-7xl font-black mb-6">Get in <span className="text-primary">Touch</span></h1>
-                  <p className="text-xl text-slate-600 max-w-2xl mx-auto">Have questions or need support? Our team is here to help you navigate your civic journey.</p>
+                  <h1 className="text-5xl lg:text-7xl font-black mb-6 text-slate-900 dark:text-white">Get in <span className="text-primary">Touch</span></h1>
+                  <p className="text-xl text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">Have questions or need support? Our team is here to help you navigate your civic journey.</p>
                 </motion.div>
               </div>
             </header>
 
-            <section className="py-24">
+            <section className="py-24 bg-slate-50 dark:bg-slate-950">
               <div className="max-w-7xl mx-auto px-6">
                 <div className="grid lg:grid-cols-2 gap-16">
                   <motion.div
                     initial={{ opacity: 0, x: -50 }}
                     whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true }}
+                    className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 md:p-8 shadow-sm"
                   >
-                    <h2 className="text-3xl font-black mb-8">Send us a Message</h2>
+                    <h2 className="text-3xl font-black mb-8 text-slate-900 dark:text-white">Send us a Message</h2>
                     <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
                       <div className="grid sm:grid-cols-2 gap-6">
                         <div className="space-y-2">
-                          <label className="text-sm font-bold text-slate-700 ml-1">Full Name</label>
-                          <Input placeholder="Your Name" className="h-14 rounded-2xl bg-white border-slate-200" />
+                          <label className="text-sm font-bold text-slate-700 dark:text-slate-300 ml-1">Full Name</label>
+                          <Input placeholder="Your Name" className="h-14 rounded-2xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100" />
                         </div>
                         <div className="space-y-2">
-                          <label className="text-sm font-bold text-slate-700 ml-1">Email Address</label>
-                          <Input type="email" placeholder="email@example.com" className="h-14 rounded-2xl bg-white border-slate-200" />
+                          <label className="text-sm font-bold text-slate-700 dark:text-slate-300 ml-1">Email Address</label>
+                          <Input type="email" placeholder="email@example.com" className="h-14 rounded-2xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100" />
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-bold text-slate-700 ml-1">Subject</label>
-                        <Input placeholder="How can we help?" className="h-14 rounded-2xl bg-white border-slate-200" />
+                        <label className="text-sm font-bold text-slate-700 dark:text-slate-300 ml-1">Subject</label>
+                        <Input placeholder="How can we help?" className="h-14 rounded-2xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100" />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-bold text-slate-700 ml-1">Message</label>
-                        <Textarea placeholder="Tell us more about your inquiry..." className="min-h-[150px] rounded-2xl bg-white border-slate-200 p-4" />
+                        <label className="text-sm font-bold text-slate-700 dark:text-slate-300 ml-1">Message</label>
+                        <Textarea placeholder="Tell us more about your inquiry..." className="min-h-[150px] rounded-2xl bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 p-4 text-slate-900 dark:text-slate-100" />
                       </div>
                       <Button className="w-full h-14 rounded-2xl font-bold text-lg shadow-xl shadow-primary/20">
                         Send Message
@@ -94,7 +95,7 @@ export default function Contact() {
                     viewport={{ once: true }}
                     className="space-y-12"
                   >
-                    <h2 className="text-3xl font-black mb-8">Contact Information</h2>
+                    <h2 className="text-3xl font-black mb-8 text-slate-900 dark:text-white">Contact Information</h2>
                     <div className="grid gap-8">
                       {[
                         { icon: Mail, title: "Email Support", value: email, desc: "Response within 24 hours" },
@@ -107,9 +108,9 @@ export default function Contact() {
                             <item.icon className="h-6 w-6" />
                           </div>
                           <div>
-                            <h4 className="text-lg font-bold mb-1">{item.title}</h4>
-                            <p className="text-slate-900 font-medium">{item.value}</p>
-                            <p className="text-sm text-slate-500">{item.desc}</p>
+                            <h4 className="text-lg font-bold mb-1 text-slate-900 dark:text-white">{item.title}</h4>
+                            <p className="text-slate-900 dark:text-slate-100 font-medium">{item.value}</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">{item.desc}</p>
                           </div>
                         </div>
                       ))}

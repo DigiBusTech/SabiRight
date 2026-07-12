@@ -583,7 +583,7 @@ export default function CivicGuard() {
           {messages.map((m, i) => (
             <div key={i} className={cn("flex gap-3 max-w-[90%] animate-in fade-in slide-in-from-bottom-2 duration-300", m.role === "user" ? "ml-auto flex-row-reverse" : "")}>
               <Avatar className={cn("h-8 w-8 shrink-0 shadow-sm", m.role === "ai" ? "bg-primary" : "bg-slate-200 dark:bg-slate-800")}><AvatarFallback className="text-[10px]">{m.role === "ai" ? "AI" : "U"}</AvatarFallback></Avatar>
-              <div className={cn("p-4 rounded-2xl text-sm shadow-sm prose prose-sm max-w-none transition-colors relative group", m.role === "user" ? (isUrgent ? "bg-red-600 text-white animate-pulse" : "bg-primary text-white") : "bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl rounded-tl-none text-slate-800 dark:text-slate-100")}>
+              <div className={cn("p-4 rounded-2xl text-sm shadow-sm prose prose-sm dark:prose-invert max-w-none transition-colors relative group", m.role === "user" ? (isUrgent ? "bg-red-600 text-white animate-pulse" : "bg-primary text-white") : "bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-2xl rounded-tl-none text-slate-800 dark:text-slate-100")}>
                 {/* Speaker icon to read this message out loud manually */}
                 {m.role === "ai" && (
                   <div className="absolute top-2 right-2 flex items-center gap-1 z-10">

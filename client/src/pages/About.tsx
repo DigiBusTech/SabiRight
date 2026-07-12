@@ -25,7 +25,7 @@ export default function About() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 overflow-x-hidden">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-900 dark:text-slate-100 overflow-x-hidden">
       <Navbar />
 
       <main className="pt-36 pb-24">
@@ -34,20 +34,20 @@ export default function About() {
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="prose prose-slate lg:prose-xl max-w-none bg-white p-8 md:p-12 rounded-3xl shadow-sm border border-slate-100"
+              className="prose prose-slate dark:prose-invert lg:prose-xl max-w-none bg-white dark:bg-slate-900 p-8 md:p-12 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-800"
               dangerouslySetInnerHTML={{ __html: aboutContent }}
             />
           ) : (
             <>
               <header className="text-center mb-24">
                 <motion.div {...fadeInUp}>
-                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-100 text-primary text-sm font-bold mb-6">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-blue-100 dark:bg-blue-950/20 text-primary dark:text-blue-300 text-sm font-bold mb-6">
                     SabiRight · About Us
                   </div>
-                  <h1 className="text-5xl lg:text-7xl font-black mb-6 tracking-tight">
+                  <h1 className="text-5xl lg:text-7xl font-black mb-6 tracking-tight text-slate-900 dark:text-white">
                     Our Mission to <span className="text-primary">Empower</span> Citizens
                   </h1>
-                  <p className="text-xl text-slate-600 max-w-3xl mx-auto leading-relaxed">
+                  <p className="text-xl text-slate-600 dark:text-slate-300 max-w-3xl mx-auto leading-relaxed">
                     SabiRight is a mobile AI civic tech platform designed to close the dangerous power and information gap between vulnerable citizens and predatory actors.
                   </p>
                 </motion.div>
@@ -61,14 +61,14 @@ export default function About() {
                   viewport={{ once: true }}
                   className="space-y-6"
                 >
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-100 text-orange-700 text-xs font-black uppercase tracking-wider">
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-100 dark:bg-orange-950/20 text-orange-700 dark:text-orange-400 text-xs font-black uppercase tracking-wider">
                     Our Core Alignment
                   </div>
-                  <h2 className="text-3xl lg:text-5xl font-black leading-tight">SDG 10: Reduced Inequalities</h2>
-                  <p className="text-slate-600 text-lg leading-relaxed text-justify">
+                  <h2 className="text-3xl lg:text-5xl font-black leading-tight text-slate-900 dark:text-white">SDG 10: Reduced Inequalities</h2>
+                  <p className="text-slate-600 dark:text-slate-300 text-lg leading-relaxed text-justify">
                     We chose SDG 10 (Reduced Inequalities) because SabiRight is designed to close the dangerous power and information gap between vulnerable citizens and predatory actors. Systemic extortion and harassment thrive when everyday people do not know their rights or cannot afford legal support.
                   </p>
-                  <p className="text-slate-600 text-lg leading-relaxed text-justify">
+                  <p className="text-slate-600 dark:text-slate-300 text-lg leading-relaxed text-justify">
                     By translating complex legal codes into accessible local languages and providing immediate proximity matching with verified professionals, we ensure that safety and justice are not privileges reserved only for the wealthy.
                   </p>
                 </motion.div>
@@ -77,13 +77,13 @@ export default function About() {
                   initial={{ opacity: 0, scale: 0.95 }}
                   whileInView={{ opacity: 1, scale: 1 }}
                   viewport={{ once: true }}
-                  className="bg-slate-900 text-white rounded-[2.5rem] p-8 lg:p-12 relative overflow-hidden shadow-2xl"
+                  className="bg-slate-900 dark:bg-slate-900 rounded-[2.5rem] p-8 lg:p-12 relative overflow-hidden shadow-2xl border border-slate-800"
                 >
                   <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 rounded-full blur-3xl"></div>
                   <h3 className="text-2xl font-black mb-6 text-blue-400">Project Overview</h3>
                   <div className="space-y-4 text-slate-300">
                     <p>
-                      <strong>Project Type:</strong> Mobile AI civic tech platform
+                      <strong className="text-white">Project Type:</strong> Mobile AI civic tech platform
                     </p>
                     <p className="text-sm leading-relaxed text-justify">
                       SabiRight is an AI civic platform that helps everyday people know their rights in clear words so nobody can exploit them. It solves systemic extortion, harassment, and unfair disputes.
@@ -99,13 +99,13 @@ export default function About() {
               </div>
 
               {/* Problem statement Section */}
-              <section className="mb-24 py-16 bg-white border border-slate-100 rounded-3xl p-8 lg:p-12">
+              <section className="mb-24 py-16 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-8 lg:p-12">
                 <div className="max-w-4xl mx-auto space-y-6">
-                  <h2 className="text-3xl font-black text-center text-slate-900 mb-6">The Problem We Are Tackling</h2>
-                  <p className="text-slate-700 text-lg leading-relaxed text-justify">
+                  <h2 className="text-3xl font-black text-center text-slate-900 dark:text-white mb-6">The Problem We Are Tackling</h2>
+                  <p className="text-slate-700 dark:text-slate-300 text-lg leading-relaxed text-justify">
                     Everyday youth and students face constant harassment, profiling, and extortion by corrupt security and immigration officers, often leading to physical abuse if they try to stand up for themselves. When these crises happen on the road, victims have zero resources or immediate access to help.
                   </p>
-                  <p className="text-slate-700 text-lg leading-relaxed text-justify">
+                  <p className="text-slate-700 dark:text-slate-300 text-lg leading-relaxed text-justify">
                     Beyond the highways, citizens face severe exploitation daily, including unfair landlord versus tenant disputes, aggressive tax enforcement officers, and fraudulent loan agents. Heavy legal language also keeps ordinary people from understanding basic laws.
                   </p>
                 </div>
@@ -119,13 +119,13 @@ export default function About() {
                   viewport={{ once: true }}
                   className="space-y-6"
                 >
-                  <h3 className="text-3xl font-black text-slate-900 flex items-center gap-2">
+                  <h3 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                     <Shield className="h-6 w-6 text-primary" /> Moral & Ethical Standards
                   </h3>
-                  <p className="text-slate-600 text-md leading-relaxed text-justify">
+                  <p className="text-slate-600 dark:text-slate-300 text-md leading-relaxed text-justify">
                     SabiRight restores human dignity by giving ordinary people the confidence to stand tall. Knowing your rights keeps your dignity intact, and knowing you can access quick professional backup during a crisis completely removes fear.
                   </p>
-                  <p className="text-slate-600 text-md leading-relaxed text-justify">
+                  <p className="text-slate-600 dark:text-slate-300 text-md leading-relaxed text-justify">
                     We tackle unfair power relations by bridging the gap between vulnerable youth and authority figures. Social responsibility is at our core, which is why we secured our National Startup Label and strict data compliance with the NDPC to protect user privacy. We respect cultural traditions by translating laws into Pidgin, Hausa, Yoruba, and Igbo, using lean software that keeps server energy use low.
                   </p>
                 </motion.div>
@@ -136,13 +136,13 @@ export default function About() {
                   viewport={{ once: true }}
                   className="space-y-6"
                 >
-                  <h3 className="text-3xl font-black text-slate-900 flex items-center gap-2">
+                  <h3 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                     <Heart className="h-6 w-6 text-red-500" /> Beneficial Experiences
                   </h3>
-                  <p className="text-slate-600 text-md leading-relaxed text-justify">
+                  <p className="text-slate-600 dark:text-slate-300 text-md leading-relaxed text-justify">
                     SabiRight brings justice and fairness to the streets by giving vulnerable youth the exact legal facts to stop extortion. It creates a highly positive experience by turning a terrifying encounter into a calm moment where the user feels totally confident and backed up.
                   </p>
-                  <p className="text-slate-600 text-md leading-relaxed text-justify">
+                  <p className="text-slate-600 dark:text-slate-300 text-md leading-relaxed text-justify">
                     We actively address social conflict through dialogue rather than arguments. Our AI gives users clear, law backed scripts to speak respectfully but firmly to officers or landlords. If the tension rises, our proximity matching instantly brings a verified professional into the conversation to peacefully mediate the issue.
                   </p>
                 </motion.div>

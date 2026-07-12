@@ -390,14 +390,14 @@ export default function TrafficAlerts() {
   };
 
   return (
-    <div className="space-y-8 pb-20">
+    <div className="space-y-8 pb-20 w-full max-w-full overflow-x-hidden">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Traffic Alerts</h2>
           <p className="text-slate-500 mt-1">Monitor cloaked routes and checkpoint status in real-time</p>
         </div>
         {user?.uid && (
-          <div className="bg-slate-100 px-4 py-2 rounded-lg border border-slate-200">
+          <div className="bg-slate-100 dark:bg-slate-900 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-800">
             <p className="text-[10px] font-bold text-slate-500 uppercase">Monitoring City</p>
             <p className="text-sm font-bold text-slate-700">{(profile?.city || "Lagos").toUpperCase()}</p>
           </div>
@@ -405,12 +405,12 @@ export default function TrafficAlerts() {
       </div>
 
       {/* Mobile Tab Toggle */}
-      <div className="flex md:hidden bg-slate-100 p-1 rounded-xl gap-1 shrink-0 mb-4">
+      <div className="flex md:hidden bg-slate-100 dark:bg-slate-800/50 p-1 rounded-xl gap-1 shrink-0 mb-4 w-full max-w-full">
         <Button
           variant={activeTab === 'routes' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setActiveTab('routes')}
-          className="flex-1 rounded-lg font-bold text-xs py-2 h-9"
+          className="flex-1 rounded-lg font-bold text-xs py-2 h-9 dark:text-slate-300 dark:hover:bg-slate-800"
         >
           Your Routes ({routes.length})
         </Button>
@@ -418,14 +418,14 @@ export default function TrafficAlerts() {
           variant={activeTab === 'map' ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setActiveTab('map')}
-          className="flex-1 rounded-lg font-bold text-xs py-2 h-9"
+          className="flex-1 rounded-lg font-bold text-xs py-2 h-9 dark:text-slate-300 dark:hover:bg-slate-800"
           disabled={routes.length === 0}
         >
           Live Map & Info
         </Button>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-6">
+      <div className="grid md:grid-cols-3 gap-6 w-full max-w-full">
         {/* Routes List */}
         <div className={`md:col-span-1 space-y-3 ${activeTab === 'routes' ? 'block' : 'hidden md:block'}`}>
           <div className="flex justify-between items-center">

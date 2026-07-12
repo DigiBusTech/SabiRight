@@ -214,12 +214,12 @@ export default function BookingDetail() {
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
           {/* Pre-Case File - visible for BOTH user/citizen and professional */}
           {booking.description.includes("---") && (
-            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-4 shadow-sm">
-              <p className="text-xs font-bold text-blue-800 mb-2 flex items-center gap-1.5">
+            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/30 text-blue-800 dark:text-blue-300 rounded-2xl p-4 mb-4 shadow-sm">
+              <p className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-1.5">
                 <FileText className="h-4 w-4" />
                 SabiRight Pre-Case File & AI Chat Summary
               </p>
-              <div className="prose prose-sm text-blue-700 max-w-none">
+              <div className="prose prose-sm dark:prose-invert text-blue-700 dark:text-blue-300 max-w-none">
                 <p className="whitespace-pre-wrap">{booking.description.split("---")[1].trim()}</p>
               </div>
             </div>
