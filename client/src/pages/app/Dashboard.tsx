@@ -54,7 +54,9 @@ export default function Dashboard() {
   const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const userName = user?.displayName?.split(' ')[0] || "Citizen";
+  const userName = user?.displayName === "Super Admin" 
+    ? "Super Admin" 
+    : (user?.displayName?.split(' ')[0] || "Citizen");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedCity, setSelectedCity] = useState(profile?.city || "");
   const [isSavingCity, setIsSavingCity] = useState(false);

@@ -349,8 +349,8 @@ export default function Forum() {
 
           <motion.div variants={itemVariants} className="flex flex-col gap-4">
             <div>
-              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">Community Forum</h2>
-              <p className="text-sm md:text-base text-slate-500">Verified discussions by verified citizens.</p>
+              <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Community Forum</h2>
+              <p className="text-sm md:text-base text-slate-500 dark:text-slate-400">Verified discussions by verified citizens.</p>
             </div>
           </motion.div>
 
@@ -358,14 +358,14 @@ export default function Forum() {
           <motion.div variants={itemVariants} className="flex flex-col gap-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <Tabs value={sortBy} onValueChange={(v) => setSortBy(v as any)} className="w-auto">
-                <TabsList className="bg-slate-100/50 p-1 rounded-xl h-auto flex flex-wrap gap-1">
-                  <TabsTrigger value="new" className="rounded-lg py-1.5 px-3 md:px-4 text-xs md:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm flex gap-2">
+                <TabsList className="bg-slate-100/50 dark:bg-slate-800 p-1 rounded-xl h-auto flex flex-wrap gap-1">
+                  <TabsTrigger value="new" className="rounded-lg py-1.5 px-3 md:px-4 text-xs md:text-sm data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm flex gap-2 dark:text-slate-300">
                     <Clock className="h-3.5 w-3.5" /> New
                   </TabsTrigger>
-                  <TabsTrigger value="hot" className="rounded-lg py-1.5 px-3 md:px-4 text-xs md:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm flex gap-2">
+                  <TabsTrigger value="hot" className="rounded-lg py-1.5 px-3 md:px-4 text-xs md:text-sm data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm flex gap-2 dark:text-slate-300">
                     <TrendingUp className="h-3.5 w-3.5" /> Hot
                   </TabsTrigger>
-                  <TabsTrigger value="top" className="rounded-lg py-1.5 px-3 md:px-4 text-xs md:text-sm data-[state=active]:bg-white data-[state=active]:shadow-sm flex gap-2">
+                  <TabsTrigger value="top" className="rounded-lg py-1.5 px-3 md:px-4 text-xs md:text-sm data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm flex gap-2 dark:text-slate-300">
                     <Award className="h-3.5 w-3.5" /> Top
                   </TabsTrigger>
                 </TabsList>
@@ -380,7 +380,7 @@ export default function Forum() {
                     onClick={() => setSelectedCategory(cat)}
                     className={cn(
                       "rounded-full h-8 px-4 text-[11px] font-bold transition-all",
-                      selectedCategory === cat ? "shadow-md shadow-primary/20" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                      selectedCategory === cat ? "shadow-md shadow-primary/20" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-850"
                     )}
                   >
                     {cat}
@@ -393,10 +393,10 @@ export default function Forum() {
           {/* Create Post */}
           {!user ? (
             <motion.div variants={itemVariants}>
-              <Card className="border-primary/20 bg-primary/5 rounded-2xl overflow-hidden">
+              <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 rounded-2xl overflow-hidden">
                 <CardContent className="p-6 text-center">
-                  <h3 className="font-bold text-lg mb-2 text-slate-900">Join the Conversation</h3>
-                  <p className="text-sm text-slate-500 mb-6">You must be logged in to share thoughts, vote, and comment.</p>
+                  <h3 className="font-bold text-lg mb-2 text-slate-900 dark:text-white">Join the Conversation</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">You must be logged in to share thoughts, vote, and comment.</p>
                   <Button 
                     onClick={() => window.location.href = '/auth/login'}
                     className="rounded-xl px-8 h-11 font-bold shadow-lg shadow-primary/20"
@@ -408,7 +408,7 @@ export default function Forum() {
             </motion.div>
           ) : (
             <motion.div variants={itemVariants}>
-              <Card className="border-slate-100 bg-white rounded-2xl overflow-hidden shadow-sm hover:border-primary/30 transition-all">
+              <Card className="border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-sm hover:border-primary/30 transition-all">
                   <CardContent className="p-4">
                       <form onSubmit={handleCreatePost} className="flex flex-col gap-3">
                           <div className="flex gap-3 items-center">
@@ -419,7 +419,7 @@ export default function Forum() {
                               value={newPostContent}
                               onChange={e => setNewPostContent(e.target.value)}
                               placeholder="Create a post..." 
-                              className="bg-slate-50 border-none h-10 rounded-xl focus-visible:ring-1 focus-visible:ring-primary/30"
+                              className="bg-slate-50 dark:bg-slate-800 border-none h-10 rounded-xl focus-visible:ring-1 focus-visible:ring-primary/30 text-slate-900 dark:text-slate-100"
                             />
                             <Button type="submit" size="sm" className="rounded-xl px-6 font-bold">Post</Button>
                           </div>
@@ -443,7 +443,7 @@ export default function Forum() {
             .slice(0, user ? undefined : 5)
             .map(post => (
             <motion.div key={post.id} variants={itemVariants} layout>
-              <Card className="border-none shadow-sm hover:shadow-md transition-shadow bg-white overflow-hidden">
+              <Card className="border-none shadow-sm hover:shadow-md transition-shadow bg-white dark:bg-slate-900 overflow-hidden">
                 <CardContent className="p-6">
                   {/* Post Header */}
                   <div className="flex justify-between items-start mb-4">
@@ -458,7 +458,7 @@ export default function Forum() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <p className="font-bold text-sm">{post.author}</p>
+                          <p className="font-bold text-sm text-slate-900 dark:text-white">{post.author}</p>
                           <Badge variant="secondary" className="text-[10px] h-5">{post.category}</Badge>
                           {post.city && (
                             <Badge variant="outline" className="text-[10px] h-5 flex items-center gap-1">
@@ -488,7 +488,7 @@ export default function Forum() {
 
                   {/* Post Content */}
                   <div className="mb-6">
-                    <p className="text-slate-800 leading-relaxed whitespace-pre-wrap">{post.content}</p>
+                    <p className="text-slate-800 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">{post.content}</p>
                   </div>
 
                   {/* Actions */}
@@ -537,10 +537,10 @@ export default function Forum() {
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="mt-6 pt-6 border-t"
+                        className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800"
                       >
                         {!user ? (
-                           <div className="text-center py-6 bg-slate-50 rounded-xl">
+                           <div className="text-center py-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
                               <p className="text-slate-500 mb-2">Sign in to view comments and join the discussion.</p>
                               <Link href="/auth/login">
                                 <Button variant="outline">Sign In</Button>
@@ -550,18 +550,18 @@ export default function Forum() {
                         <>
                         <div className="space-y-4 mb-6">
                           {post.comments?.map((comment) => (
-                            <div key={comment.id} className="flex gap-3 bg-slate-50 p-3 rounded-xl">
-                              <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-xs shrink-0">
+                            <div key={comment.id} className="flex gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
+                              <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
                                 {comment.author.charAt(0)}
                               </div>
                               <div className="flex-1">
                                 <div className="flex justify-between items-start">
-                                  <p className="text-xs font-bold">{comment.author}</p>
+                                  <p className="text-xs font-bold text-slate-900 dark:text-white">{comment.author}</p>
                                   <span className="text-[10px] text-slate-400">
                                     {comment.timestamp?.toDate ? comment.timestamp.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
                                   </span>
                                 </div>
-                                <p className="text-sm text-slate-700 mt-1">{comment.text}</p>
+                                <p className="text-sm text-slate-700 dark:text-slate-300 mt-1">{comment.text}</p>
                                 <div className="flex items-center gap-4 mt-2">
                                   <button 
                                     className={`text-[10px] font-bold flex items-center gap-1 ${comment.upvotedBy?.includes(user?.uid || '') ? 'text-primary' : 'text-slate-400 hover:text-slate-600'}`}
@@ -621,22 +621,22 @@ export default function Forum() {
     {/* Sidebar Column */}
     <div className="lg:col-span-4 space-y-6">
       <motion.div variants={itemVariants}>
-        <Card className="overflow-hidden border-slate-100 shadow-sm rounded-xl">
+        <Card className="overflow-hidden border-slate-100 dark:border-slate-800 shadow-sm rounded-xl bg-white dark:bg-slate-900">
           <div className="h-12 bg-primary flex items-center px-4">
             <h3 className="text-white font-bold flex items-center gap-2">
               <Info className="h-4 w-4" /> About Community
             </h3>
           </div>
           <CardContent className="p-4 space-y-4">
-            <p className="text-sm text-slate-600 leading-relaxed">
+            <p className="text-sm text-slate-600 dark:text-slate-350 leading-relaxed">
               Welcome to the SabiRight Community Forum. This is a space for verified citizens to discuss local issues, share reports, and engage in meaningful conversation.
             </p>
             <div className="grid grid-cols-2 gap-4 pt-2">
-              <div className="text-center p-2 bg-slate-50 rounded-lg">
+              <div className="text-center p-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
                 <p className="text-xs text-slate-500">Members</p>
-                <p className="font-bold text-slate-900">1.2k</p>
+                <p className="font-bold text-slate-900 dark:text-white">1.2k</p>
               </div>
-              <div className="text-center p-2 bg-slate-50 rounded-lg">
+              <div className="text-center p-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
                 <p className="text-xs text-slate-500">Online</p>
                 <p className="font-bold text-green-600">84</p>
               </div>
@@ -644,7 +644,7 @@ export default function Forum() {
             <Separator />
             <div className="space-y-2">
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Community Rules</h4>
-              <ul className="text-xs text-slate-600 space-y-1.5 list-disc pl-4">
+              <ul className="text-xs text-slate-600 dark:text-slate-350 space-y-1.5 list-disc pl-4">
                 <li>Be respectful to others</li>
                 <li>No hate speech or harassment</li>
                 <li>Keep discussions relevant to your city</li>
@@ -659,19 +659,19 @@ export default function Forum() {
       </motion.div>
 
       <motion.div variants={itemVariants}>
-        <Card className="border-slate-100 shadow-sm rounded-xl">
+        <Card className="border-slate-100 dark:border-slate-800 shadow-sm rounded-xl bg-white dark:bg-slate-900">
           <CardContent className="p-4 space-y-4">
-            <h3 className="font-bold text-slate-900 flex items-center gap-2">
+            <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" /> Top Contributors
             </h3>
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold">
+                    <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-bold dark:text-white">
                       {i}
                     </div>
-                    <span className="text-sm font-medium text-slate-700">Citizen_{i}024</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Citizen_{i}024</span>
                   </div>
                   <Badge variant="secondary" className="bg-primary/5 text-primary text-[10px]">
                     +{100 * (4-i)} pts
