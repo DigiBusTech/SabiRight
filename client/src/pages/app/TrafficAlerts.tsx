@@ -54,6 +54,7 @@ export default function TrafficAlerts() {
     startLocation: "",
     endLocation: ""
   });
+  const [activeTab, setActiveTab] = useState<'routes' | 'map'>('routes');
 
   const startInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
@@ -403,9 +404,30 @@ export default function TrafficAlerts() {
         )}
       </div>
 
+      {/* Mobile Tab Toggle */}
+      <div className="flex md:hidden bg-slate-100 p-1 rounded-xl gap-1 shrink-0 mb-4">
+        <Button
+          variant={activeTab === 'routes' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => setActiveTab('routes')}
+          className="flex-1 rounded-lg font-bold text-xs py-2 h-9"
+        >
+          Your Routes ({routes.length})
+        </Button>
+        <Button
+          variant={activeTab === 'map' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => setActiveTab('map')}
+          className="flex-1 rounded-lg font-bold text-xs py-2 h-9"
+          disabled={routes.length === 0}
+        >
+          Live Map & Info
+        </Button>
+      </div>
+
       <div className="grid md:grid-cols-3 gap-6">
         {/* Routes List */}
-        <div className="md:col-span-1 space-y-3">
+        <div className={`md:col-span-1 space-y-3 ${activeTab === 'routes' ? 'block' : 'hidden md:block'}`}>
           <div className="flex justify-between items-center">
             <h3 className="font-bold text-lg">Your Routes</h3>
             <Button 
@@ -475,6 +497,7 @@ export default function TrafficAlerts() {
                     setSelectedRoute(route);
                     setRecommendation(""); // Clear recommendation when switching routes
                     setCloakedStreets([]); // Clear cloaked streets when switching routes
+                    setActiveTab('map'); // Switch to map tab on mobile
                   }}
                 >
                   <CardContent className="p-4">
@@ -506,7 +529,7 @@ export default function TrafficAlerts() {
         </div>
 
         {/* Map and Details */}
-        <div className="md:col-span-2 space-y-4">
+        <div className={`md:col-span-2 space-y-4 ${activeTab === 'map' ? 'block' : 'hidden md:block'}`}>
           {routes.length === 0 ? (
             <Card className="h-full flex flex-col items-center justify-center p-12 bg-slate-50 border-2 border-dashed border-slate-200">
               <div className="bg-white p-6 rounded-full shadow-sm mb-6">

@@ -70,8 +70,8 @@ function LoadingMessage() {
           <ShieldCheck className="h-4 w-4 text-primary animate-pulse" />
         </div>
         
-        {/* Elegant cross-fading, sliding text */}
-        <div className="h-5 overflow-hidden flex items-center">
+        {/* Elegant cross-fading, sliding text - auto height to prevent cutting off on mobile */}
+        <div className="min-h-[20px] flex items-center">
           <p key={index} className="text-xs font-semibold text-slate-600 animate-in fade-in slide-in-from-bottom-1 duration-500">
             {messages[index]}
           </p>
@@ -524,17 +524,17 @@ export default function CivicGuard() {
     <div className="h-full flex flex-col md:grid md:grid-cols-12 gap-6 overflow-hidden">
       <div className="hidden md:flex md:col-span-4 lg:col-span-3 flex-col bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm overflow-hidden"><SidebarContent /></div>
       <div className={cn("flex flex-col bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden h-full md:col-span-8 lg:col-span-9 transition-all", isUrgent ? "ring-2 ring-red-500 border-red-500 ring-inset" : "")}>
-        <div className={cn("p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors", isUrgent ? "bg-red-50 dark:bg-red-950/20" : "bg-slate-50/50 dark:bg-slate-900/50")}>
+        <div className={cn("p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors", isUrgent ? "bg-red-50 dark:bg-red-950/20" : "bg-slate-50/50 dark:bg-slate-900/50")}>
           <div className="flex items-center gap-3">
             <div className={cn("p-2 rounded-lg transition-colors", isUrgent ? "bg-red-100 dark:bg-red-900/30 text-red-600" : "bg-primary/10 text-primary")}><Sparkles className="h-5 w-5" /></div>
             <div><h2 className="font-bold text-sm text-slate-800 dark:text-slate-100">SabiRight AI Agent</h2><p className="text-[10px] text-slate-500 dark:text-slate-400">{isUrgent ? "🚨 Urgent Assistance Mode" : "Law-based Guidance"}</p></div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
             {/* Language Selector Dropdown */}
             <select
               value={preferredLanguage}
               onChange={(e) => setPreferredLanguage(e.target.value)}
-              className="text-[11px] font-bold h-8 border border-slate-200 dark:border-slate-700 rounded-lg px-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none focus:border-primary cursor-pointer transition-all shadow-xs hover:border-slate-300 dark:hover:border-slate-600"
+              className="text-[11px] font-bold h-8 border border-slate-200 dark:border-slate-700 rounded-lg px-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none focus:border-primary cursor-pointer transition-all shadow-xs hover:border-slate-300 dark:hover:border-slate-600 flex-1 sm:flex-none"
             >
               {activeLangsList.includes("English") && <option value="English">English 🇬🇧</option>}
               {activeLangsList.includes("Nigerian Pidgin") && <option value="Nigerian Pidgin">Pidgin 🇳🇬</option>}
@@ -555,24 +555,23 @@ export default function CivicGuard() {
                   setCurrentlySpeakingIndex(null);
                 }
               }} 
-              className={cn("text-[11px] h-8 font-bold transition-all px-2 sm:px-3 gap-1", isAutoSpeak ? "bg-primary text-white border-primary hover:bg-primary/95 shadow-sm animate-pulse" : "hover:bg-slate-100")}
+              className={cn("text-[11px] h-8 font-bold transition-all px-2 sm:px-3 gap-1 flex-1 sm:flex-none", isAutoSpeak ? "bg-primary text-white border-primary hover:bg-primary/95 shadow-sm animate-pulse" : "hover:bg-slate-100")}
             >
               {isAutoSpeak ? <Volume2 className="h-3.5 w-3.5 shrink-0" /> : <VolumeX className="h-3.5 w-3.5 shrink-0" />}
-              <span className="hidden sm:inline">{isAutoSpeak ? "Voice On" : "Voice Off"}</span>
+              <span>{isAutoSpeak ? "Voice On" : "Voice Off"}</span>
             </Button>
 
             <Button 
               variant="outline" 
               size="sm" 
               onClick={() => setIsUrgent(!isUrgent)} 
-              className={cn("text-[11px] h-8 font-bold transition-all px-2 sm:px-3 flex items-center gap-1", isUrgent ? "bg-red-600 text-white border-red-600 hover:bg-red-700 shadow-md" : "hover:bg-slate-100")}
+              className={cn("text-[11px] h-8 font-bold transition-all px-2 sm:px-3 flex items-center gap-1 flex-1 sm:flex-none", isUrgent ? "bg-red-600 text-white border-red-600 hover:bg-red-700 shadow-md" : "hover:bg-slate-100")}
             >
               <AlertCircle className={cn("h-3.5 w-3.5 shrink-0", isUrgent ? "text-white" : "text-red-500")} />
-              <span className="hidden sm:inline">{isUrgent ? "Disable Urgent" : "Enable Urgent"}</span>
-              <span className="sm:hidden">{isUrgent ? "Urgent" : "Normal"}</span>
+              <span>{isUrgent ? "Urgent" : "Normal"}</span>
             </Button>
             <Sheet open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-              <SheetTrigger asChild><Button variant="outline" size="sm" className="md:hidden flex items-center gap-1.5 h-8 px-2 sm:px-3 border-primary/20 dark:border-primary/40 bg-primary/5 dark:bg-primary/10 text-primary"><History className="h-4 w-4 shrink-0" /><span className="text-[11px] font-bold hidden sm:inline">History</span></Button></SheetTrigger>
+              <SheetTrigger asChild><Button variant="outline" size="sm" className="md:hidden flex items-center gap-1.5 h-8 px-2 sm:px-3 border-primary/20 dark:border-primary/40 bg-primary/5 dark:bg-primary/10 text-primary flex-1 sm:flex-none"><History className="h-4 w-4 shrink-0" /><span>History</span></Button></SheetTrigger>
               <SheetContent side="right" className="w-[310px] p-0 border-none shadow-2xl"><div className="h-full flex flex-col p-5 bg-white dark:bg-slate-900"><SidebarContent /></div></SheetContent>
             </Sheet>
             <Button variant="outline" size="sm" onClick={() => { setMessages([]); setCurrentChatId(null); }} className="h-8 w-8 p-0 md:flex hidden hover:bg-slate-100 dark:hover:bg-slate-800"><Plus className="h-4 w-4" /></Button>

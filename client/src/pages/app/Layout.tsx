@@ -102,11 +102,16 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           {[...adminItems, ...vendorItems, ...baseNavItems].map((item) => (
-            <Link key={item.href} href={item.href} className={cn(
+            <Link 
+              key={item.href} 
+              href={item.href} 
+              onClick={() => setIsSidebarOpen(false)}
+              className={cn(
                 "flex items-center rounded-xl transition-all group relative",
                 isCollapsed && !isSidebarOpen ? "justify-center p-3" : "gap-3 px-4 py-3",
                 location === item.href ? "bg-primary text-white" : "text-slate-400 hover:bg-white/5 hover:text-white"
-              )}>
+              )}
+            >
               <item.icon className="h-5 w-5 shrink-0" />
               {(!isCollapsed || isSidebarOpen) && <span>{item.label}</span>}
               {isCollapsed && !isSidebarOpen && (<div className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none z-50 whitespace-nowrap">{item.label}</div>)}
