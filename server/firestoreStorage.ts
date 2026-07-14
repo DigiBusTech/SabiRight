@@ -1,6 +1,7 @@
 import admin from "firebase-admin";
 import fs from "fs";
 import path from "path";
+import nodemailer from "nodemailer";
 import type { 
   IFirestoreStorage, UserProfile, UserCredits, AdminSetting, 
   VendorService, Professional, ProfessionalCredentials, ProfessionalLocation, ProfessionalWallet, ProfessionalApplication, ProfessionalService, MoatData, UserPlan, CreditPackage, Route, 
@@ -588,16 +589,95 @@ export const firestoreStorage: IFirestoreStorage = {
   async setEmailVerificationCode(userId: string, code: string, expires: Date) {
     await getCollection('verificationCodes').doc(userId).set({ code, expires });
   },
-  async sendNotification(n: any) {
-    await getCollection('notifications').add({ ...n, createdAt: new Date() });
+  async clearEmailVerificationCode(userId: string) {
+    await getCollection('verificationCodes').doc(userId).delete();
   },
-  async createNotification(n: any) { await this.sendNotification(n); },
+  async sendEmailNotification(n: any, profile: UserProfile | null) {
+    const smtpSettings = await this.getSmtpSettings();
+    if (!smtpSettings || !smtpSettings.host || !smtpSettings.username || !smtpSettings.password || !smtpSettings.fromEmail || !smtpSettings.fromName) {
+      throw new Error('SMTP settings are not configured');
+    }
+
+    if (smtpSettings.isActive === false) {
+      throw new Error('SMTP notifications are disabled');
+    }
+
+    if (!profile?.email) {
+      throw new Error('User email address is missing');
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: smtpSettings.host,
+      port: Number(smtpSettings.port) || 587,
+      secure: smtpSettings.encryption === 'ssl' || Number(smtpSettings.port) === 465,
+      auth: {
+        user: smtpSettings.username,
+        pass: smtpSettings.password,
+      },
+      tls: { rejectUnauthorized: false }
+    });
+
+    const subject = n.subject || n.title || 'SabiRight Notification';
+    const text = n.text || n.message || '';
+    let html = n.html || `<p>${n.message || ''}</p>`;
+
+    if (n.templateName === 'email_verification_code') {
+      html = `
+        <p>Hello ${profile.displayName || profile.email || 'User'},</p>
+        <p>Your SabiRight verification code is: <strong>${n.variables?.code || ''}</strong>.</p>
+        <p>This code expires in ${n.variables?.expiry || '1 hour'}.</p>
+      `;
+    } else if (n.templateName === 'welcome_email') {
+      html = `
+        <p>Hello ${profile.displayName || profile.email || 'User'},</p>
+        <p>${n.message || 'Welcome to SabiRight!'}</p>
+      `;
+    } else if (n.templateName === 'email_verified') {
+      html = `
+        <p>Hello ${profile.displayName || profile.email || 'User'},</p>
+        <p>Your email has been successfully verified.</p>
+      `;
+    }
+
+    await transporter.sendMail({
+      from: `"${smtpSettings.fromName}" <${smtpSettings.fromEmail}>`,
+      to: profile.email,
+      subject,
+      text,
+      html,
+    });
+  },
+  async sendNotification(n: any) {
+    if (n.channels?.includes('email')) {
+      const profile = await this.getUserProfile(n.userId);
+      await this.sendEmailNotification(n, profile);
+    }
+
+    const shouldPersistNotification = n.channels?.includes('in_app') || n.channels?.includes('push') || !n.channels || n.channels.length === 0;
+    if (shouldPersistNotification) {
+      await getCollection('notifications').add({ ...n, createdAt: new Date() });
+    }
+  },
+  async createNotification(n: any) { return this.sendNotification(n); },
   async updateEmailVerificationStatus(userId: string, status: UserProfile['emailVerificationStatus']) {
     await getCollection('profiles').doc(userId).set({ emailVerificationStatus: status }, { merge: true });
   },
   async verifyEmailCode(userId: string, code: string) {
     const doc = await getCollection('verificationCodes').doc(userId).get();
-    return doc.exists && (doc.data() as any).code === code;
+    if (!doc.exists) return false;
+
+    const data = doc.data() as any;
+    if (!data || data.code !== code) return false;
+
+    const expires = data.expires;
+    if (expires) {
+      const expiryDate = expires.toDate ? expires.toDate() : new Date(expires);
+      if (expiryDate.getTime() < Date.now()) {
+        return false;
+      }
+    }
+
+    return true;
   },
 
   // Events
@@ -883,8 +963,14 @@ export const firestoreStorage: IFirestoreStorage = {
   async getAllCrowdTranslations() { return []; },
   async getCrowdTranslationStats() { return { total: 0 }; },
   async getAllNotificationTemplates() { return []; },
-  async getSmtpSettings() { return null; },
-  async getPushSettings() { return null; },
+  async getSmtpSettings() {
+    const doc = await getCollection('adminSettings').doc('smtp').get();
+    return doc.exists ? doc.data() : null;
+  },
+  async getPushSettings() {
+    const doc = await getCollection('adminSettings').doc('push').get();
+    return doc.exists ? doc.data() : null;
+  },
   async getAllVendorServices() { return []; },
   async getAllCoupons() { return []; },
   async getCouponByCode(c: string) { return null; },
@@ -921,8 +1007,14 @@ export const firestoreStorage: IFirestoreStorage = {
   async createNotificationTemplate(d: any) { return {}; },
   async updateNotificationTemplate(id: string, u: any) { return {}; },
   async deleteNotificationTemplate(id: string) { return true; },
-  async updateSmtpSettings(s: any) { return {}; },
-  async updatePushSettings(s: any) { return {}; },
+  async updateSmtpSettings(s: any) {
+    await getCollection('adminSettings').doc('smtp').set(s);
+    return s;
+  },
+  async updatePushSettings(s: any) {
+    await getCollection('adminSettings').doc('push').set(s);
+    return s;
+  },
   async submitTranslation(d: any) { return {}; },
   async getRandomTranslationForVerification(u: string) { return null; },
   async voteTranslation(id: string, v: boolean) { return; },

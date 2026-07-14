@@ -25,6 +25,7 @@ export interface UserProfile {
   isVendor: boolean;
   emailVerified: boolean;
   emailVerificationStatus: 'pending' | 'verified' | 'rejected';
+  emailVerifiedAt?: string | Date | null;
   vendorMode: boolean;
   createdAt: Date;
   chatStorageLimit: number;
@@ -469,6 +470,7 @@ export interface IFirestoreStorage {
 
   // Email & Notifications
   setEmailVerificationCode(userId: string, code: string, expires: Date): Promise<void>;
+  clearEmailVerificationCode(userId: string): Promise<void>;
   sendNotification(notification: any): Promise<void>;
   createNotification(notification: any): Promise<void>;
   updateEmailVerificationStatus(userId: string, status: UserProfile['emailVerificationStatus']): Promise<void>;

@@ -660,6 +660,9 @@ export async function registerRoutes(
 
       const verified = await storage.verifyEmailCode(userId, code);
       if (verified) {
+        await storage.updateEmailVerificationStatus(userId, 'verified');
+        await storage.updateUserProfile(userId, { emailVerified: true, emailVerifiedAt: new Date() });
+        await storage.clearEmailVerificationCode(userId);
         res.json({ success: true, status: 'verified' });
       } else {
         res.status(400).json({ error: 'Invalid or expired verification code' });
