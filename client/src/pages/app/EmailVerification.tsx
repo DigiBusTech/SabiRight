@@ -45,12 +45,12 @@ export default function EmailVerification() {
         refetch();
       } else {
         let errorMessage = 'Failed to submit verification';
+        const responseText = await res.text();
         try {
-          const errorData = await res.json();
+          const errorData = JSON.parse(responseText);
           errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch (parseError) {
-          const text = await res.text();
-          errorMessage = text || errorMessage;
+        } catch {
+          errorMessage = responseText || errorMessage;
         }
         throw new Error(errorMessage);
       }
@@ -80,12 +80,12 @@ export default function EmailVerification() {
         refetch();
       } else {
         let errorMessage = 'Failed to verify code';
+        const responseText = await res.text();
         try {
-          const errorData = await res.json();
+          const errorData = JSON.parse(responseText);
           errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch (parseError) {
-          const text = await res.text();
-          errorMessage = text || errorMessage;
+        } catch {
+          errorMessage = responseText || errorMessage;
         }
         throw new Error(errorMessage);
       }

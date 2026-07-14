@@ -648,14 +648,25 @@ export const firestoreStorage: IFirestoreStorage = {
     });
   },
   async sendNotification(n: any) {
-    if (n.channels?.includes('email')) {
+    const requestedChannels = Array.isArray(n.channels) ? [...n.channels] : [];
+    let persistChannels = [...requestedChannels];
+
+    if (requestedChannels.includes('email')) {
       const profile = await this.getUserProfile(n.userId);
-      await this.sendEmailNotification(n, profile);
+      try {
+        await this.sendEmailNotification(n, profile);
+      } catch (error) {
+        console.error('[sendNotification] Email send failed, falling back to in_app notification:', error);
+        persistChannels = persistChannels.filter((c) => c !== 'email');
+        if (!persistChannels.includes('in_app')) {
+          persistChannels.push('in_app');
+        }
+      }
     }
 
-    const shouldPersistNotification = n.channels?.includes('in_app') || n.channels?.includes('push') || !n.channels || n.channels.length === 0;
+    const shouldPersistNotification = persistChannels.includes('in_app') || persistChannels.includes('push') || persistChannels.length === 0;
     if (shouldPersistNotification) {
-      await getCollection('notifications').add({ ...n, createdAt: new Date() });
+      await getCollection('notifications').add({ ...n, channels: persistChannels, createdAt: new Date() });
     }
   },
   async createNotification(n: any) { return this.sendNotification(n); },
