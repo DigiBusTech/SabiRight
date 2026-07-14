@@ -308,7 +308,8 @@ export async function registerRoutes(
       const freePlans = await storage.getPlansByType('free', userType as 'user' | 'vendor');
       const basicPlans = await storage.getPlansByType('basic', userType as 'user' | 'vendor');
       const proPlans = await storage.getPlansByType('pro', userType as 'user' | 'vendor');
-      res.json([...freePlans, ...basicPlans, ...proPlans]);
+      const enterprisePlans = await storage.getPlansByType('enterprise', userType as 'user' | 'vendor');
+      res.json([...freePlans, ...basicPlans, ...proPlans, ...enterprisePlans]);
     } catch (error) {
       next(error);
     }

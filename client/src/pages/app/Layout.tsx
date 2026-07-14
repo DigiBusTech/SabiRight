@@ -5,7 +5,7 @@ import {
   Briefcase, Users, Settings, LogOut, Menu, X, ShieldCheck, 
   Calendar, Zap, AlertTriangle, BadgeCheck, BarChart3, Wallet, 
   CalendarCheck, Bell, Moon, Sun, PanelLeftClose, PanelLeftOpen,
-  MessageSquare
+  MessageSquare, CreditCard
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const vendorItems = profile?.isVendor ? [{ icon: BarChart3, label: "Professional Dashboard", href: "/app/professional-dashboard" }] : [];
   const baseNavItems = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/app" },
+    { icon: CreditCard, label: "Plans", href: "/app/plans" },
     { icon: Scale, label: "SabiRight AI", href: "/app/civic" },
     { icon: Store, label: "Directory", href: "/app/marketplace" },
     { icon: CalendarCheck, label: "Booking History", href: "/app/bookings" },

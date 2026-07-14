@@ -57,6 +57,17 @@ async function seed() {
       billingCycle: "monthly",
       description: "For professionals offering services",
       features: ["Unlimited Marketplace Listings", "Verified Professional Badge", "Featured Service Placement", "Client Lead Analytics", "Custom Business Profile", "Direct Messaging Access"]
+    },
+    {
+      id: "plan-vendor-enterprise",
+      name: "Vendor Enterprise",
+      type: "enterprise",
+      userType: "vendor",
+      price: 25000,
+      credits: 10000,
+      billingCycle: "yearly",
+      description: "Best value for large vendors and service ecosystems",
+      features: ["Unlimited Marketplace Listings", "Dedicated Account Support", "Advanced Analytics & Reporting", "Priority Lead Matching", "Custom Business Growth Plan", "Enterprise Workflow Automation"]
     }
   ];
 

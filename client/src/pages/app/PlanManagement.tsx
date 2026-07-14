@@ -14,10 +14,10 @@ interface Plan {
   description: string;
   type: string;
   userType: string;
-  price: string | null;
+  price: number | null;
   billingCycle: string | null;
-  dailyCredits: number | null;
-  marketplaceListings: number | null;
+  dailyCredits?: number | null;
+  marketplaceListings?: number | null;
   features: string[];
 }
 
@@ -40,6 +40,7 @@ export default function PlanManagement() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [userType, setUserType] = useState<'user' | 'vendor'>('user');
+  const [billingCycleFilter, setBillingCycleFilter] = useState<'all' | 'monthly' | 'yearly'>('all');
   const [currentPlan, setCurrentPlan] = useState<any>(null);
 
   // Fetch available plans
@@ -70,6 +71,15 @@ export default function PlanManagement() {
     }
   }, [subscription]);
 
+  useEffect(() => {
+    setBillingCycleFilter('all');
+  }, [userType]);
+
+  const filteredPlans = plans.filter((plan: Plan) => {
+    if (billingCycleFilter === 'all') return true;
+    return plan.billingCycle === billingCycleFilter;
+  });
+
   const handleUpgrade = async (plan: Plan) => {
     if (!user?.uid) {
       toast({ title: "Error", description: "Please log in to subscribe" });
@@ -78,7 +88,7 @@ export default function PlanManagement() {
     }
 
     // Navigate to payment page with plan details
-    const amount = parseFloat(plan.price || '0');
+    const amount = plan.price ?? 0;
     if (amount > 0) {
       setLocation(`/app/payment?type=subscription&planId=${plan.id}&amount=${amount}`);
     } else {
@@ -113,7 +123,7 @@ export default function PlanManagement() {
       </div>
 
       {/* User Type Toggle */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button
           variant={userType === 'user' ? 'default' : 'outline'}
           onClick={() => setUserType('user')}
@@ -126,11 +136,33 @@ export default function PlanManagement() {
         >
           Vendor Plans
         </Button>
+        <Button
+          variant={billingCycleFilter === 'all' ? 'default' : 'outline'}
+          onClick={() => setBillingCycleFilter('all')}
+        >
+          All Billing
+        </Button>
+        <Button
+          variant={billingCycleFilter === 'monthly' ? 'default' : 'outline'}
+          onClick={() => setBillingCycleFilter('monthly')}
+        >
+          Monthly
+        </Button>
+        <Button
+          variant={billingCycleFilter === 'yearly' ? 'default' : 'outline'}
+          onClick={() => setBillingCycleFilter('yearly')}
+        >
+          Yearly
+        </Button>
       </div>
 
       {/* Plans Grid */}
       <div className="grid md:grid-cols-2 gap-6">
-        {plans.map((plan: Plan) => {
+        {filteredPlans.length === 0 ? (
+          <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white/80 p-10 text-center text-slate-600">
+            No plans match the selected billing cycle. Try switching to All Billing.
+          </div>
+        ) : filteredPlans.map((plan: Plan) => {
           const isCurrentPlan = currentPlan?.id === plan.id;
           const isFree = plan.type === 'free';
 
@@ -160,16 +192,23 @@ export default function PlanManagement() {
 
               <CardContent className="space-y-6">
                 {/* Pricing */}
-                <div>
-                  {plan.price ? (
-                    <div>
-                      <p className="text-3xl font-bold text-slate-900">
-                        ${plan.price}
-                      </p>
-                      <p className="text-sm text-slate-600">per {plan.billingCycle}</p>
-                    </div>
-                  ) : (
-                    <p className="text-3xl font-bold text-green-600">Free</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    {plan.price ? (
+                      <div>
+                        <p className="text-3xl font-bold text-slate-900">
+                          ${plan.price}
+                        </p>
+                        <p className="text-sm text-slate-600">per {plan.billingCycle || 'month'}</p>
+                      </div>
+                    ) : (
+                      <p className="text-3xl font-bold text-green-600">Free</p>
+                    )}
+                  </div>
+                  {plan.type === 'enterprise' && (
+                    <Badge variant="secondary" className="uppercase">
+                      Enterprise
+                    </Badge>
                   )}
                 </div>
 
