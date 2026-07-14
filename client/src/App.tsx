@@ -17,7 +17,7 @@ import { Preloader } from "@/components/ui/Preloader";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import About from "@/pages/About";
-import Pricing from "@/pages/Pricing";
+import Pricing from "@/pages/PricingNew";
 import Contact from "@/pages/Contact";
 import AppLayout from "@/pages/app/Layout";
 import Dashboard from "@/pages/app/Dashboard";
