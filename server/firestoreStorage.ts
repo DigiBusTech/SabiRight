@@ -970,13 +970,21 @@ export const firestoreStorage: IFirestoreStorage = {
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
   async getNotificationsByUserId(userId: string, limit?: number) {
-    const snap = await getCollection('notifications').where('userId', '==', userId).orderBy('createdAt', 'desc').limit(limit || 50).get();
-    return snap.docs.map(doc => {
+    const snap = await getCollection('notifications').where('userId', '==', userId).get();
+    const notifications = snap.docs.map(doc => {
       const data = doc.data() as any;
       const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt ? new Date(data.createdAt).toISOString() : null;
       const readAt = data.readAt?.toDate ? data.readAt.toDate().toISOString() : data.readAt ? new Date(data.readAt).toISOString() : null;
       return { id: doc.id, ...data, createdAt, readAt };
     });
+
+    return notifications
+      .sort((a: any, b: any) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      })
+      .slice(0, limit || 50);
   },
   async getSabiGuardChats(userId: string) {
     const snap = await getCollection('sabiguardChats')
@@ -989,6 +997,13 @@ export const firestoreStorage: IFirestoreStorage = {
       const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
       return dateB.getTime() - dateA.getTime();
     });
+  },
+  async getUnreadNotificationCount(userId: string) {
+    const snap = await getCollection('notifications')
+      .where('userId', '==', userId)
+      .where('readAt', '==', null)
+      .get();
+    return snap.size;
   },
   async createSabiGuardChat(userId: string, title: string) {
     const id = `sg-${Date.now()}`;
