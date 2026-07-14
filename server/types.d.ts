@@ -126,8 +126,8 @@ export interface UserCredits {
   userId: string;
   totalCredits: number;
   usedCredits: number;
-  dailyCredits?: number;
   renewalDate?: string;
+  planCredits?: number;
 }
 
 export interface UserPlan {
@@ -137,8 +137,10 @@ export interface UserPlan {
   userType: 'user' | 'vendor';
   price: number;
   credits: number;
+  billingCycle?: 'monthly' | 'yearly';
   features: string[];
   description?: string;
+  monthlyCredits?: number;
   dailyCredits?: number;
   createdAt: Date;
 }
@@ -274,6 +276,8 @@ export interface Payment {
   amount: number;
   currency: string;
   provider: string;
+  paymentMethod?: string;
+  reference?: string;
   type: string;
   description?: string;
   metadata?: any;
@@ -398,11 +402,14 @@ export interface IFirestoreStorage {
   getAllPlans(): Promise<UserPlan[]>;
   getPlansByType(type: string, userType: 'user' | 'vendor'): Promise<UserPlan[]>;
   getUserPlan(userId: string): Promise<UserPlan | null>;
+  getUserSubscription(userId: string): Promise<Subscription | null>;
+  assignDefaultPlan(userId: string, userType: 'user' | 'vendor'): Promise<UserPlan | null>;
   createPlan(plan: Omit<UserPlan, 'id' | 'createdAt'>): Promise<UserPlan>;
   updatePlan(planId: string, updates: Partial<UserPlan>): Promise<UserPlan | null>;
   deletePlan(planId: string): Promise<boolean>;
   getPlanById(planId: string): Promise<UserPlan | null>;
   refreshDailyCredits(userId: string, dailyCredits: number): Promise<void>;
+  refreshMonthlyCredits(userId: string, monthlyCredits: number): Promise<void>;
   getCreditLog(userId: string): Promise<any[]>;
   setUserCredits(userId: string, totalCredits: number): Promise<void>;
   getCreditPackages(): Promise<CreditPackage[]>;

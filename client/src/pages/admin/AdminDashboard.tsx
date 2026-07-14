@@ -151,7 +151,7 @@ const PaymentItem = ({ payment, isManual }: { payment: any; isManual: boolean })
               {payment?.createdAt ? formatFirestoreDate(payment.createdAt).toLocaleString() : 'Date unknown'}
             </p>
             <span className="text-[10px] text-slate-300">|</span>
-            <p className="text-[10px] text-slate-400">Method: {payment?.paymentMethod || 'Unknown'}</p>
+            <p className="text-[10px] text-slate-400">Method: {(payment?.provider || payment?.paymentMethod) || 'Unknown'}</p>
           </div>
           
           {payment.metadata && (
@@ -4301,28 +4301,28 @@ export default function AdminDashboard() {
                   </TabsList>
 
                   <TabsContent value="manual-pending" className="space-y-3">
-                    {payments.filter((p: any) => p.status === 'pending' && p.paymentMethod !== 'stripe' && p.paymentMethod !== 'paystack' && p.paymentMethod !== 'flutterwave').length === 0 ? (
+                    {payments.filter((p: any) => p.status === 'pending' && !['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod)).length === 0 ? (
                       <p className="text-center py-8 text-slate-400">No pending manual payments</p>
                     ) : (
-                      payments.filter((p: any) => p.status === 'pending' && p.paymentMethod !== 'stripe' && p.paymentMethod !== 'paystack' && p.paymentMethod !== 'flutterwave')
+                      payments.filter((p: any) => p.status === 'pending' && !['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod))
                         .map((p: any) => <PaymentItem key={p.id} payment={p} isManual={true} />)
                     )}
                   </TabsContent>
 
                   <TabsContent value="manual-completed" className="space-y-3">
-                    {payments.filter((p: any) => p.status === 'completed' && p.paymentMethod !== 'stripe' && p.paymentMethod !== 'paystack' && p.paymentMethod !== 'flutterwave').length === 0 ? (
+                    {payments.filter((p: any) => p.status === 'completed' && !['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod)).length === 0 ? (
                       <p className="text-center py-8 text-slate-400">No completed manual payments</p>
                     ) : (
-                      payments.filter((p: any) => p.status === 'completed' && p.paymentMethod !== 'stripe' && p.paymentMethod !== 'paystack' && p.paymentMethod !== 'flutterwave')
+                      payments.filter((p: any) => p.status === 'completed' && !['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod))
                         .map((p: any) => <PaymentItem key={p.id} payment={p} isManual={true} />)
                     )}
                   </TabsContent>
 
                   <TabsContent value="automatic" className="space-y-3">
-                    {payments.filter((p: any) => ['stripe', 'paystack', 'flutterwave'].includes(p.paymentMethod)).length === 0 ? (
+                    {payments.filter((p: any) => ['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod)).length === 0 ? (
                       <p className="text-center py-8 text-slate-400">No automatic payments yet</p>
                     ) : (
-                      payments.filter((p: any) => ['stripe', 'paystack', 'flutterwave'].includes(p.paymentMethod))
+                      payments.filter((p: any) => ['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod))
                         .map((p: any) => <PaymentItem key={p.id} payment={p} isManual={false} />)
                     )}
                   </TabsContent>
@@ -4335,7 +4335,7 @@ export default function AdminDashboard() {
                         <PaymentItem 
                           key={p.id} 
                           payment={p} 
-                          isManual={!['stripe', 'paystack', 'flutterwave'].includes(p.paymentMethod)} 
+                          isManual={!['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod)} 
                         />
                       ))
                     )}
@@ -5390,7 +5390,7 @@ export default function AdminDashboard() {
                     p.amount,
                     p.type,
                     p.status,
-                    p.paymentMethod || 'N/A'
+                    (p.provider || p.paymentMethod) || 'N/A'
                   ]) || []
                 ].map(row => row.join(',')).join('\\n');
 
@@ -5439,8 +5439,8 @@ export default function AdminDashboard() {
                       p.currency || 'NGN',
                       p.type,
                       p.status,
-                      p.paymentMethod || 'N/A',
-                      p.reference || 'N/A'
+                      (p.provider || p.paymentMethod) || 'N/A',
+                      p.providerRef || p.reference || p.metadata?.reference || 'N/A'
                     ]) || []
                   ];
 
@@ -5558,8 +5558,8 @@ export default function AdminDashboard() {
                   Currency: p.currency || 'NGN',
                   Type: p.type,
                   Status: p.status,
-                  PaymentMethod: p.paymentMethod || 'Unknown',
-                  Reference: p.reference || ''
+                  PaymentMethod: (p.provider || p.paymentMethod) || 'Unknown',
+                  Reference: p.providerRef || p.reference || p.metadata?.reference || ''
                 }}) || [];
 
                 const headers = Object.keys(powerBIData[0] || {});

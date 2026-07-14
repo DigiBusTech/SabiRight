@@ -191,6 +191,31 @@ const bookingParticipantAuth = async (req: Request, res: Response, next: NextFun
   next();
 };
 
+async function getOrAssignUserPlan(userId: string) {
+  let plan = await storage.getUserPlan(userId);
+  if (!plan) {
+    const profile = await storage.getUserProfile(userId);
+    const userType = profile?.isVendor ? 'vendor' : 'user';
+    plan = await storage.assignDefaultPlan(userId, userType);
+  }
+  return plan;
+}
+
+async function validateFeatureAccess(userId: string, feature: string) {
+  const plan = await getOrAssignUserPlan(userId);
+  if (!plan) {
+    return { allowed: false, status: 403, error: 'No active plan found for your account.' };
+  }
+  if (!Array.isArray(plan.features) || !plan.features.includes(feature)) {
+    return {
+      allowed: false,
+      status: 403,
+      error: 'This feature is not available on your current plan. Please upgrade to access it.'
+    };
+  }
+  return { allowed: true, plan };
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -311,10 +336,16 @@ export async function registerRoutes(
         return res.status(404).json({ error: 'Credits not found' });
       }
       
-      // Refresh daily credits if needed
-      const userPlan = await storage.getUserPlan(userId);
-      if (userPlan?.dailyCredits) {
-        await storage.refreshDailyCredits(userId, userPlan.dailyCredits);
+      // Refresh monthly or daily credits if the plan provides them
+      const userPlan = await storage.getUserPlan(userId) || await getOrAssignUserPlan(userId);
+      if (userPlan) {
+        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
+        if (monthlyCredits > 0) {
+          await storage.refreshMonthlyCredits(userId, monthlyCredits);
+        }
+        if (userPlan.dailyCredits) {
+          await storage.refreshDailyCredits(userId, userPlan.dailyCredits);
+        }
       }
       
       const updatedCredits = await storage.getUserCredits(userId);
@@ -859,6 +890,9 @@ export async function registerRoutes(
       
       const newProfile = await storage.getUserProfile(userId);
 
+      // Assign the default free plan and initial credits for new users
+      await storage.assignDefaultPlan(userId, flags.isVendor ? 'vendor' : 'user');
+
       // Send welcome email
       if (email) {
         await storage.sendNotification({
@@ -1090,10 +1124,24 @@ export async function registerRoutes(
         return res.status(402).json({ error: 'No credits account' });
       }
 
+      const featureAccess = await validateFeatureAccess(userId, 'civic_alerts');
+      if (!featureAccess.allowed) {
+        return res.status(featureAccess.status).json({ error: featureAccess.error });
+      }
+
+      const userPlan = featureAccess.plan;
+      if (userPlan) {
+        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
+        if (monthlyCredits > 0) {
+          await storage.refreshMonthlyCredits(userId, monthlyCredits);
+        }
+      }
+
       const costSetting = await storage.getAdminSetting('credit_cost_traffic_alert');
       const cost = costSetting?.value ? Number(costSetting.value) : 1;
 
-      const availableCredits = (credits.totalCredits || 0) - (credits.usedCredits || 0);
+      const updatedCredits = await storage.getUserCredits(userId);
+      const availableCredits = (updatedCredits.totalCredits || 0) - (updatedCredits.usedCredits || 0);
       if (availableCredits < cost) {
         return res.status(402).json({ error: 'Insufficient credits for refresh' });
       }
@@ -1773,9 +1821,9 @@ export async function registerRoutes(
         return res.status(404).json({ error: 'Plan not found' });
       }
 
-      const existing = await storage.getUserPlan(userId);
-      if (existing?.id) {
-        await storage.updateSubscriptionStatus(existing.id, 'cancelled');
+      const existingSub = await storage.getUserSubscription(userId);
+      if (existingSub?.id) {
+        await storage.updateSubscriptionStatus(existingSub.id, 'cancelled');
       }
 
       const subscription = await storage.createSubscription({
@@ -1784,6 +1832,10 @@ export async function registerRoutes(
         status: 'active',
         startDate: new Date().toISOString()
       });
+
+      if (plan.credits && plan.credits > 0) {
+        await storage.addCredits(userId, plan.credits, `Assigned plan ${plan.name}`);
+      }
 
       // Update user storage limit based on plan
       let chatStorageLimit = 524288; // Default 512KB
@@ -3027,9 +3079,21 @@ export async function registerRoutes(
         return res.status(400).json({ error: 'User ID and message required' });
       }
 
-      // Check credits
+      const featureAccess = await validateFeatureAccess(userId, 'ai_chat');
+      if (!featureAccess.allowed) {
+        return res.status(featureAccess.status).json({ error: featureAccess.error });
+      }
+
       const costSetting = await storage.getAdminSetting('credit_cost_ai_query');
       const cost = costSetting?.value ? Number(costSetting.value) : 1;
+
+      const userPlan = featureAccess.plan;
+      if (userPlan) {
+        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
+        if (monthlyCredits > 0) {
+          await storage.refreshMonthlyCredits(userId, monthlyCredits);
+        }
+      }
 
       const credits = await storage.getUserCredits(userId);
       const availableCredits = (credits?.totalCredits ?? 0) - (credits?.usedCredits ?? 0);
@@ -3168,8 +3232,21 @@ AI:`;
       return res.status(400).json({ error: 'User ID and role required' });
     }
 
+    const featureAccess = await validateFeatureAccess(userId, 'job_applications');
+    if (!featureAccess.allowed) {
+      return res.status(featureAccess.status).json({ error: featureAccess.error });
+    }
+
     const costSetting = await storage.getAdminSetting('credit_cost_job_application');
     const cost = costSetting?.value ? Number(costSetting.value) : 2;
+
+    const userPlan = featureAccess.plan;
+    if (userPlan) {
+      const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
+      if (monthlyCredits > 0) {
+        await storage.refreshMonthlyCredits(userId, monthlyCredits);
+      }
+    }
 
     const credits = await storage.getUserCredits(userId);
     const availableCredits = (credits?.totalCredits ?? 0) - (credits?.usedCredits ?? 0);
@@ -3643,7 +3720,7 @@ AI:`;
   });
 
   // Paystack webhook (Paystack notifies us of payment status)
-  app.post("/api/payments/paystack/webhook", async (req, res) => {
+  app.post("/api/payments/paystack/webhook", express.raw({ type: 'application/json' }), async (req, res) => {
     try {
       const signature = req.headers['x-paystack-signature'] as string;
       
@@ -3665,15 +3742,24 @@ AI:`;
         publicKey: paystackMethod.publicKey || ''
       });
 
+      const payloadString = Buffer.isBuffer(req.body)
+        ? req.body.toString('utf8')
+        : typeof req.body === 'string'
+          ? req.body
+          : JSON.stringify(req.body);
+
       // Verify webhook signature
-      const payload = JSON.stringify(req.body);
-      const isValid = paystack.verifyWebhookSignature(payload, signature);
+      const isValid = paystack.verifyWebhookSignature(payloadString, signature);
 
       if (!isValid) {
         return res.status(401).json({ error: 'Invalid signature' });
       }
 
-      const event = req.body;
+      const event = typeof req.body === 'string'
+        ? JSON.parse(req.body)
+        : Buffer.isBuffer(req.body)
+          ? JSON.parse(req.body.toString('utf8'))
+          : req.body;
 
       // Handle different event types
       if (event.event === 'charge.success') {
@@ -4494,9 +4580,9 @@ AI:`;
       }
 
       // Cancel existing subscription if any
-      const existing = await storage.getUserPlan(userId);
-      if (existing?.id) {
-        await storage.updateSubscriptionStatus(existing.id, 'cancelled');
+      const existingSub = await storage.getUserSubscription(userId);
+      if (existingSub?.id) {
+        await storage.updateSubscriptionStatus(existingSub.id, 'cancelled');
       }
 
       const subscription = await storage.createSubscription({
@@ -4505,6 +4591,10 @@ AI:`;
         status: 'active',
         startDate: new Date().toISOString()
       });
+
+      if (plan.credits && plan.credits > 0) {
+        await storage.addCredits(userId, plan.credits, `Subscribed to ${plan.name}`);
+      }
 
       res.json({
         success: true,
@@ -5273,6 +5363,19 @@ AI:`;
       }
   
       // Check and deduct credits
+      const featureAccess = await validateFeatureAccess(userId, 'ai_chat');
+      if (!featureAccess.allowed) {
+        return res.status(featureAccess.status).json({ error: featureAccess.error });
+      }
+
+      const userPlan = featureAccess.plan;
+      if (userPlan) {
+        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
+        if (monthlyCredits > 0) {
+          await storage.refreshMonthlyCredits(userId, monthlyCredits);
+        }
+      }
+
       const costSetting = await storage.getAdminSetting('credit_cost_marketplace_feature');
       const sabiguardCost = costSetting?.value ? Number(costSetting.value) : 5;
 
@@ -5376,6 +5479,19 @@ AI:`;
       }
   
       // Check and deduct credits
+      const featureAccess = await validateFeatureAccess(userId, 'civic_alerts');
+      if (!featureAccess.allowed) {
+        return res.status(featureAccess.status).json({ error: featureAccess.error });
+      }
+
+      const userPlan = featureAccess.plan;
+      if (userPlan) {
+        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
+        if (monthlyCredits > 0) {
+          await storage.refreshMonthlyCredits(userId, monthlyCredits);
+        }
+      }
+
       const costSetting = await storage.getAdminSetting('credit_cost_event_creation');
       const sabimoveCost = costSetting?.value ? Number(costSetting.value) : 3;
 
@@ -5442,6 +5558,19 @@ AI:`;
       const { userId, skills, location, jobType } = req.body;
   
       // Check and deduct credits
+      const featureAccess = await validateFeatureAccess(userId, 'job_applications');
+      if (!featureAccess.allowed) {
+        return res.status(featureAccess.status).json({ error: featureAccess.error });
+      }
+
+      const userPlan = featureAccess.plan;
+      if (userPlan) {
+        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
+        if (monthlyCredits > 0) {
+          await storage.refreshMonthlyCredits(userId, monthlyCredits);
+        }
+      }
+
       const costSetting = await storage.getAdminSetting('credit_cost_job_application');
       const sabiworkCost = costSetting?.value ? Number(costSetting.value) : 2;
 

@@ -242,10 +242,17 @@ export default function BookingDetail() {
           </div>
 
           {/* Dynamic Messages */}
-          {messages.map((msg: any, i: number) => {
-            const isMe = msg.senderId === user?.uid;
-            return (
-              <div key={i} className={`flex items-start gap-3 ${!isMe ? 'flex-row' : 'flex-row-reverse'}`}>
+          {messages
+            .slice()
+            .sort((a: any, b: any) => {
+              const aDate = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : a.createdAt?._seconds ? a.createdAt._seconds * 1000 : new Date(a.createdAt).getTime();
+              const bDate = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : b.createdAt?._seconds ? b.createdAt._seconds * 1000 : new Date(b.createdAt).getTime();
+              return aDate - bDate;
+            })
+            .map((msg: any) => {
+              const isMe = msg.senderId === user?.uid;
+              return (
+                <div key={msg.id || msg.createdAt || Math.random()} className={`flex items-start gap-3 ${!isMe ? 'flex-row' : 'flex-row-reverse'}`}>
                 <Avatar className="h-8 w-8 shrink-0">
                   <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
                     {isMe ? 'Me' : (isVendor ? 'U' : 'P')}

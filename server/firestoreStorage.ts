@@ -173,7 +173,7 @@ export const firestoreStorage: IFirestoreStorage = {
   // Credits & Plans
   async getUserCredits(userId: string) {
     const doc = await getCollection('credits').doc(userId).get();
-    return doc.exists ? { userId, ...doc.data() } as UserCredits : { userId, totalCredits: 0, usedCredits: 0 };
+    return doc.exists ? { userId, ...doc.data() } as UserCredits : { userId, totalCredits: 0, usedCredits: 0, planCredits: 0 };
   },
   async deductCredits(userId: string, amount: number, feature: string, description: string) {
     const creditsRef = getCollection('credits').doc(userId);
@@ -185,14 +185,37 @@ export const firestoreStorage: IFirestoreStorage = {
       const used = data.usedCredits || 0;
       if (total - used < amount) return false;
       transaction.update(creditsRef, { usedCredits: used + amount });
+      await getCollection('creditLogs').add({
+        userId,
+        amount,
+        feature,
+        description,
+        createdAt: new Date()
+      });
       return true;
     });
   },
   async addCredits(userId: string, credits: number, description: string) {
-    await getCollection('credits').doc(userId).set({ totalCredits: admin.firestore.FieldValue.increment(credits) }, { merge: true });
+    await getCollection('credits').doc(userId).set({
+      totalCredits: admin.firestore.FieldValue.increment(credits)
+    }, { merge: true });
+    await getCollection('creditLogs').add({
+      userId,
+      amount: credits,
+      feature: 'credit_add',
+      description,
+      createdAt: new Date()
+    });
   },
   async refundCredits(userId: string, amount: number, feature: string) {
     await getCollection('credits').doc(userId).set({ usedCredits: admin.firestore.FieldValue.increment(-amount) }, { merge: true });
+    await getCollection('creditLogs').add({
+      userId,
+      amount: -amount,
+      feature,
+      description: `Refund: ${feature}`,
+      createdAt: new Date()
+    });
   },
   async getAllPlans() {
     const snapshot = await getCollection('plans').get();
@@ -206,6 +229,56 @@ export const firestoreStorage: IFirestoreStorage = {
     const sub = await getCollection('subscriptions').where('userId', '==', userId).where('status', '==', 'active').get();
     if (sub.empty) return null;
     return this.getPlanById((sub.docs[0].data() as Subscription).planId);
+  },
+  async getUserSubscription(userId: string) {
+    const sub = await getCollection('subscriptions').where('userId', '==', userId).where('status', '==', 'active').get();
+    return sub.empty ? null : ({ id: sub.docs[0].id, ...sub.docs[0].data() } as Subscription);
+  },
+  async assignDefaultPlan(userId: string, userType: 'user' | 'vendor' = 'user') {
+    const freePlans = await this.getPlansByType('free', userType);
+    const plan = freePlans[0] || null;
+    if (!plan) return null;
+    const existingSub = await this.getUserSubscription(userId);
+    if (existingSub?.id) {
+      await this.updateSubscriptionStatus(existingSub.id, 'cancelled');
+    }
+    await this.createSubscription({
+      userId,
+      planId: plan.id,
+      status: 'active',
+      startDate: new Date().toISOString()
+    });
+    await this.setUserCredits(userId, plan.credits);
+    return plan;
+  },
+  async setUserCredits(userId: string, totalCredits: number) {
+    await getCollection('credits').doc(userId).set({ totalCredits, usedCredits: 0, planCredits: totalCredits, renewalDate: new Date().toISOString() }, { merge: true });
+  },
+  async refreshMonthlyCredits(userId: string, monthlyCredits: number) {
+    const creditsRef = getCollection('credits').doc(userId);
+    const now = new Date();
+    const currentMonthKey = `${now.getUTCFullYear()}-${now.getUTCMonth() + 1}`;
+    await admin.firestore().runTransaction(async (transaction) => {
+      const doc = await transaction.get(creditsRef);
+      if (!doc.exists) {
+        transaction.set(creditsRef, {
+          totalCredits: monthlyCredits,
+          usedCredits: 0,
+          planCredits: monthlyCredits,
+          renewalDate: currentMonthKey
+        }, { merge: true });
+        return;
+      }
+      const data = doc.data() as any;
+      const lastRenewalMonth = data.renewalDate;
+      if (lastRenewalMonth !== currentMonthKey) {
+        transaction.update(creditsRef, {
+          totalCredits: admin.firestore.FieldValue.increment(monthlyCredits),
+          planCredits: monthlyCredits,
+          renewalDate: currentMonthKey
+        });
+      }
+    });
   },
   async createPlan(plan: Omit<UserPlan, 'id' | 'createdAt'>) {
     const id = `plan-${Date.now()}`;
@@ -257,9 +330,6 @@ export const firestoreStorage: IFirestoreStorage = {
   async getCreditLog(userId: string) {
     const snapshot = await getCollection('creditLogs').where('userId', '==', userId).orderBy('createdAt', 'desc').get();
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  },
-  async setUserCredits(userId: string, totalCredits: number) {
-    await getCollection('credits').doc(userId).set({ totalCredits, usedCredits: 0 }, { merge: true });
   },
   async getCreditPackages() {
     const pkgSnapshot = await getCollection('creditPackages').get();
@@ -529,7 +599,7 @@ export const firestoreStorage: IFirestoreStorage = {
   },
   async createVendorService(service: Omit<VendorService, 'id' | 'createdAt'>) {
     const id = `svc-${Date.now()}`;
-    const newSvc = { id, createdAt: new Date(), ...service };
+    const newSvc = { id, createdAt: new Date(), status: 'pending' as const, ...service };
     await getCollection('vendorServices').doc(id).set(newSvc);
     return newSvc as VendorService;
   },
@@ -538,6 +608,16 @@ export const firestoreStorage: IFirestoreStorage = {
   },
   async deleteVendorService(id: string) {
     await getCollection('vendorServices').doc(id).delete();
+  },
+  async getAllVendorServices() {
+    const snap = await getCollection('vendorServices').get();
+    return snap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+  },
+  async approveVendorService(id: string) {
+    await getCollection('vendorServices').doc(id).set({ status: 'approved', reviewedAt: new Date() }, { merge: true });
+  },
+  async rejectVendorService(id: string) {
+    await getCollection('vendorServices').doc(id).set({ status: 'rejected', reviewedAt: new Date() }, { merge: true });
   },
 
   // Routes & Alerts
@@ -820,7 +900,18 @@ export const firestoreStorage: IFirestoreStorage = {
   },
   async createPayment(payment: Omit<Payment, 'id' | 'createdAt' | 'status'>) {
     const id = `pay-${Date.now()}`;
-    const newPay = { id, createdAt: new Date(), status: 'pending' as const, ...payment };
+    const newPay: any = {
+      id,
+      createdAt: new Date(),
+      status: 'pending' as const,
+      ...payment,
+      paymentMethod: payment.provider
+    };
+
+    if (payment.metadata?.reference) {
+      newPay.reference = payment.metadata.reference;
+    }
+
     await getCollection('payments').doc(id).set(newPay);
     return newPay as Payment;
   },
@@ -968,8 +1059,10 @@ export const firestoreStorage: IFirestoreStorage = {
     return { id };
   },
   async getBookingMessages(bookingId: string, limit?: number) {
-    const snap = await getCollection('bookings').doc(bookingId).collection('messages').get();
-    return snap.docs.map(doc => doc.data());
+    let q: any = getCollection('bookings').doc(bookingId).collection('messages').orderBy('createdAt', 'asc');
+    if (limit) q = q.limit(limit);
+    const snap = await q.get();
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
   async getBookingsByUserId(userId: string) {
     const snap = await getCollection('bookings').where('userId', '==', userId).get();
