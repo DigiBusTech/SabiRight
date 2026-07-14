@@ -652,7 +652,7 @@ export async function registerRoutes(
       }
 
       await storage.updateEmailVerificationStatus(userId, 'pending');
-      res.json({ success: true, status: 'pending', messageId: emailInfo?.messageId, accepted: emailInfo?.accepted, rejected: emailInfo?.rejected });
+      res.json({ success: true, status: 'pending', messageId: emailInfo?.messageId, accepted: emailInfo?.accepted, rejected: emailInfo?.rejected, smtpVerify: emailInfo?.smtpVerify });
     } catch (error) {
       console.error(`[EmailVerification] Error in submit:`, error);
       next(error);

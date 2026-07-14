@@ -617,6 +617,28 @@ export const firestoreStorage: IFirestoreStorage = {
       tls: { rejectUnauthorized: false }
     });
 
+    // Log transporter creation without exposing secrets
+    try {
+      console.log(`[EmailNotification] SMTP transporter configured host=${smtpSettings.host} port=${smtpSettings.port} user=${smtpSettings.username} secure=${smtpSettings.encryption}`);
+    } catch (e) {
+      console.error('[EmailNotification] Failed to log SMTP config', e);
+    }
+
+    // Verify SMTP connection early to surface connectivity/auth issues
+    let verifyResult: { ok: boolean; message?: string } = { ok: true };
+    try {
+      // transporter.verify() may throw if connection/auth fails
+      // Await it so we can include the result in responses/logs
+      // Do not log credentials here.
+      // eslint-disable-next-line @typescript-eslint/await-thenable
+      await transporter.verify();
+      verifyResult = { ok: true, message: 'SMTP connection verified' };
+      console.log('[EmailNotification] SMTP verify: OK');
+    } catch (verifyErr: any) {
+      verifyResult = { ok: false, message: verifyErr?.message || String(verifyErr) };
+      console.error('[EmailNotification] SMTP verify failed:', verifyResult.message);
+    }
+
     const subject = n.subject || n.title || 'SabiRight Notification';
     const text = n.text || n.message || '';
     let html = n.html || `<p>${n.message || ''}</p>`;
@@ -648,7 +670,19 @@ export const firestoreStorage: IFirestoreStorage = {
       html,
     });
 
-    console.log(`[EmailNotification] Sent to ${profile.email} messageId=${info.messageId} accepted=${JSON.stringify(info.accepted)} rejected=${JSON.stringify(info.rejected)}`);
+    try {
+      console.log(`[EmailNotification] Sent to ${profile.email} messageId=${info.messageId} accepted=${JSON.stringify(info.accepted)} rejected=${JSON.stringify(info.rejected)}`);
+    } catch (logErr) {
+      console.error('[EmailNotification] Failed to log sendMail result', logErr);
+    }
+
+    // Attach verify metadata so callers can see both connection and send details
+    try {
+      (info as any).smtpVerify = verifyResult;
+    } catch (e) {
+      // Non-fatal: return the original info if annotation fails
+    }
+
     return info;
   },
   async sendNotification(n: any) {
