@@ -649,24 +649,15 @@ export const firestoreStorage: IFirestoreStorage = {
   },
   async sendNotification(n: any) {
     const requestedChannels = Array.isArray(n.channels) ? [...n.channels] : [];
-    let persistChannels = [...requestedChannels];
 
     if (requestedChannels.includes('email')) {
       const profile = await this.getUserProfile(n.userId);
-      try {
-        await this.sendEmailNotification(n, profile);
-      } catch (error) {
-        console.error('[sendNotification] Email send failed, falling back to in_app notification:', error);
-        persistChannels = persistChannels.filter((c) => c !== 'email');
-        if (!persistChannels.includes('in_app')) {
-          persistChannels.push('in_app');
-        }
-      }
+      await this.sendEmailNotification(n, profile);
     }
 
-    const shouldPersistNotification = persistChannels.includes('in_app') || persistChannels.includes('push') || persistChannels.length === 0;
+    const shouldPersistNotification = requestedChannels.includes('in_app') || requestedChannels.includes('push') || requestedChannels.length === 0;
     if (shouldPersistNotification) {
-      await getCollection('notifications').add({ ...n, channels: persistChannels, createdAt: new Date() });
+      await getCollection('notifications').add({ ...n, createdAt: new Date() });
     }
   },
   async createNotification(n: any) { return this.sendNotification(n); },

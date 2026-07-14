@@ -638,7 +638,7 @@ export async function registerRoutes(
           expiry: '1 hour',
           userName: userProfile?.displayName || userProfile?.email || 'User'
         },
-        channels: ['email', 'in_app']
+        channels: ['email']
       });
 
       await storage.updateEmailVerificationStatus(userId, 'pending');
