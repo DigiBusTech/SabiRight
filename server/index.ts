@@ -109,6 +109,11 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 // Setup routes
 registerRoutes(server, app).catch(console.error);
 
+// Fallback for unknown API routes
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
 // Serve static files
 const publicDir = path.resolve(process.cwd(), "dist/public");
 app.use(express.static(publicDir));

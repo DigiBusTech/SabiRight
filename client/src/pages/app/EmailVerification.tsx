@@ -44,8 +44,15 @@ export default function EmailVerification() {
         toast({ title: "Success", description: "Verification code sent to your email!" });
         refetch();
       } else {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to submit verification');
+        let errorMessage = 'Failed to submit verification';
+        try {
+          const errorData = await res.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch (parseError) {
+          const text = await res.text();
+          errorMessage = text || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
     } catch (err: any) {
       toast({ title: "Error", description: err.message || "Failed to submit verification", variant: "destructive" });
@@ -72,8 +79,15 @@ export default function EmailVerification() {
         toast({ title: "Success", description: "Email verified successfully!" });
         refetch();
       } else {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to verify code');
+        let errorMessage = 'Failed to verify code';
+        try {
+          const errorData = await res.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch (parseError) {
+          const text = await res.text();
+          errorMessage = text || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
     } catch (err: any) {
       toast({ title: "Error", description: err.message || "Failed to verify code", variant: "destructive" });
