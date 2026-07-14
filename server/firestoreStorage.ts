@@ -639,6 +639,10 @@ export const firestoreStorage: IFirestoreStorage = {
       console.error('[EmailNotification] SMTP verify failed:', verifyResult.message);
     }
 
+    if (!verifyResult.ok) {
+      throw new Error(`SMTP verification failed: ${verifyResult.message}`);
+    }
+
     const subject = n.subject || n.title || 'SabiRight Notification';
     const text = n.text || n.message || '';
     let html = n.html || `<p>${n.message || ''}</p>`;
@@ -671,7 +675,7 @@ export const firestoreStorage: IFirestoreStorage = {
     });
 
     try {
-      console.log(`[EmailNotification] Sent to ${profile.email} messageId=${info.messageId} accepted=${JSON.stringify(info.accepted)} rejected=${JSON.stringify(info.rejected)}`);
+      console.log(`[EmailNotification] Sent to ${profile.email} messageId=${info.messageId} accepted=${JSON.stringify(info.accepted)} rejected=${JSON.stringify(info.rejected)} response=${info.response}`);
     } catch (logErr) {
       console.error('[EmailNotification] Failed to log sendMail result', logErr);
     }
@@ -679,6 +683,8 @@ export const firestoreStorage: IFirestoreStorage = {
     // Attach verify metadata so callers can see both connection and send details
     try {
       (info as any).smtpVerify = verifyResult;
+      (info as any).smtpResponse = info.response;
+      (info as any).smtpEnvelope = info.envelope;
     } catch (e) {
       // Non-fatal: return the original info if annotation fails
     }

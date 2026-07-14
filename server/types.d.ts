@@ -471,6 +471,7 @@ export interface IFirestoreStorage {
   // Email & Notifications
   setEmailVerificationCode(userId: string, code: string, expires: Date): Promise<void>;
   clearEmailVerificationCode(userId: string): Promise<void>;
+  sendEmailNotification(notification: any, profile: UserProfile | null): Promise<any>;
   sendNotification(notification: any): Promise<void>;
   createNotification(notification: any): Promise<void>;
   updateEmailVerificationStatus(userId: string, status: UserProfile['emailVerificationStatus']): Promise<void>;
