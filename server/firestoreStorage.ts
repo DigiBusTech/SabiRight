@@ -973,7 +973,34 @@ export const firestoreStorage: IFirestoreStorage = {
   async getTrainingTerms() { return []; },
   async getAllCrowdTranslations() { return []; },
   async getCrowdTranslationStats() { return { total: 0 }; },
-  async getAllNotificationTemplates() { return []; },
+  async getAllNotificationTemplates() {
+    const snapshot = await getCollection('notificationTemplates').get();
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  },
+  async getNotificationTemplateByName(name: string) {
+    const snapshot = await getCollection('notificationTemplates').where('name', '==', name).limit(1).get();
+    if (snapshot.empty) return null;
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() };
+  },
+  async createNotificationTemplate(d: any) {
+    const id = d.id || `tmpl-${Date.now()}`;
+    const newTemplate = { id, ...d, createdAt: new Date() };
+    await getCollection('notificationTemplates').doc(id).set(newTemplate);
+    return newTemplate;
+  },
+  async updateNotificationTemplate(id: string, u: any) {
+    await getCollection('notificationTemplates').doc(id).set(u, { merge: true });
+    const doc = await getCollection('notificationTemplates').doc(id).get();
+    return doc.exists ? { id: doc.id, ...doc.data() } : null;
+  },
+  async deleteNotificationTemplate(id: string) {
+    const docRef = getCollection('notificationTemplates').doc(id);
+    const doc = await docRef.get();
+    if (!doc.exists) return false;
+    await docRef.delete();
+    return true;
+  },
   async getSmtpSettings() {
     const doc = await getCollection('adminSettings').doc('smtp').get();
     return doc.exists ? doc.data() : null;
