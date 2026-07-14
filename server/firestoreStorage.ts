@@ -622,6 +622,7 @@ export const firestoreStorage: IFirestoreStorage = {
     let html = n.html || `<p>${n.message || ''}</p>`;
 
     if (n.templateName === 'email_verification_code') {
+      console.log(`[EmailNotification] Preparing verification email for ${profile.email}`);
       html = `
         <p>Hello ${profile.displayName || profile.email || 'User'},</p>
         <p>Your SabiRight verification code is: <strong>${n.variables?.code || ''}</strong>.</p>
@@ -639,13 +640,16 @@ export const firestoreStorage: IFirestoreStorage = {
       `;
     }
 
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: `"${smtpSettings.fromName}" <${smtpSettings.fromEmail}>`,
       to: profile.email,
       subject,
       text,
       html,
     });
+
+    console.log(`[EmailNotification] Sent to ${profile.email} messageId=${info.messageId} accepted=${JSON.stringify(info.accepted)} rejected=${JSON.stringify(info.rejected)}`);
+    return info;
   },
   async sendNotification(n: any) {
     const requestedChannels = Array.isArray(n.channels) ? [...n.channels] : [];
@@ -932,8 +936,13 @@ export const firestoreStorage: IFirestoreStorage = {
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   },
   async getNotificationsByUserId(userId: string, limit?: number) {
-    const snap = await getCollection('notifications').where('userId', '==', userId).get();
-    return snap.docs.map(doc => doc.data());
+    const snap = await getCollection('notifications').where('userId', '==', userId).orderBy('createdAt', 'desc').limit(limit || 50).get();
+    return snap.docs.map(doc => {
+      const data = doc.data() as any;
+      const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt ? new Date(data.createdAt).toISOString() : null;
+      const readAt = data.readAt?.toDate ? data.readAt.toDate().toISOString() : data.readAt ? new Date(data.readAt).toISOString() : null;
+      return { id: doc.id, ...data, createdAt, readAt };
+    });
   },
   async getSabiGuardChats(userId: string) {
     const snap = await getCollection('sabiguardChats')

@@ -627,22 +627,32 @@ export async function registerRoutes(
 
       // Send email using template
       const userProfile = await storage.getUserProfile(userId);
-      await storage.sendNotification({
-        userId,
-        type: 'email_verification_code',
-        title: 'Your Verification Code',
-        message: `Your SabiRight verification code is: ${code}. This code expires in 1 hour.`,
-        templateName: 'email_verification_code',
-        variables: { 
-          code, 
-          expiry: '1 hour',
-          userName: userProfile?.displayName || userProfile?.email || 'User'
-        },
-        channels: ['email']
-      });
+      if (!userProfile?.email) {
+        return res.status(400).json({ error: 'User email is required to send verification code' });
+      }
+
+      let emailInfo: any;
+      try {
+        console.log(`[EmailVerification] Sending verification email to ${userProfile.email} for user ${userId}`);
+        emailInfo = await (storage as any).sendEmailNotification({
+          userId,
+          type: 'email_verification_code',
+          title: 'Your Verification Code',
+          message: `Your SabiRight verification code is: ${code}. This code expires in 1 hour.`,
+          templateName: 'email_verification_code',
+          variables: { 
+            code, 
+            expiry: '1 hour',
+            userName: userProfile.displayName || userProfile.email || 'User'
+          }
+        }, userProfile);
+      } catch (emailError: any) {
+        console.error('[EmailVerification] Email send failed:', emailError);
+        return res.status(500).json({ error: 'Failed to send verification email', details: emailError.message || String(emailError) });
+      }
 
       await storage.updateEmailVerificationStatus(userId, 'pending');
-      res.json({ success: true, status: 'pending' });
+      res.json({ success: true, status: 'pending', messageId: emailInfo?.messageId, accepted: emailInfo?.accepted, rejected: emailInfo?.rejected });
     } catch (error) {
       console.error(`[EmailVerification] Error in submit:`, error);
       next(error);
