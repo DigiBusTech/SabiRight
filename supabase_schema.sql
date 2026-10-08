@@ -645,7 +645,7 @@ INSERT INTO admin_settings ("key", value, category, is_secret)
 VALUES 
     ('ai_mode', 'natlas_sovereign', 'ai', false),
     ('natlas_model_id', 'NCAIR1/N-ATLaS', 'ai', false),
-    ('natlas_api_endpoint', 'https://api-inference.huggingface.co/models/NCAIR1/N-ATLaS', 'ai', false),
+    ('natlas_api_endpoint', 'https://router.huggingface.co/v1/chat/completions', 'ai', false),
     ('natlas_prompt_vernacular_support', 'true', 'ai', false)
 ON CONFLICT ("key") DO NOTHING;
 
@@ -667,22 +667,122 @@ ALTER TABLE notification_templates ENABLE ROW LEVEL SECURITY;
 CREATE TABLE IF NOT EXISTS email_verification_codes (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    code TEXT NOT NULL,
+    email TEXT NOT NULL,
+    code TEXT,
+    code_hash TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
     expires_at TIMESTAMPTZ NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT email_verification_attempts_nonnegative CHECK (attempts >= 0)
 );
 CREATE INDEX IF NOT EXISTS email_verif_user_idx ON email_verification_codes(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS email_verif_user_uidx ON email_verification_codes(user_id);
+CREATE INDEX IF NOT EXISTS email_verif_expiry_idx ON email_verification_codes(expires_at);
 ALTER TABLE email_verification_codes ENABLE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.issue_email_verification_code(
+  p_id TEXT,
+  p_user_id TEXT,
+  p_email TEXT,
+  p_code_hash TEXT,
+  p_expires_at TIMESTAMPTZ
+) RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_created_at TIMESTAMPTZ;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext(p_user_id));
+  DELETE FROM public.email_verification_codes WHERE expires_at <= NOW();
+
+  SELECT created_at INTO v_created_at
+  FROM public.email_verification_codes
+  WHERE user_id = p_user_id
+  FOR UPDATE;
+
+  IF v_created_at IS NOT NULL AND v_created_at > NOW() - INTERVAL '60 seconds' THEN
+    RETURN FALSE;
+  END IF;
+
+  INSERT INTO public.email_verification_codes (
+    id, user_id, email, code, code_hash, attempts, expires_at, created_at
+  ) VALUES (
+    p_id, p_user_id, LOWER(TRIM(p_email)), NULL, p_code_hash, 0, p_expires_at, NOW()
+  )
+  ON CONFLICT (user_id) DO UPDATE SET
+    id = EXCLUDED.id,
+    email = EXCLUDED.email,
+    code = NULL,
+    code_hash = EXCLUDED.code_hash,
+    attempts = 0,
+    expires_at = EXCLUDED.expires_at,
+    created_at = NOW();
+
+  RETURN TRUE;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.consume_email_verification_code(
+  p_user_id TEXT,
+  p_code_hash TEXT
+) RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_email TEXT;
+BEGIN
+  DELETE FROM public.email_verification_codes
+  WHERE user_id = p_user_id
+    AND code_hash = p_code_hash
+    AND expires_at > NOW()
+    AND attempts < 5
+  RETURNING email INTO v_email;
+
+  IF v_email IS NOT NULL THEN
+    UPDATE public.profiles
+    SET email = v_email,
+        email_verified = TRUE,
+        email_verification_status = 'verified',
+        email_verified_at = NOW()
+    WHERE id = p_user_id;
+
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Profile not found for email verification';
+    END IF;
+
+    RETURN v_email;
+  END IF;
+
+  UPDATE public.email_verification_codes
+  SET attempts = attempts + 1
+  WHERE user_id = p_user_id
+    AND expires_at > NOW()
+    AND attempts < 5;
+
+  RETURN NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.issue_email_verification_code(TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.consume_email_verification_code(TEXT, TEXT) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.issue_email_verification_code(TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) TO service_role;
+GRANT EXECUTE ON FUNCTION public.consume_email_verification_code(TEXT, TEXT) TO service_role;
 
 CREATE TABLE IF NOT EXISTS push_subscriptions (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL DEFAULT 'webpush',
     endpoint TEXT NOT NULL,
-    p256dh TEXT NOT NULL,
-    auth TEXT NOT NULL,
+    p256dh TEXT,
+    auth TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS push_sub_user_idx ON push_subscriptions(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS push_sub_user_provider_endpoint_uidx ON push_subscriptions(user_id, provider, endpoint);
 ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
 
 -- Seed Standard Transactional Notification Templates

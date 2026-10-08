@@ -1,9 +1,10 @@
 import { supabase } from './supabase';
 import Constants from 'expo-constants';
 
+const DEFAULT_API_BASE_URL = 'https://www.sabiright.ng';
+
 function getApiBaseUrl(): string {
-  // If EXPO_PUBLIC_API_URL is explicitly set and points to an actual remote host (not localhost), use it
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
   if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
     return envUrl;
   }
@@ -17,8 +18,7 @@ function getApiBaseUrl(): string {
     }
   }
 
-  // Fallback to local network IP or localhost
-  return envUrl || 'http://192.168.100.5:5000';
+  return envUrl || DEFAULT_API_BASE_URL;
 }
 
 export const API_BASE_URL = getApiBaseUrl();

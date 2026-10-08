@@ -1,7 +1,7 @@
 import { supabase, supabaseStorage as storage } from "../supabaseStorage.js";
 import { getLegalAgent, summarizeCaseForProfessional } from "../agent/legalAgent.js";
 import { Runner, InMemorySessionService, toStructuredEvents, EventType } from "@google/adk";
-import { generateAIResponse } from "../aiService.js";
+import { generateAIResponse, isNAtlasSovereignMode } from "../aiService.js";
 import PaystackService from "../paystackService.js";
 import type { IncomingBotMessage, BotResponse } from "./types.js";
 
@@ -690,8 +690,12 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     const primarySetting = await storage.getAdminSetting('ai_provider');
     const activeProvider = (primarySetting?.value || 'groq').toLowerCase();
 
-    // 1. Attempt Google ADK if Gemini is active provider
-    if ((activeProvider === 'google' || activeProvider === 'gemini') && geminiKey) {
+    // In sovereign mode, route through the shared provider layer instead of Google ADK.
+    if (
+      !(await isNAtlasSovereignMode()) &&
+      (activeProvider === 'google' || activeProvider === 'gemini') &&
+      geminiKey
+    ) {
       try {
         const agent = await getLegalAgent(userLang);
         const runner = new Runner({
@@ -817,4 +821,3 @@ AI:`;
     };
   }
 }
-

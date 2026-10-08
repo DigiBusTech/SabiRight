@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { apiFetch } from '../lib/api';
+import { unregisterMobilePush } from '../lib/pushNotifications';
 
 interface AuthContextType {
   user: any | null;
@@ -80,6 +81,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    if (user?.id) {
+      try {
+        await unregisterMobilePush(user.id);
+      } catch (error) {
+        console.error('[MobilePush] Could not unregister push token before sign-out:', error);
+      }
+    }
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);

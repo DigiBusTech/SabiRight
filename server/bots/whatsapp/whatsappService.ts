@@ -1,6 +1,7 @@
 import { supabaseStorage as storage } from "../../supabaseStorage.js";
 import type { BotResponse } from "../types.js";
 import { normalizeMarkdown, chunkText } from "../format.js";
+import { readLimitedAudioResponse } from "../media.js";
 
 interface WhatsAppCredentials {
   accessToken: string;
@@ -19,6 +20,39 @@ async function getWhatsAppCredentials(): Promise<WhatsAppCredentials | null> {
   }
 
   return { accessToken, phoneNumberId };
+}
+
+export async function downloadWhatsAppAudio(mediaId: string): Promise<{ audio: Buffer; mimeType: string }> {
+  const creds = await getWhatsAppCredentials();
+  if (!creds) throw new Error('WhatsApp access token is not configured');
+  if (!mediaId) throw new Error('WhatsApp audio media ID is missing');
+
+  const metadataResponse = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(mediaId)}`, {
+    headers: { 'Authorization': `Bearer ${creds.accessToken}` },
+    signal: AbortSignal.timeout(20_000)
+  });
+  if (!metadataResponse.ok) {
+    throw new Error(`WhatsApp media metadata request returned HTTP ${metadataResponse.status}`);
+  }
+
+  const metadata = await metadataResponse.json() as { url?: string; mime_type?: string };
+  if (!metadata.url || !metadata.mime_type?.toLowerCase().startsWith('audio/')) {
+    throw new Error('WhatsApp media is not a supported audio attachment');
+  }
+  const mediaUrl = new URL(metadata.url);
+  if (
+    mediaUrl.protocol !== 'https:' ||
+    !(mediaUrl.hostname === 'lookaside.fbsbx.com' || mediaUrl.hostname.endsWith('.fbcdn.net'))
+  ) {
+    throw new Error('WhatsApp returned an unsupported media download URL');
+  }
+
+  const audioResponse = await fetch(mediaUrl, {
+    headers: { 'Authorization': `Bearer ${creds.accessToken}` },
+    signal: AbortSignal.timeout(20_000)
+  });
+  const audio = await readLimitedAudioResponse(audioResponse, 'WhatsApp media download');
+  return { audio, mimeType: metadata.mime_type };
 }
 
 export async function markWhatsAppAsRead(messageId: string): Promise<void> {

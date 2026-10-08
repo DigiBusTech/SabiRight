@@ -397,8 +397,12 @@ For the native mobile app, configure `mobile/.env`:
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
-EXPO_PUBLIC_API_URL=http://YOUR_LOCAL_IP:5000
+EXPO_PUBLIC_API_URL=https://www.sabiright.ng
+EXPO_PUBLIC_EAS_PROJECT_ID=YOUR_EAS_PROJECT_UUID
 ```
+
+Use your computer's LAN IP and port 5000 for `EXPO_PUBLIC_API_URL` when testing the mobile app against a local development server.
+Set `EXPO_PUBLIC_EAS_PROJECT_ID` to the EAS project UUID linked to the app to enable native push registration. The mobile app asks for permission from its Notifications screen; push messages contain no private notification text.
 
 ### Starting the Full-Stack Web & Server
 
@@ -411,7 +415,7 @@ EXPO_PUBLIC_API_URL=http://YOUR_LOCAL_IP:5000
    - Open your Supabase SQL Editor.
    - For a **new project**, run the entire `supabase_schema.sql` baseline once.
    - For an **existing project**, run the newest unapplied SQL file in `supabase/migrations/` instead of rerunning the baseline. Apply migrations in filename order and track which ones have been run.
-   - The current repair migration is `supabase/migrations/20261008114000_repair_feature_schema.sql`; it creates missing settings/route-alert tables and adds the plan/payment columns used by the server.
+   - Apply the versioned files in filename order, including `supabase/migrations/20261008114000_repair_feature_schema.sql`, `supabase/migrations/20261008123000_notification_system_schema.sql`, `supabase/migrations/20261008123900_update_natlas_inference_endpoint.sql`, and `supabase/migrations/20261008140000_notification_hardening.sql`. The N-ATLAS migration preserves any custom endpoint; apply the notification migrations to existing projects before deploying this notification code.
 
 3. **Start the development server:**
    ```bash

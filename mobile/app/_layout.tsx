@@ -1,16 +1,44 @@
 import React, { useEffect } from 'react';
 import { Stack } from 'expo-router';
+import { useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { API_BASE_URL } from '../lib/api';
 import { syncRemoteMoatData } from '../lib/offlineStorage';
+import { registerMobilePush } from '../lib/pushNotifications';
 
 const queryClient = new QueryClient();
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true
+  })
+});
+
 function RootContent() {
   const { isDark, colors } = useTheme();
+  const { user } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!user?.id) return;
+    registerMobilePush(user.id).catch(error => {
+      console.error('[MobilePush] Could not register push token:', error);
+    });
+
+    const responseListener = Notifications.addNotificationResponseReceivedListener(() => {
+      router.push('/(tabs)/notifications');
+    });
+    return () => responseListener.remove();
+  }, [user?.id, router]);
 
   return (
     <>
@@ -51,8 +79,7 @@ function RootContent() {
 export default function RootLayout() {
   // Sync admin-managed MOAT statutory context on startup so it's available offline
   useEffect(() => {
-    const apiBase = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.100.5:5000';
-    syncRemoteMoatData(apiBase).catch(() => {
+    syncRemoteMoatData(API_BASE_URL).catch(() => {
       // Network unavailable — offline data from last sync will be used
     });
   }, []);
@@ -69,4 +96,3 @@ export default function RootLayout() {
     </SafeAreaProvider>
   );
 }
-

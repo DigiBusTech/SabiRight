@@ -1,7 +1,8 @@
 import { Router, Request, Response } from "express";
 import { supabaseStorage as storage } from "../../supabaseStorage.js";
 import { processBotMessage } from "../botController.js";
-import { sendWhatsAppMessage, markWhatsAppAsRead, checkWhatsAppStatus } from "./whatsappService.js";
+import { sendWhatsAppMessage, markWhatsAppAsRead, checkWhatsAppStatus, downloadWhatsAppAudio } from "./whatsappService.js";
+import { transcribeAudio } from "../../aiService.js";
 import type { IncomingBotMessage } from "../types.js";
 import crypto from "crypto";
 import { isDuplicate } from "../format.js";
@@ -96,9 +97,38 @@ async function handleMessage(message: any, contact: any) {
       text = btnReply?.title || listReply?.title || actionPayload || "";
     } else if (message.type === "location") {
       text = "Shared my location";
+    } else if (
+      message.type === "audio" ||
+      (message.type === "document" && message.document?.mime_type?.toLowerCase().startsWith('audio/'))
+    ) {
+      const audioMessage = message.audio || message.document;
+      if (!audioMessage?.id) {
+        await sendWhatsAppMessage(senderPhone, {
+          text: "I couldn't access that audio. Please try recording a new voice note or type your question.",
+        });
+        return;
+      }
+
+      try {
+        const { audio, mimeType } = await downloadWhatsAppAudio(audioMessage.id);
+        const transcript = await transcribeAudio(audio, mimeType);
+        text = transcript.text;
+      } catch (error: any) {
+        console.warn('[WhatsAppWebhook] Audio transcription failed:', error.message || error);
+        await sendWhatsAppMessage(senderPhone, {
+          text: "I couldn't transcribe that audio. Please send a shorter, clearer voice note or type your question.",
+        });
+        return;
+      }
+      if (!text.trim()) {
+        await sendWhatsAppMessage(senderPhone, {
+          text: "I couldn't hear any speech in that recording. Please try again or type your question.",
+        });
+        return;
+      }
     } else {
       await sendWhatsAppMessage(senderPhone, {
-        text: "I can read text messages for now. Please type your question and I will help.",
+        text: "I can read text and audio messages. Please send a voice note, supported audio file, or type your question.",
       });
       return;
     }

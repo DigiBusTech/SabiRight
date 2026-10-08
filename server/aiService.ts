@@ -1,5 +1,14 @@
 import { supabaseStorage as storage } from "./supabaseStorage.js";
 
+const NATLAS_REQUEST_TIMEOUT_MS = 25_000;
+const DEFAULT_NATLAS_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
+export const MAX_TRANSCRIPTION_AUDIO_BYTES = 8 * 1024 * 1024;
+
+export async function isNAtlasSovereignMode(): Promise<boolean> {
+  const setting = await storage.getAdminSetting('ai_mode');
+  return (setting?.value || 'natlas_sovereign').trim().toLowerCase() === 'natlas_sovereign';
+}
+
 /**
  * Retrieves and formats relevant admin-managed MOAT entries for the given user prompt.
  */
@@ -48,8 +57,7 @@ export async function getRelevantMoatContext(userPrompt: string): Promise<string
 
 /**
  * Calls Nigeria's Sovereign LLM: N-ATLAS (NCAIR1/N-ATLaS fine-tuned on Llama-3 8B)
- * Supports Yoruba, Hausa, Igbo, Nigerian English, and Pidgin.
- * Can connect to HuggingFace Serverless Inference, Dedicated HuggingFace Endpoint, or custom vLLM/OpenAI-compatible URL.
+ * Supports the Hugging Face chat-completion API and custom OpenAI-compatible endpoints.
  */
 export async function generateNAtlasResponse(prompt: string): Promise<string | null> {
   const tokenSetting = await storage.getAdminSetting('natlas_api_token') 
@@ -57,7 +65,7 @@ export async function generateNAtlasResponse(prompt: string): Promise<string | n
   const token = tokenSetting?.value || process.env.NATLAS_API_TOKEN || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
 
   const endpointSetting = await storage.getAdminSetting('natlas_api_endpoint');
-  const endpoint = endpointSetting?.value?.trim() || 'https://api-inference.huggingface.co/models/NCAIR1/N-ATLaS';
+  const endpoint = endpointSetting?.value?.trim() || DEFAULT_NATLAS_ENDPOINT;
 
   const modelIdSetting = await storage.getAdminSetting('natlas_model_id');
   const modelId = modelIdSetting?.value?.trim() || 'NCAIR1/N-ATLaS';
@@ -66,7 +74,7 @@ export async function generateNAtlasResponse(prompt: string): Promise<string | n
     throw new Error('N-ATLAS API token not configured. Please set natlas_api_token in Admin Settings or provide HuggingFace token.');
   }
 
-  // Handle OpenAI-compatible endpoints (such as vLLM or Hugging Face Dedicated Endpoints running TGI/vLLM)
+  // Handle Hugging Face's router and custom OpenAI-compatible endpoints.
   if (endpoint.includes('/v1/chat/completions') || endpoint.includes('/chat/completions')) {
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -79,24 +87,35 @@ export async function generateNAtlasResponse(prompt: string): Promise<string | n
         messages: [
           {
             role: 'system',
-            content: 'You are N-ATLAS, Nigeria\'s Sovereign Multilingual LLM, powering SabiRight. You communicate accurately in English, Nigerian Pidgin, Yoruba, Hausa, and Igbo with deep comprehension of Nigerian laws and civic reality.'
+            content: 'You are N-ATLAS, a multilingual language model powering SabiRight. Respond in the requested language and use provided statutory context as the source of truth.'
           },
           { role: 'user', content: prompt }
         ],
         temperature: 0.6,
         max_tokens: 1024
-      })
+      }),
+      signal: AbortSignal.timeout(NATLAS_REQUEST_TIMEOUT_MS)
     });
     if (!res.ok) {
-      const errText = await res.text();
+      const errText = (await res.text()).slice(0, 500);
       throw new Error(`N-ATLAS custom endpoint error (${res.status}): ${errText}`);
     }
     const data = await res.json() as any;
-    return data?.choices?.[0]?.message?.content || null;
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || !content.trim()) {
+      throw new Error('N-ATLAS chat endpoint returned no text content');
+    }
+    return content.trim();
   }
 
-  // HuggingFace standard model inference endpoint
-  const response = await fetch(endpoint, {
+  // Keep the model ID setting authoritative for Hugging Face's legacy model endpoint.
+  const inferenceUrl = new URL(endpoint);
+  if (inferenceUrl.hostname === 'api-inference.huggingface.co' && inferenceUrl.pathname.startsWith('/models/')) {
+    inferenceUrl.pathname = `/models/${modelId.split('/').map(encodeURIComponent).join('/')}`;
+  }
+
+  // Hugging Face model inference endpoint
+  const response = await fetch(inferenceUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -113,22 +132,151 @@ export async function generateNAtlasResponse(prompt: string): Promise<string | n
       options: {
         wait_for_model: true
       }
-    })
+    }),
+    signal: AbortSignal.timeout(NATLAS_REQUEST_TIMEOUT_MS)
   });
 
   if (!response.ok) {
-    const errorBody = await response.text();
+    const errorBody = (await response.text()).slice(0, 500);
     throw new Error(`N-ATLAS HF error (${response.status}): ${errorBody}`);
   }
 
   const data = await response.json() as any;
-  if (Array.isArray(data) && data[0]?.generated_text) {
-    return data[0].generated_text;
+  const generatedText = Array.isArray(data) ? data[0]?.generated_text : data?.generated_text;
+  if (typeof generatedText === 'string' && generatedText.trim()) {
+    return generatedText.trim();
   }
-  if (data?.generated_text) {
-    return data.generated_text;
+  throw new Error('N-ATLAS inference endpoint returned no generated text');
+}
+
+export async function transcribeAudio(
+  audio: Buffer,
+  mimeType = 'audio/mp4',
+  language?: string
+): Promise<{ text: string; engine: string }> {
+  if (!Buffer.isBuffer(audio) || audio.length === 0) {
+    throw new Error('Audio data is empty or invalid');
   }
-  return typeof data === 'string' ? data : JSON.stringify(data);
+  if (audio.length > MAX_TRANSCRIPTION_AUDIO_BYTES) {
+    const error = new Error('Audio exceeds the 8 MB transcription limit');
+    Object.assign(error, { statusCode: 413 });
+    throw error;
+  }
+
+  const contentType = mimeType.split(';', 1)[0].trim().toLowerCase();
+  if (!contentType.startsWith('audio/')) {
+    const error = new Error('Unsupported audio content type');
+    Object.assign(error, { statusCode: 415 });
+    throw error;
+  }
+
+  const asrSetting = await storage.getAdminSetting('natlas_asr_endpoint');
+  const tokenSetting = await storage.getAdminSetting('natlas_api_token')
+    || await storage.getAdminSetting('huggingface_api_key');
+  const asrEndpoint = asrSetting?.value?.trim();
+  const asrToken = tokenSetting?.value
+    || process.env.NATLAS_API_TOKEN
+    || process.env.HUGGINGFACE_API_KEY
+    || process.env.HF_TOKEN;
+  let configuredServiceFailed = false;
+
+  if (asrEndpoint && asrToken) {
+    try {
+      const response = await fetch(asrEndpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${asrToken}`,
+          'Content-Type': contentType
+        },
+        body: audio,
+        signal: AbortSignal.timeout(NATLAS_REQUEST_TIMEOUT_MS)
+      });
+
+      if (response.ok) {
+        const data = await response.json() as any;
+        const transcript = data?.text ?? data?.transcript ?? (Array.isArray(data) ? data[0]?.text : undefined);
+        if (typeof transcript === 'string') {
+          return { text: transcript.trim(), engine: 'Configured Speech-to-Text' };
+        }
+        configuredServiceFailed = true;
+        console.warn('[Transcribe] Configured speech-to-text endpoint returned no transcript field');
+      } else {
+        configuredServiceFailed = true;
+        const detail = (await response.text()).slice(0, 300);
+        console.warn(`[Transcribe] Configured speech-to-text endpoint returned ${response.status}: ${detail}`);
+      }
+    } catch (error: any) {
+      configuredServiceFailed = true;
+      console.warn('[Transcribe] Configured speech-to-text request failed:', error.message || error);
+    }
+  }
+
+  const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
+  const geminiKey = geminiKeySetting?.value
+    || process.env.GEMINI_API_KEY
+    || process.env.GOOGLE_GENAI_API_KEY;
+  if (!geminiKey) {
+    const error = new Error(configuredServiceFailed
+      ? 'Configured speech-to-text failed and no fallback provider is configured'
+      : 'Voice transcription is not configured');
+    Object.assign(error, { statusCode: configuredServiceFailed ? 502 : 503 });
+    throw error;
+  }
+
+  const requestedLanguage = language?.trim().slice(0, 80);
+  const languageInstruction = requestedLanguage && requestedLanguage.toLowerCase() !== 'english'
+    ? ` The speaker may be speaking ${requestedLanguage}; preserve the language spoken.`
+    : '';
+  const audioBase64 = audio.toString('base64');
+  const payload = JSON.stringify({
+    contents: [{
+      parts: [
+        {
+          text: `Transcribe this audio exactly as spoken. Nigerian accents and Nigerian languages are common.${languageInstruction} Detect the language from the audio when possible. Return only the transcript text, nothing else. If there is no speech, return an empty string.`
+        },
+        { inline_data: { mime_type: contentType, data: audioBase64 } }
+      ]
+    }]
+  });
+
+  let response: Response | null = null;
+  let lastError = '';
+  for (const model of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          signal: AbortSignal.timeout(NATLAS_REQUEST_TIMEOUT_MS)
+        }
+      );
+      if (response.ok) break;
+      lastError = (await response.text()).slice(0, 300);
+      console.warn(`[Transcribe] Gemini ${model} returned ${response.status}: ${lastError}`);
+      if (response.status !== 404 && response.status !== 400) break;
+    } catch (error: any) {
+      lastError = error.message || String(error);
+      console.warn(`[Transcribe] Gemini ${model} request failed:`, lastError);
+      break;
+    }
+  }
+
+  if (!response?.ok) {
+    const error = new Error(`Speech transcription failed${lastError ? `: ${lastError}` : ''}`);
+    Object.assign(error, { statusCode: 502 });
+    throw error;
+  }
+
+  const result = await response.json() as any;
+  const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (typeof text !== 'string') {
+    const error = new Error('Speech provider returned an invalid transcript');
+    Object.assign(error, { statusCode: 502 });
+    throw error;
+  }
+  return { text: text.trim(), engine: 'Gemini Flash Multilingual' };
 }
 
 /**
@@ -147,10 +295,8 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
   }
 
   // Check if system is set to Sovereign N-ATLAS Mode (NITDA NAIC Challenge)
-  const aiModeSetting = await storage.getAdminSetting('ai_mode');
-  const aiMode = (aiModeSetting?.value || 'natlas_sovereign').toLowerCase();
-
-  if (aiMode === 'natlas_sovereign') {
+  const sovereignMode = await isNAtlasSovereignMode();
+  if (sovereignMode) {
     try {
       console.log('[aiService] 🇳🇬 Sovereign Mode Active: Routing prompt to N-ATLAS (NCAIR1/N-ATLaS)...');
       const natlasResponse = await generateNAtlasResponse(effectivePrompt);
@@ -162,9 +308,9 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     }
     // If N-ATLAS encountered cold-start or error, proceed seamlessly to fallback provider below
   }
-
   const primaryAISetting = await storage.getAdminSetting('ai_provider');
-  const provider = (primaryAISetting?.value || 'google').toLowerCase();
+  const configuredProvider = (primaryAISetting?.value || 'google').toLowerCase();
+  const provider = configuredProvider === 'natlas' && sovereignMode ? 'google' : configuredProvider;
 
   if (provider === 'natlas') {
     return await generateNAtlasResponse(effectivePrompt);
@@ -530,4 +676,3 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     return text;
   }
 }
-

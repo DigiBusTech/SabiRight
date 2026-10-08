@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE_URL } from './api';
 
 export interface StatutoryCard {
   statute: string;
@@ -80,7 +81,7 @@ export async function saveOfflineLegalCards(cards: StatutoryCard[]): Promise<voi
  * Fetches the latest admin-curated MOAT data from the server and caches it locally
  * for resilient offline rights defense.
  */
-export async function syncRemoteMoatData(apiBaseUrl = 'http://localhost:5000'): Promise<StatutoryCard[]> {
+export async function syncRemoteMoatData(apiBaseUrl = API_BASE_URL): Promise<StatutoryCard[]> {
   try {
     const res = await fetch(`${apiBaseUrl}/api/moat/public`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -221,4 +222,3 @@ export async function syncOfflineDeductionsToServer(apiBaseUrl: string, token: s
   }
   return false;
 }
-

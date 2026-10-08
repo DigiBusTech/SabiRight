@@ -6,6 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+
+function decodeVapidPublicKey(value: string): Uint8Array {
+  const padded = value + "=".repeat((4 - value.length % 4) % 4);
+  const decoded = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(decoded, character => character.charCodeAt(0));
+}
 
 interface Notification {
   id: string;
@@ -41,12 +48,15 @@ const typeLabels: Record<string, string> = {
 
 export default function Notifications() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
   const limit = 20;
 
   const fetchNotifications = async (pageNum: number, reset = false) => {
@@ -78,7 +88,7 @@ export default function Notifications() {
         }
         
         setTotalCount(data.totalCount || 0);
-        setHasMore(newNotifications.length === limit);
+        setHasMore(pageNum * limit < (data.totalCount || 0));
       }
     } catch (error) {
       console.error("Failed to fetch notifications:", error);
@@ -91,6 +101,101 @@ export default function Notifications() {
     setPage(1);
     fetchNotifications(1, true);
   }, [user, filter]);
+
+  useEffect(() => {
+    let active = true;
+    if (!user || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+
+    navigator.serviceWorker.ready
+      .then(registration => registration.pushManager.getSubscription())
+      .then(subscription => {
+        if (active) setPushEnabled(!!subscription);
+      })
+      .catch(error => console.error("Could not read browser push subscription:", error));
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const interval = window.setInterval(() => fetchNotifications(1, true), 30_000);
+    return () => window.clearInterval(interval);
+  }, [user, filter]);
+
+  const togglePushNotifications = async () => {
+    if (!user) return;
+    setPushBusy(true);
+    try {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        throw new Error("This browser does not support push notifications");
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+      const existing = await registration.pushManager.getSubscription();
+      const token = await user.getIdToken();
+
+      if (existing) {
+        const response = await fetch(`/api/notifications/${user.uid}/push/unsubscribe`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ endpoint: existing.endpoint })
+        });
+        if (!response.ok) throw new Error("Could not disable browser notifications");
+        await existing.unsubscribe();
+        setPushEnabled(false);
+        toast({ title: "Browser notifications disabled" });
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        throw new Error("Allow notifications in your browser to enable push alerts");
+      }
+
+      const keyResponse = await fetch("/api/notifications/push/vapid-public-key");
+      if (!keyResponse.ok) {
+        const data = await keyResponse.json().catch(() => ({}));
+        throw new Error(data.error || "Browser push notifications are not configured");
+      }
+      const { publicKey } = await keyResponse.json();
+      if (typeof publicKey !== "string" || !publicKey) {
+        throw new Error("The browser push public key is missing");
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: decodeVapidPublicKey(publicKey)
+      });
+      const response = await fetch(`/api/notifications/${user.uid}/push/subscribe`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(subscription.toJSON())
+      });
+      if (!response.ok) {
+        await subscription.unsubscribe();
+        throw new Error("Could not save browser push subscription");
+      }
+
+      setPushEnabled(true);
+      toast({ title: "Browser notifications enabled" });
+    } catch (error) {
+      toast({
+        title: "Could not update browser notifications",
+        description: error instanceof Error ? error.message : "Please try again",
+        variant: "destructive"
+      });
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const loadMore = () => {
     const nextPage = page + 1;
@@ -171,6 +276,15 @@ export default function Notifications() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={togglePushNotifications}
+            disabled={pushBusy || !user}
+            data-testid="button-toggle-push"
+          >
+            <Bell className="h-4 w-4 mr-2" />
+            {pushBusy ? "Updating..." : pushEnabled ? "Disable browser alerts" : "Enable browser alerts"}
+          </Button>
           <Select value={filter} onValueChange={setFilter}>
             <SelectTrigger className="w-[180px]" data-testid="select-notification-filter">
               <Filter className="h-4 w-4 mr-2" />

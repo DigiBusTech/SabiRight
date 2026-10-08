@@ -3,7 +3,7 @@ import { Tabs } from 'expo-router';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../context/ThemeContext';
-import { Shield, MessageSquare, Users, AlertTriangle, User } from 'lucide-react-native';
+import { Shield, MessageSquare, Users, AlertTriangle, User, Bell } from 'lucide-react-native';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
@@ -68,6 +68,13 @@ export default function TabsLayout() {
         options={{
           title: 'SabiMove',
           tabBarIcon: ({ color }: { color: any }) => <AlertTriangle size={22} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: 'Alerts',
+          tabBarIcon: ({ color }: { color: any }) => <Bell size={22} color={color} />,
         }}
       />
       <Tabs.Screen

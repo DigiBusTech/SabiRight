@@ -23,6 +23,14 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 
+function hashEmailVerificationCode(userId: string, code: string): string {
+  const secret = process.env.EMAIL_VERIFICATION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) {
+    throw new Error('EMAIL_VERIFICATION_SECRET or SUPABASE_SERVICE_ROLE_KEY must be configured');
+  }
+  return crypto.createHmac('sha256', secret).update(`${userId}\0${code}`).digest('hex');
+}
+
 async function verifyRecaptcha(token: string): Promise<boolean> {
   try {
     const secret = process.env.RECAPTCHA_SECRET_KEY;
@@ -883,58 +891,65 @@ export async function registerRoutes(
   });
 
   // Email Verification & Vendor Endpoints
-  app.post("/api/email-verification/:userId/submit", async (req, res, next) => {
+  app.post("/api/email-verification/:userId/submit", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
       const { email } = req.body;
-      // Generate 6-digit code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      const expires = new Date();
-      expires.setHours(expires.getHours() + 1); // 1 hour expiry
-
-      await storage.setEmailVerificationCode(userId, code, expires);
-      
-      // Update profile email if provided
-      if (email) {
-        await storage.updateUserProfile(userId, { email });
+      if (typeof email !== 'string') {
+        return res.status(400).json({ error: 'A valid email address is required' });
       }
 
-      // Send email using template
+      const normalizedEmail = email.trim().toLowerCase();
+      if (
+        normalizedEmail.length > 254 ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
+      ) {
+        return res.status(400).json({ error: 'A valid email address is required' });
+      }
+
       const userProfile = await storage.getUserProfile(userId);
-      if (!userProfile?.email) {
-        return res.status(400).json({ error: 'User email is required to send verification code' });
+      if (!userProfile) {
+        return res.status(404).json({ error: 'User profile not found' });
       }
 
-      let emailInfo: any;
-      try {
-        console.log(`[EmailVerification] Sending verification email to ${userProfile.email} for user ${userId}`);
-        emailInfo = await (storage as any).sendEmailNotification({
-          userId,
-          type: 'email_verification_code',
-          title: 'Your Verification Code',
-          message: `Your SabiRight verification code is: ${code}. This code expires in 1 hour.`,
-          templateName: 'email_verification_code',
-          variables: { 
-            code, 
-            expiry: '1 hour',
-            userName: userProfile.displayName || userProfile.email || 'User'
-          }
-        }, userProfile);
-      } catch (emailError: any) {
-        console.error('[EmailVerification] Email send failed:', emailError);
-        return res.status(500).json({ error: 'Failed to send verification email', details: emailError.message || String(emailError) });
+      const code = crypto.randomInt(100000, 1000000).toString();
+      const expires = new Date(Date.now() + 10 * 60 * 1000);
+      const issued = await storage.setEmailVerificationCode(
+        userId,
+        normalizedEmail,
+        hashEmailVerificationCode(userId, code),
+        expires
+      );
+      if (!issued) {
+        res.setHeader('Retry-After', '60');
+        return res.status(429).json({ error: 'Please wait before requesting another verification code' });
       }
 
-      await storage.updateEmailVerificationStatus(userId, 'pending');
+      const delivery = await storage.sendEmailNotification({
+        userId,
+        type: 'email_verification_code',
+        title: 'Your Verification Code',
+        message: `Your SabiRight verification code is: ${code}. This code expires in 10 minutes.`,
+        templateName: 'email_verification_code',
+        recipientEmail: normalizedEmail,
+        variables: {
+          code,
+          expiry: '10 minutes',
+          userName: userProfile.displayName || normalizedEmail || 'User'
+        }
+      }, userProfile);
+      if (!delivery?.emailSent) {
+        console.error('[EmailVerification] Delivery failed:', delivery?.emailError || delivery?.templateError);
+        return res.status(502).json({ error: delivery?.emailError || delivery?.templateError || 'Verification email could not be sent' });
+      }
+
+      await storage.updateUserProfile(userId, {
+        emailVerificationStatus: 'pending'
+      });
       res.json({
         success: true,
         status: 'pending',
-        messageId: emailInfo?.messageId,
-        accepted: emailInfo?.accepted,
-        rejected: emailInfo?.rejected,
-        smtpVerify: emailInfo?.smtpVerify,
-        smtpResponse: emailInfo?.smtpResponse,
-        smtpEnvelope: emailInfo?.smtpEnvelope
+        expiresAt: expires.toISOString()
       });
     } catch (error) {
       console.error(`[EmailVerification] Error in submit:`, error);
@@ -942,24 +957,24 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/email-verification/:userId/verify-code", async (req, res, next) => {
+  app.post("/api/email-verification/:userId/verify-code", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
       const { code } = req.body;
 
-      if (!code) {
-        return res.status(400).json({ error: 'Verification code is required' });
+      if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+        return res.status(400).json({ error: 'A valid 6-digit verification code is required' });
       }
 
-      const verified = await storage.verifyEmailCode(userId, code);
-      if (verified) {
-        await storage.updateEmailVerificationStatus(userId, 'verified');
-        await storage.updateUserProfile(userId, { emailVerified: true, emailVerifiedAt: new Date() });
-        await storage.clearEmailVerificationCode(userId);
-        res.json({ success: true, status: 'verified' });
-      } else {
-        res.status(400).json({ error: 'Invalid or expired verification code' });
+      const verifiedEmail = await storage.verifyEmailCode(
+        userId,
+        hashEmailVerificationCode(userId, code)
+      );
+      if (!verifiedEmail) {
+        return res.status(400).json({ error: 'Invalid, expired, or locked verification code' });
       }
+
+      res.json({ success: true, status: 'verified' });
     } catch (error) {
       next(error);
     }
@@ -1125,7 +1140,7 @@ export async function registerRoutes(
           title: 'Welcome to SabiRight!',
           message: `Hello ${displayName || 'Citizen'}, Welcome to SabiRight! We are excited to have you on board.`,
           templateName: 'welcome_email',
-          variables: { name: displayName || 'Citizen' },
+          variables: { userName: displayName || 'Citizen' },
           channels: ['email', 'in_app']
         });
       }
@@ -5541,7 +5556,6 @@ AI:`;
   // Get user notifications
   app.get("/api/notifications/:userId", async (req, res, next) => {
     try {
-      console.log(`[GET /api/notifications/${req.params.userId}] Request received`);
       const { userId } = req.params;
       const { limit, offset, type } = req.query;
       const authHeader = req.headers.authorization;
@@ -5581,35 +5595,29 @@ AI:`;
       if (userId !== result.userId && !isAdmin) {
         return res.status(403).json({ error: 'Access denied: User ID mismatch' });
       }
-      
-      let notifications = [];
-      try {
-        notifications = await storage.getNotificationsByUserId(
-          userId,
-          limit ? parseInt(limit as string) : 50,
-          offset ? parseInt(offset as string) : 0
-        );
-      } catch (storageError) {
-        console.error('Storage fetch notifications error:', storageError);
-        return res.status(500).json({ error: 'Failed to fetch notifications from storage' });
+
+      if ((limit !== undefined && typeof limit !== 'string') ||
+          (offset !== undefined && typeof offset !== 'string') ||
+          (type !== undefined && typeof type !== 'string')) {
+        return res.status(400).json({ error: 'limit, offset, and type must be single values' });
       }
 
-      if (type && type !== 'all') {
-        notifications = notifications.filter(n => n.type === type);
+      const pageLimit = limit === undefined ? 50 : Number(limit);
+      const pageOffset = offset === undefined ? 0 : Number(offset);
+      if (!Number.isSafeInteger(pageLimit) || pageLimit < 1 || pageLimit > 100) {
+        return res.status(400).json({ error: 'limit must be an integer between 1 and 100' });
       }
-      
-      let unreadCount = 0;
-      try {
-        unreadCount = await storage.getUnreadNotificationCount(userId);
-      } catch (unreadError) {
-        console.error('Storage fetch unread count error:', unreadError);
-        // Non-fatal, just set to 0
+      if (!Number.isSafeInteger(pageOffset) || pageOffset < 0 || pageOffset > 1000000) {
+        return res.status(400).json({ error: 'offset must be an integer between 0 and 1000000' });
       }
-      
+
+      const filterType = typeof type === 'string' && type !== 'all' ? type : undefined;
+      const page = await storage.getNotificationsByUserId(userId, pageLimit, pageOffset, filterType);
+      const unreadCount = await storage.getUnreadNotificationCount(userId);
       res.json({
-        notifications: notifications || [],
-        unreadCount: unreadCount || 0,
-        totalCount: (notifications || []).length
+        notifications: page.notifications,
+        unreadCount,
+        totalCount: page.totalCount
       });
     } catch (error) {
       console.error('Unexpected error in GET /api/notifications/:userId:', error);
@@ -5661,14 +5669,7 @@ AI:`;
         return res.status(403).json({ error: 'Access denied' });
       }
 
-      let count = 0;
-      try {
-        count = await storage.getUnreadNotificationCount(userId);
-      } catch (storageError) {
-        console.error('Storage fetch unread count error:', storageError);
-        return res.status(500).json({ error: 'Failed to fetch unread count' });
-      }
-
+      const count = await storage.getUnreadNotificationCount(userId);
       res.json({ count });
     } catch (error) {
       console.error('Unexpected error in GET /api/notifications/:userId/unread:', error);
@@ -5730,6 +5731,13 @@ AI:`;
       if (!name || !type || !subject || !bodyTemplate) {
         return res.status(400).json({ error: 'name, type, subject, and bodyTemplate are required' });
       }
+      const selectedChannels = channels || ['in_app'];
+      if (
+        !Array.isArray(selectedChannels) ||
+        selectedChannels.some((channel: unknown) => !['email', 'in_app', 'push'].includes(String(channel)))
+      ) {
+        return res.status(400).json({ error: 'channels must contain only email, in_app, or push' });
+      }
       
       const existing = await storage.getNotificationTemplateByName(name);
       if (existing) {
@@ -5741,7 +5749,7 @@ AI:`;
         type,
         subject,
         bodyTemplate,
-        channels: channels || ['in_app'],
+        channels: [...new Set(selectedChannels)],
         isActive: isActive !== false
       });
       
@@ -5756,6 +5764,15 @@ AI:`;
     try {
       const { id } = req.params;
       const updates = req.body;
+      if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+        return res.status(400).json({ error: 'Template updates must be an object' });
+      }
+      if (updates.channels !== undefined && (
+        !Array.isArray(updates.channels) ||
+        updates.channels.some((channel: unknown) => !['email', 'in_app', 'push'].includes(String(channel)))
+      )) {
+        return res.status(400).json({ error: 'channels must contain only email, in_app, or push' });
+      }
       
       const template = await storage.updateNotificationTemplate(id, updates);
       if (!template) {
@@ -5960,7 +5977,7 @@ AI:`;
       const { userId } = req.body;
       if (!userId) return res.status(400).json({ error: 'userId is required for testing' });
 
-      const success = await storage.sendNotification({
+      const result = await storage.sendNotification({
         userId,
         type: 'system',
         title: 'Push Test',
@@ -5968,7 +5985,19 @@ AI:`;
         channels: ['push', 'in_app']
       });
 
-      res.json({ success });
+      if (!result.pushSent) {
+        return res.status(502).json({
+          success: false,
+          error: result.pushError || 'Push test failed',
+          inAppSaved: result.inAppSaved
+        });
+      }
+      res.json({
+        success: true,
+        pushSent: result.pushSent,
+        pushError: result.pushError,
+        inAppSaved: result.inAppSaved
+      });
     } catch (error: any) {
       console.error('Push Test Error:', error);
       res.status(500).json({ 
@@ -6197,20 +6226,60 @@ AI:`;
 
   // ===== Push Subscription API =====
 
+  app.get("/api/notifications/push/vapid-public-key", async (_req, res, next) => {
+    try {
+      const settings = await storage.getPushSettings();
+      if (!settings || settings.isActive === false || !settings.publicKey) {
+        return res.status(503).json({ error: 'Browser push notifications are not configured' });
+      }
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.json({ publicKey: settings.publicKey });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Subscribe to push notifications
   app.post("/api/notifications/:userId/push/subscribe", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
       const { endpoint, keys } = req.body;
-      
-      if (!endpoint || !keys || !keys.p256dh || !keys.auth) {
-        return res.status(400).json({ error: 'endpoint and keys (p256dh, auth) are required' });
+      const provider = req.body.provider || 'webpush';
+
+      if (typeof endpoint !== 'string' || endpoint.length > 2048) {
+        return res.status(400).json({ error: 'A valid push endpoint or token is required' });
+      }
+
+      if (provider === 'expo') {
+        if (!/^(Expo|Exponent)PushToken\[[A-Za-z0-9-]+\]$/.test(endpoint)) {
+          return res.status(400).json({ error: 'A valid Expo push token is required' });
+        }
+      } else if (provider === 'webpush') {
+        let endpointUrl: URL;
+        try {
+          endpointUrl = new URL(endpoint);
+        } catch {
+          return res.status(400).json({ error: 'A valid push endpoint URL is required' });
+        }
+        if (
+          endpointUrl.protocol !== 'https:' ||
+          !keys ||
+          typeof keys.p256dh !== 'string' ||
+          typeof keys.auth !== 'string' ||
+          keys.p256dh.length > 256 ||
+          keys.auth.length > 256
+        ) {
+          return res.status(400).json({ error: 'endpoint and keys (p256dh, auth) are required' });
+        }
+      } else {
+        return res.status(400).json({ error: 'provider must be webpush or expo' });
       }
       
       const subscription = await storage.subscribeToPush({
         userId,
+        provider,
         endpoint,
-        keys
+        keys: provider === 'webpush' ? keys : null
       });
       
       res.json(subscription);
@@ -6223,13 +6292,17 @@ AI:`;
   app.post("/api/notifications/:userId/push/unsubscribe", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
-      const { endpoint } = req.body;
+      const { endpoint, provider = 'webpush' } = req.body;
       
-      if (!endpoint) {
-        return res.status(400).json({ error: 'endpoint is required' });
+      if (
+        typeof endpoint !== 'string' ||
+        endpoint.length > 2048 ||
+        (provider !== 'webpush' && provider !== 'expo')
+      ) {
+        return res.status(400).json({ error: 'A valid endpoint is required' });
       }
       
-      const success = await storage.unsubscribeFromPush(userId, endpoint);
+      const success = await storage.unsubscribeFromPush(userId, endpoint, provider);
       res.json({ success });
     } catch (error) {
       next(error);

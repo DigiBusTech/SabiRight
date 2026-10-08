@@ -54,5 +54,9 @@ Create a `mobile/.env` file if you want to override defaults:
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://[YOUR-PROJECT-REF].supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=[YOUR-SUPABASE-ANON-KEY]
-EXPO_PUBLIC_API_URL=https://your-express-backend.com
+EXPO_PUBLIC_API_URL=https://www.sabiright.ng
+EXPO_PUBLIC_EAS_PROJECT_ID=[YOUR-EAS-PROJECT-UUID]
 ```
+
+The app defaults to the production API at `https://www.sabiright.ng`. For local development against your computer, set `EXPO_PUBLIC_API_URL` to the computer's LAN IP and port 5000 (for example, `http://192.168.1.10:5000`).
+Set `EXPO_PUBLIC_EAS_PROJECT_ID` to the UUID of this app's EAS project to register native push tokens. Native push notifications require a physical device and an EAS development or production build; Expo Go/simulators may not support the full push workflow.

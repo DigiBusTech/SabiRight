@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import type { 
@@ -75,7 +76,8 @@ export const supabaseStorage: IStorage = {
         .eq('id', userId)
         .maybeSingle();
 
-      if (error || !data) return null;
+      if (error) throw new Error(`Could not fetch user profile: ${error.message}`);
+      if (!data) return null;
       return {
         userId: data.id,
         email: data.email,
@@ -99,7 +101,7 @@ export const supabaseStorage: IStorage = {
       };
     } catch (e) {
       console.error('[supabaseStorage] getUserProfile error:', e);
-      return null;
+      throw e;
     }
   },
 
@@ -130,7 +132,7 @@ export const supabaseStorage: IStorage = {
       .from('profiles')
       .upsert({ id: userId, ...payload }, { onConflict: 'id' });
 
-    if (error) console.error('[supabaseStorage] updateUserProfile error:', error);
+    if (error) throw new Error(`Could not update user profile: ${error.message}`);
     return await this.getUserProfile(userId);
   },
   async createUser(user: any): Promise<any> {
@@ -1469,51 +1471,91 @@ export const supabaseStorage: IStorage = {
     await supabase.from('sabiguard_chats').delete().eq('id', chatId);
   },
 
-  async getNotificationsByUserId(userId: string, limit?: number, offset?: number): Promise<any[]> {
-    let q = supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-    if (offset && offset > 0) {
-      const from = offset;
-      const to = offset + (limit || 10) - 1;
-      q = q.range(from, to);
-    } else if (limit) {
-      q = q.limit(limit);
-    }
-    const { data } = await q;
-    return (data || []).map((n: any) => ({
+  async getNotificationsByUserId(
+    userId: string,
+    limit = 50,
+    offset = 0,
+    type?: string
+  ): Promise<{ notifications: any[]; totalCount: number }> {
+    let q = supabase
+      .from('notifications')
+      .select('*', { count: 'exact' })
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
+    if (type && type !== 'all') q = q.eq('type', type);
+
+    const { data, count, error } = await q.range(offset, offset + limit - 1);
+    if (error) throw new Error(`Could not fetch notifications: ${error.message}`);
+
+    const notifications = (data || []).map((n: any) => ({
       id: n.id,
       userId: n.user_id,
       type: n.type,
       title: n.title,
       message: n.message,
       data: n.data,
+      isRead: !!n.read_at,
       readAt: n.read_at,
       createdAt: n.created_at
     }));
+    return { notifications, totalCount: count || 0 };
   },
 
   async getUnreadNotificationCount(userId: string): Promise<number> {
-    const { count } = await supabase.from('notifications').select('*', { count: 'exact', head: true }).eq('user_id', userId).is('read_at', null);
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .is('read_at', null);
+    if (error) throw new Error(`Could not fetch unread notification count: ${error.message}`);
     return count || 0;
   },
 
   async markNotificationAsRead(id: string): Promise<void> {
-    await supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', id);
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw new Error(`Could not mark notification as read: ${error.message}`);
   },
 
   async markAllNotificationsAsRead(userId: string): Promise<number> {
-    const { error } = await supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', userId);
-    return error ? 0 : 1;
+    const { data, error } = await supabase
+      .from('notifications')
+      .update({ read_at: new Date().toISOString() })
+      .eq('user_id', userId)
+      .is('read_at', null)
+      .select('id');
+    if (error) throw new Error(`Could not mark notifications as read: ${error.message}`);
+    return data?.length || 0;
   },
 
   async getNotificationById(id: string): Promise<any | null> {
-    const { data } = await supabase.from('notifications').select('*').eq('id', id).maybeSingle();
-    return data || null;
+    const { data, error } = await supabase.from('notifications').select('*').eq('id', id).maybeSingle();
+    if (error) throw new Error(`Could not fetch notification: ${error.message}`);
+    if (!data) return null;
+    return {
+      id: data.id,
+      userId: data.user_id,
+      type: data.type,
+      title: data.title,
+      message: data.message,
+      data: data.data,
+      isRead: !!data.read_at,
+      readAt: data.read_at,
+      createdAt: data.created_at
+    };
   },
 
   async sendNotification(n: any): Promise<any> {
-    const id = `notif-${Date.now()}`;
-    await supabase.from('notifications').insert({
-      id,
+    const { sendNotification: dispatchNotification } = await import('./notificationService.js');
+    return dispatchNotification(n);
+  },
+
+  async createNotification(n: any): Promise<void> {
+    const { error } = await supabase.from('notifications').insert({
+      id: crypto.randomUUID(),
       user_id: n.userId,
       type: n.type || 'system',
       title: n.title,
@@ -1521,7 +1563,7 @@ export const supabaseStorage: IStorage = {
       data: n.data || {},
       created_at: new Date().toISOString()
     });
-    return { id };
+    if (error) throw new Error(`Could not persist notification: ${error.message}`);
   },
 
   // Payment Methods & Wallets
@@ -1735,10 +1777,7 @@ export const supabaseStorage: IStorage = {
   async getVerifiedTranslations(m: number): Promise<any[]> { return []; },
   async getAllNotificationTemplates(): Promise<any[]> {
     const { data, error } = await supabase.from('notification_templates').select('*').order('created_at', { ascending: false });
-    if (error) {
-      console.warn('[Storage] getAllNotificationTemplates error:', error.message);
-      return [];
-    }
+    if (error) throw new Error(`Could not fetch notification templates: ${error.message}`);
     return (data || []).map((t: any) => ({
       id: t.id,
       name: t.name,
@@ -1752,7 +1791,8 @@ export const supabaseStorage: IStorage = {
     }));
   },
   async getNotificationTemplateByName(name: string): Promise<any | null> {
-    const { data } = await supabase.from('notification_templates').select('*').eq('name', name).maybeSingle();
+    const { data, error } = await supabase.from('notification_templates').select('*').eq('name', name).maybeSingle();
+    if (error) throw new Error(`Could not fetch notification template: ${error.message}`);
     if (!data) return null;
     return {
       id: data.id,
@@ -1767,7 +1807,7 @@ export const supabaseStorage: IStorage = {
     };
   },
   async createNotificationTemplate(data: any): Promise<any> {
-    const id = `tmpl-${Date.now()}`;
+    const id = crypto.randomUUID();
     const row = {
       id,
       name: data.name,
@@ -1791,13 +1831,15 @@ export const supabaseStorage: IStorage = {
     if (updates.bodyTemplate !== undefined) patch.body_template = updates.bodyTemplate;
     if (updates.channels !== undefined) patch.channels = updates.channels;
     if (updates.isActive !== undefined) patch.is_active = updates.isActive;
-    const { error } = await supabase.from('notification_templates').update(patch).eq('id', id);
+    const { data, error } = await supabase.from('notification_templates').update(patch).eq('id', id).select('id').maybeSingle();
     if (error) throw new Error(`Could not update template: ${error.message}`);
+    if (!data) return null;
     return { id, ...updates };
   },
   async deleteNotificationTemplate(id: string): Promise<boolean> {
-    const { error } = await supabase.from('notification_templates').delete().eq('id', id);
-    return !error;
+    const { data, error } = await supabase.from('notification_templates').delete().eq('id', id).select('id');
+    if (error) throw new Error(`Could not delete notification template: ${error.message}`);
+    return (data?.length || 0) > 0;
   },
   async getSmtpSettings(): Promise<any> {
     const s = await this.getAdminSetting('smtp_config');
@@ -1837,26 +1879,52 @@ export const supabaseStorage: IStorage = {
     return incoming;
   },
   async subscribeToPush(d: any): Promise<any> {
-    const id = `sub-${Date.now()}`;
-    await supabase.from('push_subscriptions').insert({
-      id,
+    const row = {
+      id: crypto.randomUUID(),
       user_id: d.userId,
+      provider: d.provider || 'webpush',
       endpoint: d.endpoint,
       p256dh: d.keys?.p256dh,
       auth: d.keys?.auth,
       created_at: new Date().toISOString()
-    });
-    return { id, ...d };
+    };
+    const { data, error } = await supabase
+      .from('push_subscriptions')
+      .upsert(row, { onConflict: 'user_id,provider,endpoint' })
+      .select('*')
+      .single();
+    if (error) throw new Error(`Could not save push subscription: ${error.message}`);
+    return {
+      id: data.id,
+      userId: data.user_id,
+      provider: data.provider,
+      endpoint: data.endpoint,
+      keys: { p256dh: data.p256dh, auth: data.auth },
+      createdAt: data.created_at
+    };
   },
-  async unsubscribeFromPush(userId: string, endpoint: string): Promise<boolean> {
-    const { error } = await supabase.from('push_subscriptions').delete().eq('user_id', userId).eq('endpoint', endpoint);
-    return !error;
+  async unsubscribeFromPush(
+    userId: string,
+    endpoint: string,
+    provider: 'webpush' | 'expo' = 'webpush'
+  ): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('user_id', userId)
+      .eq('provider', provider)
+      .eq('endpoint', endpoint)
+      .select('id');
+    if (error) throw new Error(`Could not remove push subscription: ${error.message}`);
+    return (data?.length || 0) > 0;
   },
   async getPushSubscriptions(userId: string): Promise<any[]> {
-    const { data } = await supabase.from('push_subscriptions').select('*').eq('user_id', userId);
+    const { data, error } = await supabase.from('push_subscriptions').select('*').eq('user_id', userId);
+    if (error) throw new Error(`Could not fetch push subscriptions: ${error.message}`);
     return (data || []).map((s: any) => ({
       id: s.id,
       userId: s.user_id,
+      provider: s.provider || 'webpush',
       endpoint: s.endpoint,
       keys: { p256dh: s.p256dh, auth: s.auth },
       createdAt: s.created_at
@@ -1864,28 +1932,28 @@ export const supabaseStorage: IStorage = {
   },
 
   // Email Verification Codes
-  async setEmailVerificationCode(userId: string, code: string, expires: Date): Promise<void> {
-    await supabase.from('email_verification_codes').delete().eq('user_id', userId);
-    await supabase.from('email_verification_codes').insert({
-      id: `evc-${Date.now()}`,
-      user_id: userId,
-      code,
-      expires_at: expires.toISOString(),
-      created_at: new Date().toISOString()
+  async setEmailVerificationCode(userId: string, email: string, codeHash: string, expires: Date): Promise<boolean> {
+    const { data, error } = await supabase.rpc('issue_email_verification_code', {
+      p_id: crypto.randomUUID(),
+      p_user_id: userId,
+      p_email: email,
+      p_code_hash: codeHash,
+      p_expires_at: expires.toISOString()
     });
+    if (error) throw new Error(`Could not issue email verification code: ${error.message}`);
+    return data === true;
   },
-  async verifyEmailCode(userId: string, code: string): Promise<boolean> {
-    const { data } = await supabase.from('email_verification_codes')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('code', code)
-      .maybeSingle();
-    if (!data) return false;
-    const isExpired = new Date(data.expires_at).getTime() < Date.now();
-    return !isExpired;
+  async verifyEmailCode(userId: string, codeHash: string): Promise<string | null> {
+    const { data, error } = await supabase.rpc('consume_email_verification_code', {
+      p_user_id: userId,
+      p_code_hash: codeHash
+    });
+    if (error) throw new Error(`Could not verify email code: ${error.message}`);
+    return typeof data === 'string' ? data : null;
   },
   async clearEmailVerificationCode(userId: string): Promise<void> {
-    await supabase.from('email_verification_codes').delete().eq('user_id', userId);
+    const { error } = await supabase.from('email_verification_codes').delete().eq('user_id', userId);
+    if (error) throw new Error(`Could not clear email verification code: ${error.message}`);
   },
   async sendEmailNotification(payload: any, profile?: any): Promise<any> {
     const { sendNotification: dispatchNotification } = await import('./notificationService.js');
@@ -1896,7 +1964,8 @@ export const supabaseStorage: IStorage = {
       message: payload.message,
       templateName: payload.templateName,
       variables: payload.variables,
-      channels: ['email', 'in_app']
+      channels: ['email'],
+      recipientEmail: payload.recipientEmail || profile?.email
     });
   },
 

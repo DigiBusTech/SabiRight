@@ -2,10 +2,64 @@
 import type { BotResponse } from "../types.js";
 import crypto from "crypto";
 import { normalizeMarkdown, chunkText } from "../format.js";
+import { readLimitedAudioResponse } from "../media.js";
+import { MAX_TRANSCRIPTION_AUDIO_BYTES } from "../../aiService.js";
 
 async function getTelegramToken(): Promise<string | null> {
   const setting = await storage.getAdminSetting('telegram_bot_token');
   return setting?.value || process.env.TELEGRAM_BOT_TOKEN || null;
+}
+
+export async function downloadTelegramAudio(
+  fileId: string,
+  declaredMimeType?: string
+): Promise<{ audio: Buffer; mimeType: string }> {
+  const token = await getTelegramToken();
+  if (!token) throw new Error('Telegram bot token is not configured');
+  if (!fileId) throw new Error('Telegram audio file ID is missing');
+
+  let fileInfoResponse: Response;
+  try {
+    fileInfoResponse = await fetch(
+      `https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`,
+      { signal: AbortSignal.timeout(20_000) }
+    );
+  } catch {
+    throw new Error('Telegram file metadata request failed');
+  }
+  if (!fileInfoResponse.ok) {
+    throw new Error(`Telegram getFile request returned HTTP ${fileInfoResponse.status}`);
+  }
+  const fileInfo = await fileInfoResponse.json() as {
+    ok?: boolean;
+    result?: { file_path?: string; file_size?: number };
+  };
+  const filePath = fileInfo.result?.file_path;
+  if (!fileInfo.ok || !filePath) {
+    throw new Error('Telegram did not return an audio file path');
+  }
+  if (fileInfo.result?.file_size && fileInfo.result.file_size > MAX_TRANSCRIPTION_AUDIO_BYTES) {
+    throw new Error('Audio exceeds the 8 MB transcription limit');
+  }
+
+  const encodedPath = filePath.split('/').map(encodeURIComponent).join('/');
+  let fileResponse: Response;
+  try {
+    fileResponse = await fetch(`https://api.telegram.org/file/bot${token}/${encodedPath}`, {
+      signal: AbortSignal.timeout(20_000)
+    });
+  } catch {
+    throw new Error('Telegram audio download request failed');
+  }
+  const audio = await readLimitedAudioResponse(fileResponse, 'Telegram audio download');
+  const responseMimeType = fileResponse.headers.get('content-type') || '';
+  const mimeType = responseMimeType.toLowerCase().startsWith('audio/')
+    ? responseMimeType
+    : declaredMimeType || 'audio/ogg';
+  if (!mimeType.toLowerCase().startsWith('audio/')) {
+    throw new Error('Telegram file is not a supported audio attachment');
+  }
+  return { audio, mimeType };
 }
 
 export async function sendTelegramChatAction(chatId: string | number, action: string = 'typing'): Promise<void> {

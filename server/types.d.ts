@@ -502,13 +502,13 @@ export interface ISupabaseStorageEngine {
   getDashboardTraffic(userId: string): Promise<any | null>;
 
   // Email & Notifications
-  setEmailVerificationCode(userId: string, code: string, expires: Date): Promise<void>;
+  setEmailVerificationCode(userId: string, email: string, codeHash: string, expires: Date): Promise<boolean>;
   clearEmailVerificationCode(userId: string): Promise<void>;
-  sendEmailNotification(notification: any, profile: UserProfile | null): Promise<any>;
-  sendNotification(notification: any): Promise<void>;
+  sendEmailNotification(notification: any, profile?: UserProfile | null): Promise<any>;
+  sendNotification(notification: any): Promise<any>;
   createNotification(notification: any): Promise<void>;
   updateEmailVerificationStatus(userId: string, status: UserProfile['emailVerificationStatus']): Promise<void>;
-  verifyEmailCode(userId: string, code: string): Promise<boolean>;
+  verifyEmailCode(userId: string, codeHash: string): Promise<string | null>;
 
   // Events
   getEvents(): Promise<Event[]>;
@@ -601,7 +601,12 @@ export interface ISupabaseStorageEngine {
   createBookingMessage(data: { bookingId: string; senderId: string; message: string; attachments?: any[]; isAdminMessage: boolean }): Promise<any>;
   getBookingMessages(bookingId: string, limit?: number): Promise<any[]>;
   getBookingsByUserId(userId: string): Promise<any[]>;
-  getNotificationsByUserId(userId: string, limit?: number, offset?: number): Promise<any[]>;
+  getNotificationsByUserId(
+    userId: string,
+    limit?: number,
+    offset?: number,
+    type?: string
+  ): Promise<{ notifications: any[]; totalCount: number }>;
   getSabiGuardChats(userId: string): Promise<any[]>;
   createSabiGuardChat(userId: string, title: string): Promise<any>;
   getSabiGuardChat(chatId: string): Promise<any | null>;
@@ -652,6 +657,6 @@ export interface ISupabaseStorageEngine {
   createTrainingTerm(data: any): Promise<any>;
   deleteTrainingTerm(id: string): Promise<void>;
   subscribeToPush(data: any): Promise<any>;
-  unsubscribeFromPush(userId: string, endpoint: string): Promise<boolean>;
+  unsubscribeFromPush(userId: string, endpoint: string, provider?: 'webpush' | 'expo'): Promise<boolean>;
   getPushSubscriptions(userId: string): Promise<any[]>;
 }

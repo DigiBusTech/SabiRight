@@ -34,9 +34,13 @@ export default function EmailVerification() {
 
     setIsSubmitting(true);
     try {
+      const token = await user.getIdToken();
       const res = await fetch(`/api/email-verification/${user.uid}/submit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
         body: JSON.stringify({ email })
       });
 
@@ -69,9 +73,13 @@ export default function EmailVerification() {
 
     setIsVerifying(true);
     try {
+      const token = await user.getIdToken();
       const res = await fetch(`/api/email-verification/${user.uid}/verify-code`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
         body: JSON.stringify({ code: verificationCode })
       });
 

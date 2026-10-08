@@ -4,7 +4,7 @@ import { Input } from "../../components/ui/input";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import { 
-  Send, Sparkles, User, ShieldCheck, Mic, AlertCircle, Plus, 
+  Send, Sparkles, User, ShieldCheck, Mic, MicOff, Loader2, AlertCircle, Plus,
   MessageSquare, History, Trash2, Download, Store, MapPin,
   Volume2, VolumeX
 } from "lucide-react";
@@ -39,6 +39,8 @@ interface ChatSession {
   title: string;
   updatedAt: string;
 }
+
+const MAX_TRANSCRIPTION_AUDIO_BYTES = 8 * 1024 * 1024;
 
 function LoadingMessage() {
   const messages = [
@@ -89,6 +91,7 @@ export default function CivicGuard() {
   const [isTyping, setIsTyping] = useState(false);
   const [isUrgent, setIsUrgent] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [showSurveyDialog, setShowSurveyDialog] = useState(false);
   const [showSabiModal, setShowSabiModal] = useState(false);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
@@ -98,14 +101,26 @@ export default function CivicGuard() {
   
   const [isAutoSpeak, setIsAutoSpeak] = useState(false);
   const [currentlySpeakingIndex, setCurrentlySpeakingIndex] = useState<number | null>(null);
-  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const componentMountedRef = useRef(true);
 
   // Stop reading text when component is unmounted
   useEffect(() => {
+    componentMountedRef.current = true;
     return () => {
+      componentMountedRef.current = false;
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.onstop = null;
+        recorder.stop();
+      }
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
     };
   }, []);
 
@@ -369,67 +384,120 @@ export default function CivicGuard() {
     enabled: !!user?.uid,
   });
 
-  const toggleListening = () => {
+  const blobToBase64 = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = () => reject(reader.error || new Error('Could not read the audio recording'));
+      reader.readAsDataURL(blob);
+    });
+
+  const toggleListening = async () => {
+    if (isTranscribing) return;
     if (isListening) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {
-          console.error(e);
-        }
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.stop();
       }
-      setIsListening(false);
       return;
     }
 
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) {
-      toast({ title: "NOT SUPPORTED", description: "Browser speech not supported.", className: "bg-red-600 text-white border-none shadow-2xl rounded-2xl p-6 font-bold" });
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      toast({
+        title: "VOICE NOT SUPPORTED",
+        description: "This browser cannot record audio. Please use a supported browser or type your question.",
+        variant: "destructive"
+      });
       return;
     }
-    
-      try {
-        const recognition = new SR();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        
-        if (preferredLanguage === "Hausa") {
-          recognition.lang = 'ha-NG';
-        } else if (preferredLanguage === "Yoruba") {
-          recognition.lang = 'yo-NG';
-        } else if (preferredLanguage === "Igbo") {
-          recognition.lang = 'ig-NG';
-        } else if (preferredLanguage === "Nigerian Pidgin") {
-          recognition.lang = 'pcm-NG';
-        } else {
-          recognition.lang = 'en-NG';
-        }
-        
-        recognition.onstart = () => {
-        setIsListening(true);
-      };
-      
-      recognition.onresult = (e: any) => {
-        const transcript = e.results[0][0].transcript;
-        if (transcript) {
-          setInput(prev => prev ? prev + " " + transcript : transcript);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const supportedMimeType = [
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4'
+      ].find(type => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, supportedMimeType ? { mimeType: supportedMimeType } : undefined);
+
+      mediaStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+      let recordedBytes = 0;
+      recorder.ondataavailable = event => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+          recordedBytes += event.data.size;
+          if (recordedBytes > MAX_TRANSCRIPTION_AUDIO_BYTES && recorder.state !== 'inactive') {
+            recorder.stop();
+          }
         }
       };
-      
-      recognition.onerror = (e: any) => {
-        console.error("Speech recognition error", e);
+      recorder.onerror = () => {
+        audioChunksRef.current = [];
+        mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+        mediaRecorderRef.current = null;
         setIsListening(false);
+        toast({ title: "RECORDING FAILED", description: "Please check microphone access and try again.", variant: "destructive" });
       };
-      
-      recognition.onend = () => {
+      recorder.onstop = async () => {
         setIsListening(false);
+        mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+        mediaRecorderRef.current = null;
+
+        if (!componentMountedRef.current) return;
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+        if (chunks.length === 0) {
+          toast({ title: "NO AUDIO", description: "No recording was captured. Please try again.", variant: "destructive" });
+          return;
+        }
+
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        if (blob.size > MAX_TRANSCRIPTION_AUDIO_BYTES) {
+          toast({ title: "RECORDING TOO LARGE", description: "Keep voice recordings under 8 MB and try again.", variant: "destructive" });
+          return;
+        }
+
+        setIsTranscribing(true);
+        try {
+          const token = await user?.getIdToken();
+          if (!token) throw new Error("Sign in again to use voice transcription.");
+          const audioBase64 = await blobToBase64(blob);
+          const response = await fetch('/api/ai/transcribe', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ audioBase64, mimeType: blob.type || 'audio/webm', language: preferredLanguage }),
+            signal: AbortSignal.timeout(90_000)
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.error || 'Transcription failed');
+          const transcript = typeof data.text === 'string' ? data.text.trim() : '';
+          if (!transcript) {
+            toast({ title: "NO SPEECH DETECTED", description: "We could not hear any speech. Please try again." });
+          } else {
+            setInput(previous => previous ? `${previous} ${transcript}` : transcript);
+          }
+        } catch (error: any) {
+          toast({ title: "TRANSCRIPTION FAILED", description: error.message || "Please try again or type your question.", variant: "destructive" });
+        } finally {
+          if (componentMountedRef.current) setIsTranscribing(false);
+        }
       };
 
-      recognitionRef.current = recognition;
-      recognition.start();
+      recorder.start(1000);
+      setIsListening(true);
     } catch (err) {
-      console.error(err);
-      setIsListening(false);
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+      mediaRecorderRef.current = null;
+      console.error("Voice recording error:", err);
+      toast({ title: "MICROPHONE UNAVAILABLE", description: "Allow microphone access, then try again.", variant: "destructive" });
     }
   };
 
@@ -648,7 +716,9 @@ export default function CivicGuard() {
         <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
           <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className="flex gap-3">
             <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder={isUrgent ? "Describe emergency..." : "Ask about your rights..."} className={cn("flex-1 rounded-xl h-12 bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-900 dark:text-slate-100 transition-colors focus-visible:ring-primary", isUrgent ? "bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-900/30" : "")} />
-            <Button type="button" size="icon" variant="outline" onClick={toggleListening} className={cn("h-12 w-12 rounded-xl transition-all", isListening ? "bg-red-500 text-white border-red-500 shadow-lg shadow-red-200" : "text-slate-400")}><Mic className="h-5 w-5" /></Button>
+            <Button type="button" size="icon" variant="outline" onClick={toggleListening} disabled={isTranscribing} title={isListening ? "Stop recording" : isTranscribing ? "Transcribing audio" : "Record voice input"} className={cn("h-12 w-12 rounded-xl transition-all", isListening ? "bg-red-500 text-white border-red-500 shadow-lg shadow-red-200" : "text-slate-400")} aria-label={isListening ? "Stop recording" : "Record voice input"}>
+              {isTranscribing ? <Loader2 className="h-5 w-5 animate-spin" /> : isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            </Button>
             <Button type="submit" id="send-message-btn" size="icon" className={cn("h-12 w-12 rounded-xl shadow-lg transition-all", isUrgent ? "bg-red-600 hover:bg-red-700" : "bg-primary hover:bg-primary/90")}><Send className="h-5 w-5" /></Button></form></div>
       </div>
       <SurveyDialog isOpen={showSurveyDialog} onClose={() => setShowSurveyDialog(false)} feature="civic-guard" />

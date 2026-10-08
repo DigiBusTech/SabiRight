@@ -51,6 +51,8 @@ interface ChatMessage {
   content: string;
 }
 
+const MAX_TRANSCRIPTION_AUDIO_BYTES = 8 * 1024 * 1024;
+
 const SUPPORTED_LANGUAGES = [
   { code: 'English', label: 'English', subtitle: 'Official Federal Law' },
   { code: 'Nigerian Pidgin', label: 'Pidgin', subtitle: 'Street-Level Rights' },
@@ -203,18 +205,28 @@ export default function CivicChatScreen() {
       if (!uri) throw new Error('No recording');
 
       const blob = await (await fetch(uri)).blob();
+      if (blob.size > MAX_TRANSCRIPTION_AUDIO_BYTES) {
+        throw new Error('Keep voice recordings under 8 MB and try again.');
+      }
       const audioBase64 = await blobToBase64(blob);
+      const extension = uri.split('?')[0].split('.').pop()?.toLowerCase();
+      const mimeType = blob.type?.toLowerCase().startsWith('audio/')
+        ? blob.type
+        : extension === '3gp'
+          ? 'audio/3gpp'
+          : 'audio/mp4';
       const res = await apiFetch('/api/ai/transcribe', {
         method: 'POST',
+        timeoutMs: 90_000,
         body: JSON.stringify({
           audioBase64,
-          mimeType: 'audio/mp4',
+          mimeType,
           language: selectedLanguage
         })
       });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
-        throw new Error(e.error === 'Voice transcription is not configured' ? 'Voice is not set up on the server yet.' : 'Transcription failed');
+        throw new Error(e.error || 'Transcription failed');
       }
       const data = await res.json();
       const spoken = (data.text || '').trim();
@@ -920,4 +932,3 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 });
-

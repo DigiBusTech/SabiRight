@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sabiright-v1';
+const CACHE_NAME = 'sabiright-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -36,6 +36,41 @@ self.addEventListener('activate', (event) => {
   );
   // Take control of all clients immediately
   return self.clients.claim();
+});
+
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = { body: event.data ? event.data.text() : '' };
+  }
+
+  event.waitUntil(self.registration.showNotification(payload.title || 'SabiRight', {
+    body: payload.body || 'You have a new notification.',
+    icon: payload.icon || '/assets/sabiright-icon.png',
+    badge: payload.badge || '/favicon.png',
+    data: payload.data || { url: '/app/notifications' }
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const requestedUrl = event.notification.data && event.notification.data.url;
+  const target = new URL(requestedUrl || '/app/notifications', self.location.origin);
+  if (target.origin !== self.location.origin) {
+    target.href = new URL('/app/notifications', self.location.origin).href;
+  }
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const existing = clients.find((client) => new URL(client.url).origin === self.location.origin);
+      if (existing) {
+        return existing.navigate(target.href).then(() => existing.focus());
+      }
+      return self.clients.openWindow(target.href);
+    })
+  );
 });
 
 // Fetch event - network first for API, cache first for static assets
