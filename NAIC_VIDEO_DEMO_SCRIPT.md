@@ -62,3 +62,4 @@
   > *"SabiRight transforms N-ATLAS from an open-source model into national civic infrastructure. By giving every Nigerian access to their constitutional rights in the language of their heart, on the channels they already use, we are democratizing justice at scale.
   > 
   > We are proud to build with N-ATLAS for Nigeria. Thank you."*
+

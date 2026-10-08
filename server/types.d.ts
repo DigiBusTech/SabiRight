@@ -601,7 +601,7 @@ export interface ISupabaseStorageEngine {
   createBookingMessage(data: { bookingId: string; senderId: string; message: string; attachments?: any[]; isAdminMessage: boolean }): Promise<any>;
   getBookingMessages(bookingId: string, limit?: number): Promise<any[]>;
   getBookingsByUserId(userId: string): Promise<any[]>;
-  getNotificationsByUserId(userId: string, limit?: number): Promise<any[]>;
+  getNotificationsByUserId(userId: string, limit?: number, offset?: number): Promise<any[]>;
   getSabiGuardChats(userId: string): Promise<any[]>;
   createSabiGuardChat(userId: string, title: string): Promise<any>;
   getSabiGuardChat(chatId: string): Promise<any | null>;

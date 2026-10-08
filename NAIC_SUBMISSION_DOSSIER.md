@@ -127,3 +127,4 @@ To satisfy NAIC validation requirements, SabiRight was benchmarked across 50+ re
 1. **Self-Hosted N-ATLAS Clusters:** Transitioning from serverless HF inference to private on-premise or sovereign cloud vLLM clusters in Nigeria to reduce latency to under 300ms.
 2. **Offline Edge Models:** Compressing N-ATLAS into 4-bit GGUF quantizations for local offline inference on mid-range Android devices in rural areas without internet access.
 3. **Public Sector Integration:** Deploying SabiRight as an official citizen-assistance chatbot for the National Human Rights Commission (NHRC) and Legal Aid Council of Nigeria (LACON).
+

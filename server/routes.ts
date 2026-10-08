@@ -5573,7 +5573,7 @@ AI:`;
     try {
       console.log(`[GET /api/notifications/${req.params.userId}] Request received`);
       const { userId } = req.params;
-      const { limit, type } = req.query;
+      const { limit, offset, type } = req.query;
       const authHeader = req.headers.authorization;
 
       // Disable caching for notifications to prevent ERR_ABORTED or stale data
@@ -5616,7 +5616,8 @@ AI:`;
       try {
         notifications = await storage.getNotificationsByUserId(
           userId,
-          limit ? parseInt(limit as string) : 50
+          limit ? parseInt(limit as string) : 50,
+          offset ? parseInt(offset as string) : 0
         );
       } catch (storageError) {
         console.error('Storage fetch notifications error:', storageError);

@@ -1469,9 +1469,15 @@ export const supabaseStorage: IStorage = {
     await supabase.from('sabiguard_chats').delete().eq('id', chatId);
   },
 
-  async getNotificationsByUserId(userId: string, limit?: number): Promise<any[]> {
+  async getNotificationsByUserId(userId: string, limit?: number, offset?: number): Promise<any[]> {
     let q = supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-    if (limit) q = q.limit(limit);
+    if (offset && offset > 0) {
+      const from = offset;
+      const to = offset + (limit || 10) - 1;
+      q = q.range(from, to);
+    } else if (limit) {
+      q = q.limit(limit);
+    }
     const { data } = await q;
     return (data || []).map((n: any) => ({
       id: n.id,
@@ -1727,11 +1733,72 @@ export const supabaseStorage: IStorage = {
   async getRandomTranslationForVerification(u: string): Promise<any | null> { return null; },
   async voteTranslation(id: string, v: boolean): Promise<void> {},
   async getVerifiedTranslations(m: number): Promise<any[]> { return []; },
-  async getAllNotificationTemplates(): Promise<any[]> { return []; },
-  async getNotificationTemplateByName(name: string): Promise<any | null> { return null; },
-  async createNotificationTemplate(data: any): Promise<any> { return {}; },
-  async updateNotificationTemplate(id: string, updates: any): Promise<any> { return {}; },
-  async deleteNotificationTemplate(id: string): Promise<boolean> { return true; },
+  async getAllNotificationTemplates(): Promise<any[]> {
+    const { data, error } = await supabase.from('notification_templates').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('[Storage] getAllNotificationTemplates error:', error.message);
+      return [];
+    }
+    return (data || []).map((t: any) => ({
+      id: t.id,
+      name: t.name,
+      type: t.type,
+      subject: t.subject,
+      bodyTemplate: t.body_template,
+      channels: t.channels || ['in_app'],
+      isActive: t.is_active !== false,
+      createdAt: t.created_at,
+      updatedAt: t.updated_at
+    }));
+  },
+  async getNotificationTemplateByName(name: string): Promise<any | null> {
+    const { data } = await supabase.from('notification_templates').select('*').eq('name', name).maybeSingle();
+    if (!data) return null;
+    return {
+      id: data.id,
+      name: data.name,
+      type: data.type,
+      subject: data.subject,
+      bodyTemplate: data.body_template,
+      channels: data.channels || ['in_app'],
+      isActive: data.is_active !== false,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at
+    };
+  },
+  async createNotificationTemplate(data: any): Promise<any> {
+    const id = `tmpl-${Date.now()}`;
+    const row = {
+      id,
+      name: data.name,
+      type: data.type || 'system',
+      subject: data.subject,
+      body_template: data.bodyTemplate,
+      channels: data.channels || ['in_app'],
+      is_active: data.isActive !== false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    const { error } = await supabase.from('notification_templates').insert(row);
+    if (error) throw new Error(`Could not create notification template: ${error.message}`);
+    return { ...row, bodyTemplate: row.body_template, isActive: row.is_active };
+  },
+  async updateNotificationTemplate(id: string, updates: any): Promise<any> {
+    const patch: any = { updated_at: new Date().toISOString() };
+    if (updates.name !== undefined) patch.name = updates.name;
+    if (updates.type !== undefined) patch.type = updates.type;
+    if (updates.subject !== undefined) patch.subject = updates.subject;
+    if (updates.bodyTemplate !== undefined) patch.body_template = updates.bodyTemplate;
+    if (updates.channels !== undefined) patch.channels = updates.channels;
+    if (updates.isActive !== undefined) patch.is_active = updates.isActive;
+    const { error } = await supabase.from('notification_templates').update(patch).eq('id', id);
+    if (error) throw new Error(`Could not update template: ${error.message}`);
+    return { id, ...updates };
+  },
+  async deleteNotificationTemplate(id: string): Promise<boolean> {
+    const { error } = await supabase.from('notification_templates').delete().eq('id', id);
+    return !error;
+  },
   async getSmtpSettings(): Promise<any> {
     const s = await this.getAdminSetting('smtp_config');
     if (!s?.value) return null;
@@ -1769,9 +1836,69 @@ export const supabaseStorage: IStorage = {
     await this.setAdminSetting('vapid_push_config', incoming, 'push', true);
     return incoming;
   },
-  async subscribeToPush(d: any): Promise<any> { return {}; },
-  async unsubscribeFromPush(u: string, e: string): Promise<boolean> { return true; },
-  async getPushSubscriptions(u: string): Promise<any[]> { return []; },
+  async subscribeToPush(d: any): Promise<any> {
+    const id = `sub-${Date.now()}`;
+    await supabase.from('push_subscriptions').insert({
+      id,
+      user_id: d.userId,
+      endpoint: d.endpoint,
+      p256dh: d.keys?.p256dh,
+      auth: d.keys?.auth,
+      created_at: new Date().toISOString()
+    });
+    return { id, ...d };
+  },
+  async unsubscribeFromPush(userId: string, endpoint: string): Promise<boolean> {
+    const { error } = await supabase.from('push_subscriptions').delete().eq('user_id', userId).eq('endpoint', endpoint);
+    return !error;
+  },
+  async getPushSubscriptions(userId: string): Promise<any[]> {
+    const { data } = await supabase.from('push_subscriptions').select('*').eq('user_id', userId);
+    return (data || []).map((s: any) => ({
+      id: s.id,
+      userId: s.user_id,
+      endpoint: s.endpoint,
+      keys: { p256dh: s.p256dh, auth: s.auth },
+      createdAt: s.created_at
+    }));
+  },
+
+  // Email Verification Codes
+  async setEmailVerificationCode(userId: string, code: string, expires: Date): Promise<void> {
+    await supabase.from('email_verification_codes').delete().eq('user_id', userId);
+    await supabase.from('email_verification_codes').insert({
+      id: `evc-${Date.now()}`,
+      user_id: userId,
+      code,
+      expires_at: expires.toISOString(),
+      created_at: new Date().toISOString()
+    });
+  },
+  async verifyEmailCode(userId: string, code: string): Promise<boolean> {
+    const { data } = await supabase.from('email_verification_codes')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('code', code)
+      .maybeSingle();
+    if (!data) return false;
+    const isExpired = new Date(data.expires_at).getTime() < Date.now();
+    return !isExpired;
+  },
+  async clearEmailVerificationCode(userId: string): Promise<void> {
+    await supabase.from('email_verification_codes').delete().eq('user_id', userId);
+  },
+  async sendEmailNotification(payload: any, profile?: any): Promise<any> {
+    const { sendNotification: dispatchNotification } = await import('./notificationService.js');
+    return await dispatchNotification({
+      userId: payload.userId,
+      type: payload.type || 'email',
+      title: payload.title,
+      message: payload.message,
+      templateName: payload.templateName,
+      variables: payload.variables,
+      channels: ['email', 'in_app']
+    });
+  },
 
   // SabiMove Routes & Traffic Alerts
   async getUserRoutes(userId: string): Promise<Route[]> {
