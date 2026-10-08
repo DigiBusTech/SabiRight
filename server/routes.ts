@@ -1,14 +1,17 @@
- import type { Express, Request, Response, NextFunction } from "express";
+import crypto from 'crypto';
+import type { Express, Request, Response, NextFunction } from "express";
 import express from "express";
-import admin from "firebase-admin";
 import nodemailer from "nodemailer";
 import webpush from 'web-push';
 import { createServer, type Server } from "http";
-import { firestoreStorage as storage, FIREBASE_APP_ID } from "./firestoreStorage.js";
-import { verifyAdminToken, verifyUserToken, isUserAdmin, getFirestoreUserFlags } from "./firestoreStorage.js";
+import { supabaseStorage as storage, APP_ID, supabase } from "./supabaseStorage.js";
+import { verifyAdminToken, verifyUserToken, isUserAdmin, getUserFlags } from "./supabaseStorage.js";
 import { getLegalAgent, summarizeCaseForProfessional } from "./agent/legalAgent.js";
 import { Runner, InMemorySessionService, toStructuredEvents, EventType } from "@google/adk";
 import PaystackService from "./paystackService.js";
+import { whatsappRouter } from "./bots/whatsapp/whatsappRoutes.js";
+import { telegramRouter } from "./bots/telegram/telegramRoutes.js";
+import { generateAIResponse } from "./aiService.js";
 
 const sessionService = new InMemorySessionService();
 import multer from 'multer';
@@ -57,7 +60,7 @@ const adminAuth = async (req: Request, res: Response, next: NextFunction) => {
   }
   
   const token = authHeader.substring(7);
-  // Use verifyAdminToken which checks Firestore directly
+  // Use verifyAdminToken which checks Supabase directly
   const result = await verifyAdminToken(token);
   
   if (!result.valid) {
@@ -71,7 +74,7 @@ const adminAuth = async (req: Request, res: Response, next: NextFunction) => {
     return res.status(401).json({ error: 'Invalid token payload' });
   }
 
-  // Ensure the local DB is synced with admin status from Firestore
+  // Ensure the local profile is synced with admin status from Supabase
   try {
     const profile = await storage.getUserProfile(result.userId);
     
@@ -80,7 +83,7 @@ const adminAuth = async (req: Request, res: Response, next: NextFunction) => {
         await storage.toggleUserAdmin(result.userId, true);
       }
     } else {
-      // Proactively create profile in DB if it doesn't exist but user is admin in Firestore
+      // Proactively create profile in DB if it doesn't exist but user is admin in Supabase
       await storage.updateUserProfile(result.userId, {
         userId: result.userId,
         isAdmin: true,
@@ -134,14 +137,14 @@ const userAuth = async (req: Request, res: Response, next: NextFunction) => {
 
   // Set user data on request for convenience
   try {
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    const profile = await storage.getUserProfile(result.userId);
     req.user = {
-      uid: decodedToken.uid,
-      email: decodedToken.email,
-      displayName: decodedToken.name || decodedToken.email?.split('@')[0] || 'User'
+      uid: result.userId,
+      email: profile?.email || undefined,
+      displayName: profile?.displayName || profile?.email?.split('@')[0] || 'User'
     };
   } catch (e) {
-    console.error('Failed to decode token for user context:', e);
+    console.error('Failed to set user context:', e);
   }
   
   const pathUserId = req.params.userId;
@@ -158,6 +161,42 @@ const userAuth = async (req: Request, res: Response, next: NextFunction) => {
   req.isAdmin = await isUserAdmin(userId);
   next();
 };
+const adminOnly = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+  next();
+};
+
+const optionalUserAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    const result = await verifyUserToken(token);
+    if (result.valid && result.userId) {
+      req.userId = result.userId;
+      req.isAdmin = await isUserAdmin(result.userId);
+      try {
+        const profile = await storage.getUserProfile(result.userId);
+        req.user = {
+          uid: result.userId,
+          email: profile?.email || undefined,
+          displayName: profile?.displayName || profile?.email?.split('@')[0] || 'User'
+        };
+      } catch (e) {}
+      return next();
+    }
+  }
+
+  // Gracefully support guest citizens or unauthenticated mobile queries
+  const fallbackId = 'guest-citizen'; // never trust client-supplied ids for unauthenticated callers
+  req.userId = fallbackId;
+  req.isAdmin = false;
+  req.user = {
+    uid: fallbackId,
+    displayName: 'Citizen'
+  };
+  next();
+};
+
 
 const bookingParticipantAuth = async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
@@ -206,7 +245,27 @@ async function validateFeatureAccess(userId: string, feature: string) {
   if (!plan) {
     return { allowed: false, status: 403, error: 'No active plan found for your account.' };
   }
-  if (!Array.isArray(plan.features) || !plan.features.includes(feature)) {
+
+  // Core citizen features are guaranteed on Free plan as well as Pro
+  if (feature === 'ai_chat' || feature === 'civic_alerts') {
+    return { allowed: true, plan };
+  }
+
+  const featureAliases: Record<string, string[]> = {
+    ai_chat: ['ai_chat', 'basic ai legal guidance', 'right-to-know ai chat', 'priority ai support'],
+    civic_alerts: ['civic_alerts', 'real-time traffic alerts', 'real-time civic & traffic alerts', 'advanced route optimization'],
+    community_forum: ['community_forum', 'community forum access'],
+    job_applications: ['job_applications', 'job postings & applications', 'job board early access'],
+  };
+
+  const allowedKeys = featureAliases[feature] || [feature];
+  const planFeaturesLower = Array.isArray(plan.features) 
+    ? plan.features.map((f: string) => f.toLowerCase().trim())
+    : [];
+
+  const hasAccess = allowedKeys.some(key => planFeaturesLower.includes(key.toLowerCase()));
+
+  if (!hasAccess) {
     return {
       allowed: false,
       status: 403,
@@ -222,6 +281,11 @@ export async function registerRoutes(
 ): Promise<Server> {
   // Serve uploaded files
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+  // Mount Omnichannel Bots (WhatsApp & Telegram)
+  app.use(['/api/whatsapp/status', '/api/telegram/status', '/api/telegram/setup-webhook', '/api/telegram/delete-webhook'], adminAuth);
+  app.use('/api/whatsapp', whatsappRouter);
+  app.use('/api/telegram', telegramRouter);
 
   // Upload API
   app.post('/api/upload', upload.single('file'), (req, res) => {
@@ -299,6 +363,100 @@ export async function registerRoutes(
     }
   });
 
+  // Helper to geocode an address in Nigeria using Google Geocoding API
+  const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      const mapsKeySetting = await storage.getAdminSetting('google_maps_api_key');
+      const mapsKey = mapsKeySetting?.value || process.env.GOOGLE_MAPS_API_KEY;
+      if (!mapsKey || !address) return null;
+
+      const query = address.toLowerCase().includes('nigeria') ? address : `${address}, Nigeria`;
+      const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${mapsKey}`);
+      if (res.ok) {
+        const data = await res.json() as any;
+        if (data.status === 'OK' && data.results?.[0]?.geometry?.location) {
+          return {
+            lat: Number(data.results[0].geometry.location.lat),
+            lng: Number(data.results[0].geometry.location.lng)
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[Geocoding API] Error resolving address:', e);
+    }
+    return null;
+  };
+
+  // Endpoint: Geocode address to lat/lng
+  app.get("/api/maps/geocode", async (req, res) => {
+    try {
+      const address = (req.query.address as string || '').trim();
+      if (!address) {
+        return res.status(400).json({ error: "Address is required" });
+      }
+      const coords = await geocodeAddress(address);
+      if (!coords) {
+        return res.status(404).json({ error: "Address coordinates could not be resolved" });
+      }
+      res.json(coords);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Endpoint: Places Autocomplete (Google Places v1, falls back to free OpenStreetMap Nominatim)
+  app.get("/api/maps/places-autocomplete", async (req, res) => {
+    const input = ((req.query.input as string) || '').trim();
+    if (input.length < 2) {
+      return res.json({ suggestions: [] });
+    }
+
+    const fromNominatim = async () => {
+      const r = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=ng&limit=6&addressdetails=0&q=${encodeURIComponent(input)}`,
+        { headers: { 'User-Agent': 'SabiRight/1.0 (support@sabiright.app)' } }
+      );
+      if (!r.ok) return [];
+      const rows = (await r.json()) as any[];
+      return rows
+        .map((x) => ({ text: x.display_name as string, placeId: String(x.place_id || '') }))
+        .filter((x) => x.text);
+    };
+
+    try {
+      const mapsKeySetting = await storage.getAdminSetting('google_maps_api_key');
+      const mapsKey = mapsKeySetting?.value || process.env.GOOGLE_MAPS_API_KEY;
+
+      if (mapsKey) {
+        try {
+          const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': mapsKey },
+            body: JSON.stringify({ input, includedRegionCodes: ['ng'] })
+          });
+          if (response.ok) {
+            const data = (await response.json()) as any;
+            const suggestions = (data.suggestions || [])
+              .map((s: any) => ({
+                text: s.placePrediction?.text?.text || '',
+                placeId: s.placePrediction?.placeId || ''
+              }))
+              .filter((s: any) => s.text);
+            if (suggestions.length) return res.json({ suggestions });
+          } else {
+            console.warn('[places-autocomplete] Google error', response.status, (await response.text()).slice(0, 300));
+          }
+        } catch (e: any) {
+          console.warn('[places-autocomplete] Google request failed:', e?.message);
+        }
+      }
+
+      res.json({ suggestions: await fromNominatim() });
+    } catch (err: any) {
+      console.warn('[places-autocomplete] failed:', err?.message);
+      res.json({ suggestions: [] });
+    }
+  });
   app.get("/api/plans/user-type/:userType", async (req, res, next) => {
     try {
       const { userType } = req.params;
@@ -316,55 +474,35 @@ export async function registerRoutes(
   });
 
   // Credits
-  app.get("/api/credits/:userId", async (req, res, next) => {
+  app.get("/api/credits/:userId", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
-      const credits = await storage.getUserCredits(userId);
-      if (!credits) {
-        return res.status(404).json({ error: 'Credits not found' });
+      if (userId !== (req as any).userId && !(req as any).isAdmin) {
+        return res.status(403).json({ error: 'Forbidden' });
       }
-      res.json(credits);
+      const balance = await storage.getBalance(userId);
+      console.log(`[Credits API: /credits/${userId}] available=${balance.availableCredits}, total=${balance.totalCredits}, used=${balance.usedCredits}, plan=${balance.planCredits}`);
+      res.json(balance);
     } catch (error) {
       next(error);
     }
   });
 
-  app.get("/api/credits/:userId/available", async (req, res, next) => {
+  app.get("/api/credits/:userId/available", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
-      const credits = await storage.getUserCredits(userId);
-      if (!credits) {
-        return res.status(404).json({ error: 'Credits not found' });
+      if (userId !== (req as any).userId && !(req as any).isAdmin) {
+        return res.status(403).json({ error: 'Forbidden' });
       }
-      
-      // Refresh monthly or daily credits if the plan provides them
-      const userPlan = await storage.getUserPlan(userId) || await getOrAssignUserPlan(userId);
-      if (userPlan) {
-        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
-        if (monthlyCredits > 0) {
-          await storage.refreshMonthlyCredits(userId, monthlyCredits);
-        }
-        if (userPlan.dailyCredits) {
-          await storage.refreshDailyCredits(userId, userPlan.dailyCredits);
-        }
-      }
-      
-      const updatedCredits = await storage.getUserCredits(userId);
-      const total = updatedCredits?.totalCredits ?? 0;
-      const used = updatedCredits?.usedCredits ?? 0;
-      
-      res.json({
-        totalCredits: total,
-        usedCredits: used,
-        availableCredits: Math.max(0, total - used),
-        renewalDate: updatedCredits?.renewalDate
-      });
+      const balance = await storage.getBalance(userId);
+      console.log(`[Credits API: /credits/${userId}/available] available=${balance.availableCredits}, total=${balance.totalCredits}, used=${balance.usedCredits}, plan=${balance.planCredits}`);
+      res.json(balance);
     } catch (error) {
       next(error);
     }
   });
 
-  app.post("/api/credits/:userId/deduct", async (req, res, next) => {
+  app.post("/api/credits/:userId/deduct", userAuth, adminOnly, async (req, res, next) => {
     try {
       const { userId } = req.params;
       const { amount, feature, description } = req.body;
@@ -391,7 +529,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/credits/:userId/refund", async (req, res, next) => {
+  app.post("/api/credits/:userId/refund", userAuth, adminOnly, async (req, res, next) => {
     try {
       const { userId } = req.params;
       const { amount, feature } = req.body;
@@ -413,7 +551,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/credits/:userId/log", async (req, res, next) => {
+  app.get("/api/credits/:userId/log", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
       const logs = await storage.getCreditLog(userId);
@@ -424,9 +562,12 @@ export async function registerRoutes(
   });
 
   // Cloaked Routes
-  app.get("/api/routes/:userId", async (req, res, next) => {
+  app.get("/api/routes/:userId", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
+      if (userId !== (req as any).userId && !(req as any).isAdmin) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
       const routes = await storage.getUserRoutes(userId);
       res.json(routes);
     } catch (error) {
@@ -434,12 +575,42 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/routes", async (req, res, next) => {
+  app.post("/api/routes", userAuth, async (req, res, next) => {
     try {
-      const { userId, routeName, startLocation, endLocation, startLat, startLng, endLat, endLng } = req.body;
+      const { routeName, startLocation, endLocation } = req.body;
+      const userId = (req as any).userId;
+      let { startLat, startLng, endLat, endLng } = req.body;
       
       if (!userId || !routeName || !startLocation || !endLocation) {
         return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      let parsedStartLat = Number(startLat);
+      let parsedStartLng = Number(startLng);
+      let parsedEndLat = Number(endLat);
+      let parsedEndLng = Number(endLng);
+
+      // If coordinates are invalid, missing, or zero, geocode dynamically using Google Geocoding API
+      if (isNaN(parsedStartLat) || isNaN(parsedStartLng) || (parsedStartLat === 0 && parsedStartLng === 0)) {
+        const startCoords = await geocodeAddress(startLocation);
+        if (startCoords) {
+          parsedStartLat = startCoords.lat;
+          parsedStartLng = startCoords.lng;
+        } else {
+          parsedStartLat = 5.0209;
+          parsedStartLng = 7.8906;
+        }
+      }
+
+      if (isNaN(parsedEndLat) || isNaN(parsedEndLng) || (parsedEndLat === 0 && parsedEndLng === 0)) {
+        const endCoords = await geocodeAddress(endLocation);
+        if (endCoords) {
+          parsedEndLat = endCoords.lat;
+          parsedEndLng = endCoords.lng;
+        } else {
+          parsedEndLat = 5.1095;
+          parsedEndLng = 7.8077;
+        }
       }
 
       const route = await storage.createRoute({
@@ -447,10 +618,10 @@ export async function registerRoutes(
         routeName,
         startLocation,
         endLocation,
-        startLat: parseFloat(startLat),
-        startLng: parseFloat(startLng),
-        endLat: parseFloat(endLat),
-        endLng: parseFloat(endLng),
+        startLat: parsedStartLat,
+        startLng: parsedStartLng,
+        endLat: parsedEndLat,
+        endLng: parsedEndLng,
         status: 'unknown'
       });
 
@@ -460,38 +631,71 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/routes/:routeId/refresh", async (req, res, next) => {
+  app.post("/api/routes/:routeId/refresh", userAuth, async (req, res, next) => {
     try {
       const { routeId } = req.params;
-      const { userId } = req.body;
+      const userId = (req as any).userId;
 
-      if (!userId) {
-        return res.status(400).json({ error: 'User ID required' });
-      }
-
-      // Get route details
       const route = await storage.getRoute(routeId);
       if (!route) {
         return res.status(404).json({ error: 'Route not found' });
       }
+      if ((route as any).userId !== userId && !(req as any).isAdmin) return res.status(403).json({ error: 'Forbidden' });
+
+      const routeCostSetting = await storage.getAdminSetting('credit_cost_traffic_alert');
+      const routeCost = routeCostSetting?.value ? Number(routeCostSetting.value) : 1;
+      const routeBalance = await storage.getBalance(userId);
+      const deducted = await storage.deductCredits(userId, routeCost, 'traffic_refresh', 'Route traffic check');
+      if (!deducted) {
+        console.warn(`[Route Traffic Check 402] Insufficient credits: userId=${userId}, required=${routeCost}, available=${routeBalance.availableCredits}`);
+        return res.status(402).json({ error: 'Insufficient credits for route check', required: routeCost, available: routeBalance.availableCredits });
+      }
 
       // Attempt to get actual traffic data via Google Maps API if available
       let googleTrafficContext = "";
+      let etaMinutes: number | null = null;
+      let distanceKm: number | null = null;
       try {
         const mapsKey = await storage.getAdminSetting('google_maps_api_key');
         if (mapsKey?.value) {
-          const origin = `${route.startLat},${route.startLng}`;
-          const destination = `${route.endLat},${route.endLng}`;
-          const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&departure_time=now&traffic_model=best_guess&key=${mapsKey.value}`;
-          
-          const gRes = await fetch(url);
-          if (gRes.ok) {
-            const gData = await gRes.json() as any;
-            if (gData.routes && gData.routes[0] && gData.routes[0].legs[0]) {
-              const leg = gData.routes[0].legs[0];
-              const duration = leg.duration.text;
-              const durationInTraffic = leg.duration_in_traffic?.text || duration;
-              googleTrafficContext = `Google Maps Report: Normal time: ${duration}. Current time with traffic: ${durationInTraffic}. ${leg.duration_in_traffic ? 'Delays detected.' : 'No significant delays.'}`;
+          const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-Api-Key': mapsKey.value,
+              'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.description,routes.warnings'
+            },
+            body: JSON.stringify({
+              origin: {
+                location: {
+                  latLng: {
+                    latitude: Number(route.startLat),
+                    longitude: Number(route.startLng)
+                  }
+                }
+              },
+              destination: {
+                location: {
+                  latLng: {
+                    latitude: Number(route.endLat),
+                    longitude: Number(route.endLng)
+                  }
+                }
+              },
+              travelMode: 'DRIVE',
+              routingPreference: 'TRAFFIC_AWARE'
+            })
+          });
+          if (res.ok) {
+            const gData = await res.json() as any;
+            const r = gData.routes?.[0];
+            if (r) {
+              const durationSec = parseInt(r.duration || '600', 10);
+              const durationMin = Math.round(durationSec / 60);
+              const distKm = ((r.distanceMeters || 5000) / 1000).toFixed(1);
+              etaMinutes = durationMin;
+              distanceKm = Number(distKm);
+              googleTrafficContext = `Google Maps Routes Report: Route distance is ${distKm} km. Current real-time travel duration with traffic: ${durationMin} minutes.`;
             }
           }
         }
@@ -565,13 +769,13 @@ export async function registerRoutes(
         console.error('Failed to update dashboard traffic:', dashErr);
       }
 
-      res.json({ success: true, status, message, recommendation, cloakedStreets });
+      res.json({ success: true, status, message, recommendation, cloakedStreets, etaMinutes, distanceKm });
     } catch (error) {
       next(error);
     }
   });
 
-  app.patch("/api/routes/:routeId/status", async (req, res, next) => {
+  app.patch("/api/routes/:routeId/status", userAuth, async (req, res, next) => {
     try {
       const { routeId } = req.params;
       const { status } = req.body;
@@ -580,6 +784,9 @@ export async function registerRoutes(
         return res.status(400).json({ error: 'Status required' });
       }
 
+      const owned: any = await storage.getRoute(routeId);
+      if (!owned) return res.status(404).json({ error: 'Route not found' });
+      if (owned.userId !== (req as any).userId && !(req as any).isAdmin) return res.status(403).json({ error: 'Forbidden' });
       await storage.updateRouteStatus(routeId, status);
       res.json({ success: true, status });
     } catch (error) {
@@ -587,9 +794,12 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/routes/:routeId", async (req, res, next) => {
+  app.delete("/api/routes/:routeId", userAuth, async (req, res, next) => {
     try {
       const { routeId } = req.params;
+      const owned: any = await storage.getRoute(routeId);
+      if (!owned) return res.status(404).json({ error: 'Route not found' });
+      if (owned.userId !== (req as any).userId && !(req as any).isAdmin) return res.status(403).json({ error: 'Forbidden' });
       await storage.deleteRoute(routeId);
       res.json({ success: true });
     } catch (error) {
@@ -727,30 +937,12 @@ export async function registerRoutes(
     try {
       const { userId } = req.params;
       const profile = await storage.getUserProfile(userId);
-      const flags = await getFirestoreUserFlags(userId);
-      
-      // Get raw data from Firestore to be 100% sure
-      const profileDoc = await admin.firestore()
-        .collection('artifacts')
-        .doc(process.env.FIREBASE_APP_ID || 'legal-13d13')
-        .collection('profiles')
-        .doc(userId)
-        .get();
-        
-      const userDoc = await admin.firestore()
-        .collection('artifacts')
-        .doc(process.env.FIREBASE_APP_ID || 'legal-13d13')
-        .collection('users')
-        .doc(userId)
-        .get();
+      const flags = await getUserFlags(userId);
 
       res.json({
         userId,
-        appId: process.env.FIREBASE_APP_ID || 'legal-13d13',
         storageProfile: profile,
-        flags,
-        rawProfile: profileDoc.exists ? profileDoc.data() : 'not_found',
-        rawUser: userDoc.exists ? userDoc.data() : 'not_found'
+        flags
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -764,7 +956,7 @@ export async function registerRoutes(
       
       // Sync flags if profile exists
       if (profile) {
-        const flags = await getFirestoreUserFlags(userId);
+        const flags = await getUserFlags(userId);
         let changed = false;
         
         if (flags.isAdmin && !profile.isAdmin) {
@@ -815,8 +1007,8 @@ export async function registerRoutes(
       }
 
       if (existingProfile && existingProfile.userId) {
-        // Sync flags if they're false in DB but true in Firestore
-        const flags = await getFirestoreUserFlags(userId);
+        // Sync flags with Supabase profile
+        const flags = await getUserFlags(userId);
         let changed = false;
         
         if (flags.isAdmin && !existingProfile.isAdmin) {
@@ -849,8 +1041,7 @@ export async function registerRoutes(
         return res.json(existingProfile);
       }
       
-      
-      const flags = await getFirestoreUserFlags(userId);
+      const flags = await getUserFlags(userId);
 
       await storage.createUser({ 
         id: userId, 
@@ -1029,6 +1220,69 @@ export async function registerRoutes(
     }
   });
 
+  // Live Google Maps Route & Traffic Helper for Nigerian corridors
+  const fetchGoogleMapsLiveTraffic = async (city: string): Promise<string> => {
+    try {
+      const mapsKeySetting = await storage.getAdminSetting('google_maps_api_key');
+      const mapsKey = mapsKeySetting?.value || process.env.GOOGLE_MAPS_API_KEY;
+      if (!mapsKey) return '';
+
+      const cLower = (city || 'Lagos').toLowerCase();
+      let origin = `${city} Central, Nigeria`;
+      let destination = `${city} Bypass, Nigeria`;
+
+      if (cLower.includes('uyo') || cLower.includes('akwa')) {
+        origin = 'Ikot Ekpene Road, Uyo, Nigeria';
+        destination = 'Plaza, Oron Road, Uyo, Nigeria';
+      } else if (cLower.includes('lagos')) {
+        origin = 'Ikeja, Lagos, Nigeria';
+        destination = 'Victoria Island, Lagos, Nigeria';
+      } else if (cLower.includes('abuja')) {
+        origin = 'Kubwa Expressway, Abuja, Nigeria';
+        destination = 'Central Business District, Abuja, Nigeria';
+      } else if (cLower.includes('port') || cLower.includes('rivers')) {
+        origin = 'Aba Road, Port Harcourt, Nigeria';
+        destination = 'GRA Phase 2, Port Harcourt, Nigeria';
+      }
+
+      const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': mapsKey,
+          'X-Goog-FieldMask': 'routes.duration,routes.distanceMeters,routes.description,routes.warnings'
+        },
+        body: JSON.stringify({
+          origin: { address: origin },
+          destination: { address: destination },
+          travelMode: 'DRIVE',
+          routingPreference: 'TRAFFIC_AWARE'
+        })
+      });
+
+      if (res.ok) {
+        const gData = await res.json() as any;
+        const route = gData.routes?.[0];
+        if (route) {
+          const durationSec = parseInt(route.duration || '600', 10);
+          const durationMin = Math.round(durationSec / 60);
+          const distKm = ((route.distanceMeters || 5000) / 1000).toFixed(1);
+          const roadDesc = route.description || `${city} Corridor`;
+          const warnings = route.warnings?.join('. ') || '';
+
+          return `Live Google Maps Platform Data:
+- Corridor: ${roadDesc} (${origin} to ${destination})
+- Distance: ${distKm} km
+- Real-time Driving Duration: ${durationMin} minutes
+${warnings ? `- Route Alerts: ${warnings}` : ''}`;
+        }
+      }
+    } catch (gErr) {
+      console.warn('[Google Maps Traffic] Live check notice:', gErr);
+    }
+    return '';
+  };
+
   // Dashboard Traffic
   app.get("/api/dashboard/traffic/:userId", async (req, res, next) => {
     try {
@@ -1041,6 +1295,8 @@ export async function registerRoutes(
         const city = profile?.city || 'Lagos';
         
         let liveContext = "";
+        const googleMapsData = await fetchGoogleMapsLiveTraffic(city);
+        if (googleMapsData) liveContext += "\n" + googleMapsData + "\n";
         try {
           const searchKey = await storage.getAdminSetting('tavily_api_key');
           const query = `current traffic updates and road alerts in ${city}, Nigeria today`;
@@ -1131,27 +1387,20 @@ export async function registerRoutes(
       }
 
       const userPlan = featureAccess.plan;
-      if (userPlan) {
-        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
-        if (monthlyCredits > 0) {
-          await storage.refreshMonthlyCredits(userId, monthlyCredits);
-        }
-      }
-
       const costSetting = await storage.getAdminSetting('credit_cost_traffic_alert');
       const cost = costSetting?.value ? Number(costSetting.value) : 1;
 
-      const updatedCredits = await storage.getUserCredits(userId);
-      const availableCredits = (updatedCredits.totalCredits || 0) - (updatedCredits.usedCredits || 0);
-      if (availableCredits < cost) {
-        return res.status(402).json({ error: 'Insufficient credits for refresh' });
+      const balance = await storage.getBalance(userId);
+      const deducted = await storage.deductCredits(userId, cost, 'traffic_refresh', 'Daily traffic alert refresh');
+      if (!deducted) {
+        console.warn(`[Traffic Refresh 402] Insufficient credits: userId=${userId}, required=${cost}, available=${balance.availableCredits}`);
+        return res.status(402).json({ error: 'Insufficient credits for refresh', required: cost, available: balance.availableCredits });
       }
-
-      // Deduct credits
-      await storage.deductCredits(userId, cost, 'traffic_refresh', 'Daily traffic alert refresh');
 
       // Attempt to get live data via internet search first
       let liveContext = "";
+      const googleMapsData = await fetchGoogleMapsLiveTraffic(targetCity);
+      if (googleMapsData) liveContext += "\n" + googleMapsData + "\n";
       try {
         const searchKey = await storage.getAdminSetting('tavily_api_key');
         const query = `current traffic updates and road alerts in ${targetCity}, Nigeria today`;
@@ -1590,135 +1839,58 @@ export async function registerRoutes(
     }
   });
 
-  // Admin: Update user credits
+  // Admin: Update user credits (set, add, or remove)
   app.patch("/api/admin/users/:userId/credits", adminAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
-      const { totalCredits } = req.body;
+      const { action = 'set', amount, totalCredits } = req.body;
+      const rawValue = amount !== undefined ? amount : totalCredits;
+      const parsedValue = parseInt(rawValue);
       
-      if (totalCredits === undefined || isNaN(parseInt(totalCredits))) {
-        return res.status(400).json({ error: 'Valid totalCredits required' });
+      if (rawValue === undefined || isNaN(parsedValue) || parsedValue < 0) {
+        return res.status(400).json({ error: 'Valid positive numeric amount or totalCredits required' });
       }
       
-      await storage.setUserCredits(userId, parseInt(totalCredits));
-      res.json({ success: true });
+      if (action === 'add') {
+        await storage.addCredits(userId, parsedValue, 'Credits added by admin', 'admin_add');
+      } else if (action === 'remove') {
+        await storage.removeCredits(userId, parsedValue, 'Credits removed by admin', 'admin_remove');
+      } else {
+        // default: set spendable balance
+        await storage.setUserCredits(userId, parsedValue);
+      }
+
+      const balance = await storage.getBalance(userId);
+      res.json({ success: true, balance });
     } catch (error) {
       next(error);
     }
   });
 
-  // Debug: Show Firestore structure and create sample data
-  app.get("/api/debug/firestore-status", async (req, res, next) => {
+  // Debug: Show DB status
+  app.get("/api/debug/db-status", async (req, res, next) => {
     try {
-      const debugAppId = (req.query.appId as string) || FIREBASE_APP_ID;
-      
-      // Temporary helper to fetch from a specific appId
-      const getCollection = (name: string) => admin.firestore().collection('artifacts').doc(debugAppId).collection(name);
-      
-      const profilesSnapshot = await getCollection('profiles').get();
-      const profiles = profilesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const vendorAppsSnapshot = await getCollection('vendorApplications').get();
-      const vendorApps = vendorAppsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const plansSnapshot = await getCollection('plans').get();
-      const plans = plansSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const eventsSnapshot = await getCollection('events').get();
-      const events = eventsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const servicesSnapshot = await getCollection('vendorServices').get();
-      const services = servicesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const jobsSnapshot = await getCollection('jobs').get();
-      const jobs = jobsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const paymentMethodsSnapshot = await getCollection('paymentMethods').get();
-      const paymentMethods = paymentMethodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const walletsSnapshot = await getCollection('wallets').get();
-      const wallets = walletsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const usersSnapshot = await getCollection('users').get();
-      const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const users = await storage.getAllUsers();
+      const plans = await storage.getAllPlans();
+      const events = await storage.getEvents();
+      const services = await storage.getAllVendorServices();
+      const jobs = await storage.getJobs();
+      const paymentMethods = await storage.getPaymentMethods();
 
-      const rootCollections = ['users', 'profiles', 'vendors', 'bookings'];
-      const rootStats: any = {};
-      for (const collName of rootCollections) {
-        try {
-          const snapshot = await admin.firestore().collection(collName).limit(3).get();
-          rootStats[collName] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        } catch (e: any) {
-          rootStats[collName] = `Error: ${e.message}`;
-        }
-      }
-      
       res.json({
-        message: "Firestore data location: artifacts > " + debugAppId + " > [collection_name]",
-        rootCollections,
-        rootSample: rootStats,
-        collections: {
-          users: { count: users.length, path: "artifacts/" + debugAppId + "/users" },
-          profiles: { count: profiles.length, path: "artifacts/" + debugAppId + "/profiles" },
-          vendorApplications: { count: vendorApps.length, path: "artifacts/" + debugAppId + "/vendorApplications" },
-          plans: { count: plans.length, path: "artifacts/" + debugAppId + "/plans" },
-          events: { count: events.length, path: "artifacts/" + debugAppId + "/events" },
-          vendorServices: { count: services.length, path: "artifacts/" + debugAppId + "/vendorServices" },
-          jobs: { count: jobs.length, path: "artifacts/" + debugAppId + "/jobs" },
-          paymentMethods: { count: paymentMethods.length, path: "artifacts/" + debugAppId + "/paymentMethods" },
-          wallets: { count: wallets.length, path: "artifacts/" + debugAppId + "/wallets" },
-        },
-        sampleUsers: users.slice(0, 5),
-        sampleProfiles: profiles.slice(0, 10),
-        samplePlans: plans.slice(0, 3),
-        samplePaymentMethods: paymentMethods.slice(0, 3),
-        instructions: [
-          "1. Go to Firebase Console > Firestore Database",
-          "2. Click on 'artifacts' collection",
-          "3. Click on '" + debugAppId + "' document",
-          "4. You will see subcollections: profiles, plans, credits, events, etc.",
-          "5. Click on 'profiles' to see user data"
-        ]
+        database: "Supabase PostgreSQL",
+        status: "connected",
+        counts: {
+          users: users.length,
+          plans: plans.length,
+          events: events.length,
+          services: services.length,
+          jobs: jobs.length,
+          paymentMethods: paymentMethods.length
+        }
       });
-    } catch (err: any) {
-      next(err);
-    }
-  });
-
-  // Initialize sample data for testing
-  app.post("/api/debug/init-sample-data", async (req, res) => {
-    try {
-      // Create sample event
-      await storage.createEvent({
-        title: "Civic Rights Workshop",
-        description: "Learn about your rights as a Nigerian citizen",
-        location: "Lagos, Victoria Island",
-        date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        time: "10:00",
-        organizer: "SabiRight Admin",
-        organizerId: "admin",
-        capacity: 100,
-        category: "workshop"
-      });
-
-      // Create sample job
-      await storage.createJob({
-        title: "Software Developer",
-        company: "Tech Lagos",
-        location: "Lagos",
-        type: "Full-time",
-        workMode: "Remote",
-        salary: "N500,000 - N800,000",
-        description: "Looking for an experienced developer",
-        contact: "jobs@techlagos.com",
-        source: "Sample Data",
-        postedBy: "admin",
-        isAiFetched: false
-      });
-
-      res.json({ success: true, message: "Sample data created. Check Firestore Console." });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   });
 
@@ -1727,8 +1899,9 @@ export async function registerRoutes(
     const { userId } = req.params;
     const { setupKey } = req.body;
     
-    // Use a setup key from environment for initial admin setup
-    const validSetupKey = process.env.ADMIN_SETUP_KEY || 'legal-13d13-admin-setup-2024';
+    // Check database settings first, then env
+    const settingKey = await storage.getAdminSetting('admin_setup_key');
+    const validSetupKey = settingKey?.value || process.env.ADMIN_SETUP_KEY || 'legal-13d13-admin-setup-2024';
     
     if (setupKey !== validSetupKey) {
       console.log(`Admin setup failed: Invalid key for user ${userId}`);
@@ -1736,33 +1909,12 @@ export async function registerRoutes(
     }
     
     console.log(`Setting user ${userId} as admin...`);
-    
-    // 1. Update local DB
     const success = await storage.toggleUserAdmin(userId, true);
-    
-    // 2. Proactively update Firestore if available
-    try {
-      const { FIREBASE_APP_ID } = await import('./firestoreStorage.js');
-      const admin = await import('firebase-admin');
-      
-      await admin.firestore()
-        .collection('artifacts')
-        .doc(FIREBASE_APP_ID)
-        .collection('profiles')
-        .doc(userId)
-        .set({ isAdmin: true }, { merge: true });
-        
-      console.log(`Firestore updated for admin ${userId}`);
-    } catch (e) {
-      console.error('Failed to sync admin status to Firestore:', e);
-      // We still return success if local DB was updated, 
-      // as the app will function with local admin status
-    }
 
     if (success) {
       res.json({ success: true, message: 'User set as admin successfully' });
     } else {
-      res.status(500).json({ error: 'Failed to set user as admin in local database' });
+      res.status(500).json({ error: 'Failed to set user as admin' });
     }
   });
 
@@ -1822,31 +1974,22 @@ export async function registerRoutes(
         return res.status(404).json({ error: 'Plan not found' });
       }
 
-      const existingSub = await storage.getUserSubscription(userId);
-      if (existingSub?.id) {
-        await storage.updateSubscriptionStatus(existingSub.id, 'cancelled');
-      }
+      const subscription = await storage.activatePlan(userId, planId);
+      const balance = await storage.getBalance(userId);
 
-      const subscription = await storage.createSubscription({
-        userId,
-        planId,
-        status: 'active',
-        startDate: new Date().toISOString()
-      });
+      res.json({ success: true, subscription, balance });
+    } catch (error) {
+      next(error);
+    }
+  });
 
-      if (plan.credits && plan.credits > 0) {
-        await storage.addCredits(userId, plan.credits, `Assigned plan ${plan.name}`);
-      }
-
-      // Update user storage limit based on plan
-      let chatStorageLimit = 524288; // Default 512KB
-      if (plan.type === 'pro') chatStorageLimit = 5 * 1024 * 1024; // 5MB
-      else if (plan.type === 'enterprise') chatStorageLimit = 50 * 1024 * 1024; // 50MB
-      else if (plan.type === 'basic') chatStorageLimit = 1 * 1024 * 1024; // 1MB
-
-      await storage.updateUserProfile(userId, { chatStorageLimit });
-
-      res.json({ success: true, subscription });
+  // Admin: Remove plan from user (revert to default Free plan tier)
+  app.delete("/api/admin/users/:userId/plan", adminAuth, async (req, res, next) => {
+    try {
+      const { userId } = req.params;
+      await storage.removePlan(userId);
+      const balance = await storage.getBalance(userId);
+      res.json({ success: true, message: 'Plan removed and reverted to Citizen Free tier', balance });
     } catch (error) {
       next(error);
     }
@@ -2220,6 +2363,17 @@ export async function registerRoutes(
     }
   });
 
+  // Public MOAT knowledge base for web and mobile offline synchronization
+  app.get("/api/moat/public", async (req, res, next) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const data = await storage.getMoatData(category);
+      res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // FAQ Management
   app.get("/api/faqs", async (req, res, next) => {
     try {
@@ -2423,6 +2577,59 @@ export async function registerRoutes(
     });
 
     res.json(lead);
+  });
+
+  // Pre-Case Files & Direct Lawyer Handoff APIs
+  app.get("/api/case-files/:id", userAuth, async (req, res) => {
+    try {
+      const caseFile = await storage.getPreCaseFile(req.params.id);
+      if (!caseFile) return res.status(404).json({ error: "Case file not found" });
+      const cf: any = caseFile;
+      if ((cf.userId ?? cf.user_id) !== (req as any).userId && !(req as any).isAdmin) {
+        const prof = cf.lawyerId ?? cf.lawyer_id;
+        if (!prof || prof !== (req as any).userId) return res.status(403).json({ error: 'Forbidden' });
+      }
+      res.json(caseFile);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/case-files/user/:userId", userAuth, async (req, res) => {
+    try {
+      const files = await storage.getPreCaseFilesByUserId(req.params.userId);
+      res.json(files);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/case-files/synthesize", userAuth, async (req, res) => {
+    try {
+      const { history, channel } = req.body;
+      const userId = (req as any).userId;
+      if (!history || !Array.isArray(history) || history.length === 0) {
+        return res.status(400).json({ error: "Chat history required" });
+      }
+
+      const caseSummary = await summarizeCaseForProfessional(history, userId || 'citizen');
+      const caseRef = `CASE-${Date.now().toString().slice(-6)}`;
+      const id = `cf-${Date.now()}`;
+
+      await supabase.from('pre_case_files').insert({
+        id,
+        case_ref: caseRef,
+        user_id: userId || null,
+        channel: channel || 'web',
+        issue_summary: caseSummary.slice(0, 500),
+        raw_chat_history: history,
+        created_at: new Date().toISOString()
+      });
+
+      res.json({ success: true, caseRef, caseSummary });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
   app.post("/api/case-files", userAuth, upload.single('file'), async (req, res) => {
@@ -2712,279 +2919,7 @@ export async function registerRoutes(
     }
   };
 
-  const generateAIResponse = async (prompt: string) => {
-    const primaryAISetting = await storage.getAdminSetting('ai_provider');
-    const provider = (primaryAISetting?.value || 'google').toLowerCase();
-
-    if (provider === 'openai') {
-      const apiKeySetting = await storage.getAdminSetting('openai_api_key');
-      const apiKey = apiKeySetting?.value || process.env.OPENAI_API_KEY;
-
-      if (!apiKey) {
-        throw new Error('OpenAI API key not configured');
-      }
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.7
-        })
-      });
-
-      if (!response.ok) {
-        if (response.status === 429) {
-          const err = new Error('AI service is temporarily busy (rate limit exceeded). Please try again in a few moments.');
-          (err as any).status = 429;
-          throw err;
-        }
-        const errorBody = await response.text();
-        throw new Error(`OpenAI error: ${response.status} ${errorBody}`);
-      }
-
-      const data = await response.json() as any;
-      return data?.choices?.[0]?.message?.content || null;
-    } else if (provider === 'anthropic') {
-      const apiKeySetting = await storage.getAdminSetting('anthropic_api_key');
-      const apiKey = apiKeySetting?.value || process.env.ANTHROPIC_API_KEY;
-
-      if (!apiKey) {
-        throw new Error('Anthropic API key not configured');
-      }
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: 'claude-3-5-sonnet-20240620',
-          max_tokens: 2048,
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Anthropic error: ${response.status} ${errorBody}`);
-      }
-
-      const data = await response.json() as any;
-      return data?.content?.[0]?.text || null;
-    } else if (provider === 'groq') {
-      const apiKeySetting = await storage.getAdminSetting('groq_api_key');
-      const apiKey = apiKeySetting?.value || process.env.GROQ_API_KEY;
-
-      if (!apiKey) {
-        throw new Error('Groq API key not configured');
-      }
-
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.7
-        })
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Groq error: ${response.status} ${errorBody}`);
-      }
-
-      const data = await response.json() as any;
-      return data?.choices?.[0]?.message?.content || null;
-    } else if (provider === 'deepseek') {
-      const apiKeySetting = await storage.getAdminSetting('deepseek_api_key');
-      const apiKey = apiKeySetting?.value || process.env.DEEPSEEK_API_KEY;
-
-      if (!apiKey) {
-        throw new Error('DeepSeek API key not configured');
-      }
-
-      const response = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'deepseek-chat',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.7
-        })
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`DeepSeek error: ${response.status} ${errorBody}`);
-      }
-
-      const data = await response.json() as any;
-      return data?.choices?.[0]?.message?.content || null;
-    } else if (provider === 'openrouter') {
-      const apiKeySetting = await storage.getAdminSetting('openrouter_api_key');
-      const apiKey = apiKeySetting?.value || process.env.OPENROUTER_API_KEY;
-
-      if (!apiKey) {
-        throw new Error('OpenRouter API key not configured');
-      }
-
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': 'https://sabiright.com',
-          'X-Title': 'SabiRight AI'
-        },
-        body: JSON.stringify({
-          model: 'openrouter/auto',
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`OpenRouter error: ${response.status} ${errorBody}`);
-      }
-
-      const data = await response.json() as any;
-      return data?.choices?.[0]?.message?.content || null;
-    } else if (provider === 'perplexity') {
-      const apiKeySetting = await storage.getAdminSetting('perplexity_api_key');
-      const apiKey = apiKeySetting?.value || process.env.PERPLEXITY_API_KEY;
-
-      if (!apiKey) {
-        throw new Error('Perplexity API key not configured');
-      }
-
-      const response = await fetch('https://api.perplexity.ai/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'llama-3.1-sonar-small-128k-online',
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Perplexity error: ${response.status} ${errorBody}`);
-      }
-
-      const data = await response.json() as any;
-      return data?.choices?.[0]?.message?.content || null;
-    } else if (provider === 'mistral') {
-      const apiKeySetting = await storage.getAdminSetting('mistral_api_key');
-      const apiKey = apiKeySetting?.value || process.env.MISTRAL_API_KEY;
-
-      if (!apiKey) {
-        throw new Error('Mistral API key not configured');
-      }
-
-      const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: 'mistral-tiny',
-          messages: [{ role: 'user', content: prompt }]
-        })
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`Mistral error: ${response.status} ${errorBody}`);
-      }
-
-      const data = await response.json() as any;
-      return data?.choices?.[0]?.message?.content || null;
-    } else {
-      // Default to Gemini (google)
-      const apiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
-      const apiKey = apiKeySetting?.value || process.env.GEMINI_API_KEY;
-
-      if (!apiKey) {
-        throw new Error('Gemini API key not configured');
-      }
-
-      // Use gemini-2.0-flash with v1beta endpoint for stability and modern features
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }],
-          // v1beta supports tools and safety settings better
-          safetySettings: [
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 2048,
-          }
-        })
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        console.error(`Gemini API Error (${response.status}):`, errorBody);
-        
-        if (response.status === 429) {
-          const err = new Error('AI Service Busy. Please try again in a moment.');
-          (err as any).status = 429;
-          throw err;
-        }
-        if (response.status === 503) {
-          const err = new Error('AI service is temporarily unavailable. Please try again in a few moments.');
-          (err as any).status = 503;
-          throw err;
-        }
-        throw new Error(`Gemini error: ${response.status} ${errorBody}`);
-      }
-
-      const data = await response.json() as any;
-      
-      // Handle the case where the response might be blocked or empty
-      if (data.promptFeedback?.blockReason) {
-        return "⚠️ My response was blocked by safety filters.";
-      }
-
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
-        console.warn('Empty Gemini response data:', JSON.stringify(data));
-        return "I couldn't generate a response. Please try again.";
-      }
-      
-      return text;
-    }
-  };
+  // generateAIResponse is imported from ./aiService.js
 
   // AI Generation API
   app.post("/api/ai/generate", async (req, res) => {
@@ -3014,53 +2949,65 @@ export async function registerRoutes(
     try {
       const { message, sessionId, city } = req.body;
       const userId = req.userId;
-      const user = await storage.getUserProfile(userId!);
 
       if (!message) {
         return res.status(400).json({ error: "Message is required" });
       }
 
-      const agent = await getLegalAgent();
-      const runner = new Runner({
-        appName: "SabiRight",
-        agent,
-        sessionService,
-      });
-
-      const currentSessionId = sessionId || `session-${Date.now()}`;
-      const session = await sessionService.getSession({
-        appName: "SabiRight",
-        userId: userId!,
-        sessionId: currentSessionId
-      });
-      
-      if (!session) {
-        await sessionService.createSession({
-          appName: "SabiRight",
-          userId: userId!,
-          sessionId: currentSessionId
-        });
-      }
-
-      const events = runner.runAsync({
-        userId: userId!,
-        sessionId: currentSessionId,
-        newMessage: { role: 'user', parts: [{ text: `[User City: ${city || 'Nigeria'}] ${message}` }] } as any
-      });
-
       let finalResponse = "";
-      for await (const event of events) {
-        const structuredEvents = toStructuredEvents(event);
-        for (const se of structuredEvents) {
-          if (se.type === EventType.CONTENT) {
-            finalResponse += se.content;
-          } else if (se.type === EventType.ERROR) {
-            console.error(`[Agent API] ADK Error Event:`, se.error);
-            if (!finalResponse) {
-              finalResponse = "I apologize, but I encountered an error. Please try again.";
+      const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
+      const geminiKey = geminiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+
+      if (geminiKey) {
+        try {
+          const agent = await getLegalAgent();
+          const runner = new Runner({
+            appName: "SabiRight",
+            agent,
+            sessionService,
+          });
+
+          const currentSessionId = sessionId || `session-${Date.now()}`;
+          const session = await sessionService.getSession({
+            appName: "SabiRight",
+            userId: userId!,
+            sessionId: currentSessionId
+          });
+          
+          if (!session) {
+            await sessionService.createSession({
+              appName: "SabiRight",
+              userId: userId!,
+              sessionId: currentSessionId
+            });
+          }
+
+          const events = runner.runAsync({
+            userId: userId!,
+            sessionId: currentSessionId,
+            newMessage: { role: 'user', parts: [{ text: `[User City: ${city || 'Nigeria'}] ${message}` }] } as any
+          });
+
+          for await (const event of events) {
+            const structuredEvents = toStructuredEvents(event);
+            for (const se of structuredEvents) {
+              if (se.type === EventType.CONTENT) {
+                finalResponse += se.content;
+              } else if (se.type === EventType.ERROR) {
+                console.error(`[Agent API] ADK Error Event:`, se.error);
+              }
             }
           }
+        } catch (adkErr: any) {
+          console.warn('[Agent API] ADK run notice:', adkErr.message);
         }
+      }
+
+      if (!finalResponse) {
+        const prompt = `You are the SabiRight AI Agent for Nigeria (User City: ${city || 'Nigeria'}).
+Provide clear, actionable legal guidance citing relevant Nigerian statutory sections.
+User message: ${message}`;
+        finalResponse = await generateAIResponse(prompt) || "Hello! I am your SabiRight AI Agent. How can I help you today?";
       }
 
       res.json({ response: finalResponse });
@@ -3070,8 +3017,51 @@ export async function registerRoutes(
     }
   });
 
+  // Speech-to-text via Gemini (free tier). Body: { audioBase64, mimeType, language }
+  app.post("/api/ai/transcribe", userAuth, async (req, res) => {
+    try {
+      const { audioBase64, mimeType, language } = req.body || {};
+      if (!audioBase64 || typeof audioBase64 !== 'string') {
+        return res.status(400).json({ error: 'audioBase64 required' });
+      }
+      const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
+      const apiKey = geminiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+      if (!apiKey) return res.status(503).json({ error: 'Voice transcription is not configured' });
+
+      const lang = language && String(language).toLowerCase() !== 'english' ? ` The speaker may use ${language}.` : '';
+      const payload = JSON.stringify({
+        contents: [{
+          parts: [
+            { text: `Transcribe this audio exactly as spoken. Nigerian accents and Pidgin are common.${lang} Return only the transcript text, nothing else. If there is no speech, return an empty string.` },
+            { inline_data: { mime_type: String(mimeType || 'audio/mp4'), data: audioBase64 } },
+          ],
+        }],
+      });
+      let resp: any = null;
+      let lastErr = '';
+      for (const model of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
+        resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload }
+        );
+        if (resp.ok) break;
+        lastErr = (await resp.text()).slice(0, 300);
+        console.warn('[Transcribe] Gemini', model, resp.status, lastErr);
+        if (resp.status !== 404 && resp.status !== 400) break;
+      }
+      if (!resp || !resp.ok) {
+        return res.status(502).json({ error: 'Transcription failed', detail: lastErr });
+      }      const data: any = await resp.json();
+      const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+      res.json({ text });
+    } catch (err: any) {
+      console.error('[Transcribe] Error:', err.message);
+      res.status(500).json({ error: 'Transcription failed' });
+    }
+  });
   // AI Civic Chat API (SabiRight Citizen Education) - Unified to use Autonomous Agent
-  app.post("/api/ai/civic/chat", userAuth, async (req, res, next) => {
+  app.post("/api/ai/civic/chat", optionalUserAuth, async (req, res, next) => {
+    let cost = 1;
     try {
       const { message, sessionId, chatId, language } = req.body;
       const userId = req.userId;
@@ -3086,104 +3076,125 @@ export async function registerRoutes(
       }
 
       const costSetting = await storage.getAdminSetting('credit_cost_ai_query');
-      const cost = costSetting?.value ? Number(costSetting.value) : 1;
+      cost = costSetting?.value ? Number(costSetting.value) : 1;
 
-      const userPlan = featureAccess.plan;
-      if (userPlan) {
-        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
-        if (monthlyCredits > 0) {
-          await storage.refreshMonthlyCredits(userId, monthlyCredits);
-        }
-      }
-
-      const credits = await storage.getUserCredits(userId);
-      const availableCredits = (credits?.totalCredits ?? 0) - (credits?.usedCredits ?? 0);
-      if (availableCredits < cost) {
-        return res.status(402).json({ error: 'Insufficient credits' });
-      }
-
-      // Initialize the Legal Agent (using MCP tools with Target Language selection)
-      const agent = await getLegalAgent(language || "English");
-      const runner = new Runner({
-        appName: "SabiRight",
-        agent,
-        sessionService,
-      });
-
-      // Ensure session exists in the in-memory store
-      let currentSessionId = sessionId || chatId || `session-${Date.now()}`;
-      if (currentSessionId) {
-        console.error(`[Agent API] Checking session ${currentSessionId}...`);
-        const session = await sessionService.getSession({ 
-          appName: "SabiRight", 
-          userId: userId!, 
-          sessionId: currentSessionId 
+      const balance = await storage.getBalance(userId);
+      const deducted = await storage.deductCredits(userId, cost, 'civic_guard', `Legal AI query: ${message.substring(0, 50)}`);
+      if (!deducted) {
+        console.warn(`[Civic Chat 402] Insufficient credits: userId=${userId}, required=${cost}, available=${balance.availableCredits}`);
+        return res.status(402).json({ 
+          error: 'Insufficient credits',
+          required: cost,
+          available: balance.availableCredits
         });
-        
-        if (!session) {
-          // If not found, create a new one with this ID
-          console.error(`[Agent API] Session ${currentSessionId} not found in memory, recreating.`);
-          await sessionService.createSession({ 
-            appName: "SabiRight", 
-            userId: userId!, 
-            sessionId: currentSessionId 
+      }
+
+      const sid = sessionId || chatId || `session-${Date.now()}`;
+
+      // Only persist into a chat the caller owns, and only while storage remains
+      let persistChat = false;
+      if (chatId) {
+        const ownedChat = await storage.getSabiGuardChat(chatId);
+        if (!ownedChat || ownedChat.userId !== userId) {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+        const prof = await storage.getUserProfile(userId);
+        const sLimit = prof?.chatStorageLimit || 524288;
+        const sUsed = prof?.chatStorageUsed || 0;
+        if (sUsed >= sLimit) {
+          return res.status(413).json({
+            error: 'Storage limit reached',
+            code: 'STORAGE_FULL',
+            message: 'Your chat storage is full. Delete old chats or upgrade your plan.'
           });
         }
+        persistChat = true;
       }
 
+      // Retrieve and format past chat messages for conversational history
+      let formattedHistory = "";
+      if (persistChat) {
+        try {
+          const chatHistoryDocs = await storage.getSabiGuardMessages(sid);
+          if (chatHistoryDocs && chatHistoryDocs.length > 0) {
+            formattedHistory = chatHistoryDocs
+              .map((m: any) => `${m.role === 'user' ? 'User' : 'AI'}: ${m.text || m.content || ""}`)
+              .join('\n');
+          }
+        } catch (historyErr) {
+          console.warn('[Civic Chat Agent] History retrieve notice:', historyErr);
+        }
+      }
+
+      // Check active provider and Gemini key configuration
+      const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
+      const geminiKey = geminiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+      const primarySetting = await storage.getAdminSetting('ai_provider');
+      const activeProvider = (primarySetting?.value || 'groq').toLowerCase();
+
       let finalResponse = "";
-      try {
-        // Prepend clear target language directive to the user's message parts
-        const directiveText = language && language.toLowerCase() !== 'english'
-          ? `[Preferred Output Language: ${language} - conduct this response strictly in ${language}]. ${message}`
-          : message;
 
-        const events = runner.runAsync({
-          userId,
-          sessionId: currentSessionId,
-          newMessage: { role: 'user', parts: [{ text: directiveText }] },
-        });
+      // Only attempt Google ADK if Google Gemini is specifically configured and key exists
+      if ((activeProvider === 'google' || activeProvider === 'gemini') && geminiKey) {
+        try {
+          const agent = await getLegalAgent(language || "English");
+          const runner = new Runner({
+            appName: "SabiRight",
+            agent,
+            sessionService,
+          });
 
-        for await (const event of events) {
-          const structuredEvents = toStructuredEvents(event);
-          for (const se of structuredEvents) {
-            if (se.type === EventType.CONTENT) {
-              finalResponse += se.content;
-            } else if (se.type === EventType.ERROR) {
-              console.error(`[Agent API] ADK Error Event:`, se.error);
-              if (!finalResponse) {
+          const session = await sessionService.getSession({ 
+            appName: "SabiRight", 
+            userId: userId!, 
+            sessionId: sid 
+          });
+          
+          if (!session) {
+            await sessionService.createSession({ 
+              appName: "SabiRight", 
+              userId: userId!, 
+              sessionId: sid 
+            });
+          }
+
+          const directiveText = language && language.toLowerCase() !== 'english'
+            ? `[Preferred Output Language: ${language} - conduct this response strictly in ${language}]. ${message}`
+            : message;
+
+          const events = runner.runAsync({
+            userId,
+            sessionId: sid,
+            newMessage: { role: 'user', parts: [{ text: directiveText }] },
+          });
+
+          for await (const event of events) {
+            const structuredEvents = toStructuredEvents(event);
+            for (const se of structuredEvents) {
+              if (se.type === EventType.CONTENT) {
+                finalResponse += se.content;
+              } else if (se.type === EventType.ERROR) {
+                console.error(`[Agent API] ADK Error Event:`, se.error);
+                if (!finalResponse) {
                   throw new Error(se.error?.message || "AI Agent encountered an error");
+                }
               }
             }
           }
+        } catch (adkErr: any) {
+          console.warn(`[Civic Chat Agent] ADK Agent notice (${adkErr.message}). Routing to unified AI provider...`);
         }
-      } catch (adkErr: any) {
-        console.error(`[Civic Chat Agent] ADK Agent run failed: ${adkErr.message}. Falling back to unified AI provider...`);
-        
-        // Retrieve and format past chat messages for conversational history
-        let formattedHistory = "";
-        try {
-          const sid = sessionId || chatId || currentSessionId;
-          if (sid) {
-            const chatHistoryDocs = await storage.getSabiGuardMessages(sid);
-            if (chatHistoryDocs && chatHistoryDocs.length > 0) {
-              formattedHistory = chatHistoryDocs
-                .map((m: any) => `${m.role === 'user' ? 'User' : 'AI'}: ${m.text || m.content || ""}`)
-                .join('\n');
-            }
-          }
-        } catch (historyErr) {
-          console.error('[Civic Chat Agent] Failed to retrieve history for fallback:', historyErr);
-        }
+      }
 
-        // Fallback: Use the main platform AI provider (like Groq) with the agent instructions injected
+      // If ADK was skipped or produced empty text, execute via platform provider (Groq, etc.)
+      if (!finalResponse) {
         let fallbackInstruction = `You are the "SabiRight AI Agent", a general civic and legal responder for Nigerians. Your mission is to provide INSTANT, actionable, and verified civic guidance.
 
 STRICT OPERATING RULES:
-1. PERSONALIZED GREETING: Always start your very first response with "Hello! I am your SabiRight AI Agent. How can I help you with your civic enquiry today?". If the user has already been greeted in the conversation history, or if this is a follow-up conversation, DO NOT output this greeting.
+1. NO GREETING: The app has already greeted the user. Never introduce yourself or say hello; answer the question directly.
 2. CIVIC GUIDE & DE-ESCALATION: For any physical encounter (police, landlords, etc.), you MUST provide a step-by-step guide to peacefully de-escalate the situation and avoid violence or misunderstanding.
 3. EXPLICIT CITATIONS: You MUST cite specific sections of the 1999 Constitution of Nigeria (e.g., Section 34 right to liberty), Police Act 2020, or other relevant Nigerian laws (Tenancy laws, real estate laws, etc.) in every legal response. DO NOT give advice without citing the exact law protecting the citizen.
-4. RESPONSE STYLE: Keep your response extremely precise, brief, and use bullet points because citizens in high-stress civic encounters need immediate, easy-to-read answers.
+4. RESPONSE STYLE: Be brief and scannable. Use this layout: one short opening line, then a short list of "- " bullets (max 6, each under 25 words), with the law cited in bold like **Section 35, 1999 Constitution**. Use plain text only: no headings (#), no tables, no emojis, no repeated greeting.
 5. PROFESSIONAL REFERRAL LOGIC: If a situation requires a lawyer, real estate agent, accountant, etc., you must ASK the user first: "Would you like me to connect you with a verified professional in your area?"
 6. TRIGGERING CARDS: IF AND ONLY IF the user explicitly confirms they want a professional (e.g., "Yes, I need a lawyer"), you must reply with a concluding sentence containing the exact phrase "[SHOW_PROFESSIONALS]". This exact phrase is required to show the cards in the UI.`;
 
@@ -3200,23 +3211,26 @@ AI:`;
         finalResponse = await generateAIResponse(fallbackPrompt) || "Hello! I am your SabiRight AI Agent. I'm currently experiencing high traffic, please try asking again in a few moments.";
       }
 
-      // Deduct credits
-      await storage.deductCredits(userId, cost, 'civic_guard', `Legal AI query: ${message.substring(0, 50)}`);
-
-      // Save to chat if chatId/sessionId provided
-      const sid = sessionId || chatId;
-      if (sid) {
-        await storage.addSabiGuardMessage(sid, "user", message);
-        await storage.addSabiGuardMessage(sid, "ai", finalResponse);
-        
-        // Update user used storage (count bytes)
-        const bytes = Buffer.byteLength(message + finalResponse, 'utf8');
-        await storage.updateChatStorageUsed(userId, bytes);
+      // Save to chat if sid provided
+      if (persistChat) {
+        try {
+          await storage.addSabiGuardMessage(sid, "user", message);
+          await storage.addSabiGuardMessage(sid, "ai", finalResponse);
+          
+          await storage.updateChatStorageUsed(userId, chatBytes(message) + chatBytes(finalResponse));
+        } catch (saveErr) {
+          console.warn('[Civic Chat Agent] Chat storage notice:', saveErr);
+        }
       }
 
-      res.json({ response: finalResponse });
+      res.json({ response: finalResponse, creditsRemaining: Math.max(0, balance.availableCredits - cost) });
     } catch (err: any) {
       console.error('[Civic Chat Agent] Error:', err.message, err.stack);
+      try {
+        await storage.refundCredits(req.userId!, cost, 'civic_guard');
+      } catch (refundErr) {
+        console.warn('[Civic Chat Agent] Refund error:', refundErr);
+      }
       res.status(err.status || 500).json({ 
         error: "Agent execution failed", 
         message: err.message 
@@ -3241,18 +3255,11 @@ AI:`;
     const costSetting = await storage.getAdminSetting('credit_cost_job_application');
     const cost = costSetting?.value ? Number(costSetting.value) : 2;
 
-    const userPlan = featureAccess.plan;
-    if (userPlan) {
-      const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
-      if (monthlyCredits > 0) {
-        await storage.refreshMonthlyCredits(userId, monthlyCredits);
-      }
-    }
-
-    const credits = await storage.getUserCredits(userId);
-    const availableCredits = (credits?.totalCredits ?? 0) - (credits?.usedCredits ?? 0);
-    if (availableCredits < cost) {
-      return res.status(402).json({ error: 'Insufficient credits' });
+    const balance = await storage.getBalance(userId);
+    const deducted = await storage.deductCredits(userId, cost, 'job_search', `AI job search: ${role} in ${location}`);
+    if (!deducted) {
+      console.warn(`[AI Jobs 402] Insufficient credits: userId=${userId}, required=${cost}, available=${balance.availableCredits}`);
+      return res.status(402).json({ error: 'Insufficient credits', required: cost, available: balance.availableCredits });
     }
 
     const aiPrompt = `
@@ -3329,14 +3336,18 @@ AI:`;
       }
 
       if (savedJobs.length === 0) {
+        await storage.refundCredits(userId, cost, 'job_search');
         return res.status(500).json({ error: 'No valid job opportunities found. Please try a different role or location.' });
       }
 
-      await storage.deductCredits(userId, cost, 'job_search', `AI job search: ${role} in ${location}`);
-
-      res.json({ jobs: savedJobs, creditsUsed: cost });
+      res.json({ jobs: savedJobs, creditsUsed: cost, creditsRemaining: Math.max(0, balance.availableCredits - cost) });
     } catch (err: any) {
       console.error('[AI Jobs] Error:', err.message);
+      try {
+        await storage.refundCredits(userId, cost, 'job_search');
+      } catch (refundErr) {
+        console.warn('[AI Jobs] Refund error:', refundErr);
+      }
       res.status(503).json({ error: err.message });
     }
   });
@@ -3430,6 +3441,7 @@ AI:`;
   app.get("/api/vendor/:vendorId/bookings", async (req, res, next) => {
     try {
       const { vendorId } = req.params;
+      if (vendorId !== (req as any).userId && !(req as any).isAdmin) return res.status(403).json({ error: 'Forbidden' });
       const bookings = await storage.getBookingsByVendorId(vendorId);
       res.json(bookings);
     } catch (error) {
@@ -3485,7 +3497,7 @@ AI:`;
   });
 
   // Payments
-  app.get("/api/payments", async (req, res) => {
+  app.get("/api/payments", userAuth, async (req, res) => {
     const { userId } = req.query;
     const authHeader = req.headers.authorization;
     
@@ -3517,13 +3529,44 @@ AI:`;
     res.json(payments);
   });
 
-  app.post("/api/payments/initiate", async (req, res) => {
+  app.post("/api/payments/initiate", userAuth, async (req, res) => {
     try {
-      const { userId, amount, currency, provider, type, description, metadata, email, captchaToken } = req.body;
-      
-      if (!userId || !amount || !provider || !type) {
+      const { currency, provider, type, description, email, captchaToken } = req.body;
+      const userId = (req as any).userId;
+      let metadata: any = { ...(req.body.metadata || {}) };
+      let amount = Number(req.body.amount);
+
+      if (!userId || !provider || !type) {
         return res.status(400).json({ error: 'Missing required fields' });
       }
+      if (req.body.userId && req.body.userId !== userId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      // Price is always decided server-side for credits and plans.
+      if (type === 'credit_purchase') {
+        const wanted = Number(req.body.metadata?.credits ?? req.body.credits);
+        const pkgs = await storage.getCreditPackages();
+        const pkg: any = (pkgs as any[]).find((p) => p.id === (req.body.metadata?.packageId || req.body.packageId))
+          || (pkgs as any[]).find((p) => Number(p.credits) + Number(p.bonus || 0) === wanted)
+          || (pkgs as any[]).find((p) => Number(p.credits) === wanted);
+        if (!pkg) return res.status(400).json({ error: 'Unknown credit package' });
+        amount = Number(pkg.price);
+        metadata = { packageId: pkg.id, credits: Number(pkg.credits) + Number(pkg.bonus || 0) };
+      } else if (type === 'subscription') {
+        const planId = req.body.metadata?.planId || req.body.planId;
+        const plan: any = planId ? await storage.getPlanById(planId) : null;
+        if (!plan) return res.status(400).json({ error: 'Unknown plan' });
+        amount = Number(plan.price);
+        metadata = { planId: plan.id };
+        if (!(amount > 0)) return res.status(400).json({ error: 'Free plans do not require payment' });
+      } else if (type === 'wallet_topup') {
+        if (!(amount >= 100 && amount <= 1000000)) return res.status(400).json({ error: 'Invalid amount' });
+        metadata = {};
+      } else {
+        return res.status(400).json({ error: 'Unsupported payment type' });
+      }
+      if (!(amount > 0)) return res.status(400).json({ error: 'Invalid amount' });
 
       // Verify reCAPTCHA for payment initiation
       if (captchaToken) {
@@ -3591,52 +3634,127 @@ AI:`;
         }
       } else if (provider === 'stripe') {
         // Stripe is temporarily disabled due to dependency issues
-        return res.status(503).json({ error: 'Stripe is temporarily disabled. Please use Paystack.' });
-        /*
-        // Get Stripe settings
-        const stripeSecretKey = await storage.getAdminSetting('stripe_secret_key');
-        const stripePublishableKey = await storage.getAdminSetting('stripe_publishable_key'); 
+        return res.status(503).json({ error: 'Stripe is temporarily disabled. Please use Paystack or Flutterwave.' });
+      } else if (provider === 'flutterwave') {
+        const paymentMethods = await storage.getPaymentMethods();
+        const fw: any = paymentMethods.find((m: any) => m.type === 'flutterwave' && m.active);
+        const fwSecretKey = fw?.secretKey || process.env.FLUTTERWAVE_SECRET_KEY;
+        const txRef = ((payment.metadata as any)?.reference) || `PAY-${payment.id}`;
 
-        if (!stripeSecretKey?.value) {
-            return res.status(503).json({ error: 'Stripe not configured. Please set up API keys in admin settings.' });
-        }
-
-        const stripe = new (await import('stripe')).default(stripeSecretKey.value);
-        
-        try {
-            const paymentIntent = await stripe.paymentIntents.create({
-                amount: Math.round(amount * 100), 
-                currency: currency?.toLowerCase() || 'ngn',
-                metadata: {
-                    paymentId: payment.id,
-                    userId,
-                    type,
-                    ...(metadata || {})
+        if (fwSecretKey) {
+          try {
+            const userProfile = await storage.getUser(userId);
+            const appUrl = process.env.APP_URL || 'http://localhost:5000';
+            const fwResponse = await fetch('https://api.flutterwave.com/v3/payments', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${fwSecretKey}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                tx_ref: txRef,
+                amount: amount,
+                currency: currency || 'NGN',
+                redirect_url: `${appUrl}/api/payments/flutterwave/callback`,
+                customer: {
+                  email: email || userProfile?.email || `user-${userId}@sabiright.com`,
+                  phonenumber: userProfile?.phoneNumber || '',
+                  name: userProfile?.fullName || userProfile?.displayName || 'Citizen'
                 },
-                automatic_payment_methods: { enabled: true },
-            });
-
-            await storage.updatePayment(payment.id, {
-                providerRef: paymentIntent.id,
-                metadata: {
-                    ...((payment.metadata as any) || {}),
-                    clientSecret: paymentIntent.client_secret
+                customizations: {
+                  title: 'SabiRight',
+                  description: description || 'SabiRight Payment'
+                },
+                meta: {
+                  paymentId: payment.id,
+                  userId,
+                  type,
+                  ...(metadata || {})
                 }
+              })
             });
 
-            return res.json({
-                ...payment,
-                clientSecret: paymentIntent.client_secret,
-                publicKey: stripePublishableKey?.value 
-            });
-
-        } catch (err: any) {
-             console.error('Stripe init error:', err);
-             return res.status(500).json({ error: err.message || 'Failed to initialize Stripe payment' });
+            const fwData = await fwResponse.json().catch(() => ({}));
+            if (fwData?.status === 'success' && fwData.data?.link) {
+              authorizationUrl = fwData.data.link;
+              redirectUrl = authorizationUrl;
+              await storage.updatePayment(payment.id, {
+                providerRef: txRef,
+                metadata: {
+                  ...((payment.metadata as any) || {}),
+                  checkoutUrl: authorizationUrl,
+                  flutterwaveLink: authorizationUrl
+                }
+              });
+            }
+          } catch (fwErr) {
+            console.warn('[Flutterwave] Standard hosted checkout link generation error:', fwErr);
+          }
         }
-        */
+      } else if (provider === 'bachs') {
+        const paymentMethods = await storage.getPaymentMethods();
+        const bachsMethod: any = paymentMethods.find((m: any) => m.type === 'bachs' && m.active);
+        const bachsSecretKey = bachsMethod?.secretKey || process.env.BACHS_SECRET_KEY;
+        if (!bachsSecretKey) {
+          return res.status(503).json({ error: 'Bachs payment gateway is not configured or inactive.' });
+        }
+
+        const isSandbox = (bachsMethod?.metadata as any)?.isSandbox || bachsSecretKey.startsWith('sk_sandbox_');
+        const bachsBaseUrl = isSandbox ? 'https://sandbox-api.bachs.io' : 'https://api.bachs.io';
+        const userProfile = await storage.getUser(userId);
+        const appUrl = process.env.APP_URL || 'http://localhost:5000';
+        const txRef = ((payment.metadata as any)?.reference) || `PAY-${payment.id}`;
+
+        const bachsPayload = {
+          pricing: {
+            amount: amount,
+            currency: currency || 'NGN'
+          },
+          amount: amount,
+          currency: currency || 'NGN',
+          customer: {
+            email: email || userProfile?.email || `user-${userId}@sabiright.com`,
+            name: userProfile?.fullName || userProfile?.displayName || 'Citizen'
+          },
+          success_url: `${appUrl}/api/payments/bachs/callback?payment_id=${payment.id}&tx_ref=${txRef}`,
+          cancel_url: `${appUrl}/app/wallet?payment=cancelled`,
+          metadata: {
+            paymentId: payment.id,
+            userId,
+            type,
+            reference: txRef,
+            ...(metadata || {})
+          }
+        };
+
+        const bachsRes = await fetch(`${bachsBaseUrl}/v1/checkout/sessions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${bachsSecretKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(bachsPayload)
+        });
+
+        const bachsData = await bachsRes.json().catch(() => ({}));
+        if (!bachsRes.ok || !(bachsData?.data?.checkout_url || bachsData?.checkout_url)) {
+          console.error('[Bachs] checkout session creation failed:', bachsData);
+          return res.status(502).json({ error: bachsData?.message || 'Failed to create Bachs checkout session' });
+        }
+
+        authorizationUrl = bachsData.data?.checkout_url || bachsData.checkout_url;
+        redirectUrl = authorizationUrl;
+        const sessionId = bachsData.data?.id || bachsData.id || txRef;
+
+        await storage.updatePayment(payment.id, {
+          providerRef: sessionId,
+          metadata: {
+            ...((payment.metadata as any) || {}),
+            checkoutUrl: authorizationUrl,
+            bachsSessionId: sessionId
+          }
+        });
       }
-      // Flutterwave uses inline checkout, no redirect needed
 
       res.json({ 
         ...payment, 
@@ -3650,7 +3768,7 @@ AI:`;
     }
   });
 
-  app.post("/api/payments/:paymentId/confirm", async (req, res) => {
+  app.post("/api/payments/:paymentId/confirm", adminAuth, async (req, res) => {
     const { paymentId } = req.params;
     const { status, providerRef } = req.body;
 
@@ -3658,465 +3776,282 @@ AI:`;
     res.json({ success: true });
   });
 
-  // Paystack callback (user returns from payment)
+  // Verifies a Paystack reference with Paystack itself and fulfils the matching server-side payment record.
+  async function settlePaystackReference(reference: string, expectedUserId?: string): Promise<{ ok: boolean; status: string; error?: string; code?: number }> {
+    const paymentMethods = await storage.getPaymentMethods();
+    const paystackMethod: any = paymentMethods.find((m: any) => m.type === 'paystack' && m.active);
+    if (!paystackMethod?.secretKey) return { ok: false, status: 'failed', error: 'Paystack not configured or inactive', code: 503 };
+
+    const payment: any = await storage.getPaymentByReference(reference);
+    if (!payment) return { ok: false, status: 'failed', error: 'Payment not found', code: 404 };
+    if (expectedUserId && payment.userId !== expectedUserId) return { ok: false, status: 'failed', error: 'Forbidden', code: 403 };
+    if (payment.status === 'completed') return { ok: true, status: 'success' };
+
+    const paystack = new PaystackService({ secretKey: paystackMethod.secretKey, publicKey: paystackMethod.publicKey || '' });
+    const verification = await paystack.verifyPayment(reference);
+    if (!verification?.status || verification.data?.status !== 'success') {
+      return { ok: false, status: verification?.data?.status || 'failed', error: 'Payment not successful', code: 402 };
+    }
+    const result = await storage.fulfillPayment(payment.id, verification.data.reference || reference, Number(verification.data.amount) / 100);
+    return result.ok ? { ok: true, status: 'success' } : { ok: false, status: 'failed', error: result.reason, code: 400 };
+  }
+
+  // Paystack callback (user returns from payment). Never trusts query/metadata, always verifies with Paystack.
   app.get("/api/payments/paystack/callback", async (req, res) => {
     try {
-      const { reference, trxref } = req.query;
-      const paymentReference = reference || trxref;
-
-      if (!paymentReference) {
-        return res.redirect(`/app/wallet?payment=failed&error=no_reference`);
-      }
-
-      // Get Paystack settings
-      const paystackPublicKey = await storage.getAdminSetting('paystack_public_key');
-      const paystackSecretKey = await storage.getAdminSetting('paystack_secret_key');
-      
-      if (!paystackSecretKey?.value || !paystackPublicKey?.value) {
-        return res.redirect(`/app/wallet?payment=failed&error=not_configured`);
-      }
-
-      // Initialize Paystack service
-      const paystack = new PaystackService({
-        secretKey: paystackSecretKey.value,
-        publicKey: paystackPublicKey.value
-      });
-
-      // Verify payment
-      const verification = await paystack.verifyPayment(paymentReference as string);
-
-      if (verification.status && verification.data.status === 'success') {
-        const { paymentId, userId, type, credits, planId } = verification.data.metadata;
-
-        // Update payment status
-        await storage.updatePayment(paymentId, {
-          status: 'completed',
-          providerRef: verification.data.reference
-        });
-
-        // Process based on type
-        const amount = verification.data.amount / 100; // Convert from kobo
-        
-        if (type === 'wallet_topup') {
-          await storage.topUpWallet(userId, amount, verification.data.reference, 'Paystack payment');
-        } else if (type === 'credit_purchase' && credits) {
-          await storage.addCredits(userId, parseInt(String(credits)), `Paystack purchase: ${paymentId}`);
-        } else if (type === 'subscription' && planId) {
-          await storage.createSubscription({
-            userId,
-            planId,
-            status: 'active',
-            startDate: new Date().toISOString()
-          });
-        }
-
-        return res.redirect(`/app/wallet?payment=success&reference=${paymentReference}`);
-      } else {
-        return res.redirect(`/app/wallet?payment=failed&reference=${paymentReference}`);
-      }
+      const reference = String(req.query.reference || req.query.trxref || '');
+      if (!reference) return res.redirect(`/app/wallet?payment=failed&error=no_reference`);
+      const r = await settlePaystackReference(reference);
+      return res.redirect(r.ok
+        ? `/app/wallet?payment=success&reference=${encodeURIComponent(reference)}`
+        : `/app/wallet?payment=failed&reference=${encodeURIComponent(reference)}`);
     } catch (error: any) {
       console.error('Paystack callback error:', error);
-      return res.redirect(`/app/wallet?payment=failed&error=${encodeURIComponent(error.message)}`);
+      return res.redirect(`/app/wallet?payment=failed&error=server_error`);
     }
   });
 
-  // Paystack webhook (Paystack notifies us of payment status)
-  app.post("/api/payments/paystack/webhook", express.raw({ type: 'application/json' }), async (req, res) => {
+  // Paystack webhook: signature is checked over the raw body captured in express.json's verify hook.
+  app.post("/api/payments/paystack/webhook", async (req, res) => {
     try {
       const signature = req.headers['x-paystack-signature'] as string;
-      
-      if (!signature) {
-        return res.status(400).json({ error: 'No signature provided' });
-      }
+      const raw: Buffer | undefined = (req as any).rawBody;
+      if (!signature || !raw) return res.status(400).json({ error: 'No signature provided' });
 
-      // Get Paystack settings from paymentMethods
       const paymentMethods = await storage.getPaymentMethods();
-      const paystackMethod = paymentMethods.find((m: any) => m.type === 'paystack' && m.active);
-      
-      if (!paystackMethod?.secretKey) {
-        return res.status(503).json({ error: 'Paystack not configured or inactive' });
-      }
+      const paystackMethod: any = paymentMethods.find((m: any) => m.type === 'paystack' && m.active);
+      if (!paystackMethod?.secretKey) return res.status(503).json({ error: 'Paystack not configured or inactive' });
 
-      // Initialize Paystack service
-      const paystack = new PaystackService({
-        secretKey: paystackMethod.secretKey,
-        publicKey: paystackMethod.publicKey || ''
-      });
-
-      const payloadString = Buffer.isBuffer(req.body)
-        ? req.body.toString('utf8')
-        : typeof req.body === 'string'
-          ? req.body
-          : JSON.stringify(req.body);
-
-      // Verify webhook signature
-      const isValid = paystack.verifyWebhookSignature(payloadString, signature);
-
-      if (!isValid) {
+      const paystack = new PaystackService({ secretKey: paystackMethod.secretKey, publicKey: paystackMethod.publicKey || '' });
+      if (!paystack.verifyWebhookSignature(raw, signature)) {
         return res.status(401).json({ error: 'Invalid signature' });
       }
 
-      const event = typeof req.body === 'string'
-        ? JSON.parse(req.body)
-        : Buffer.isBuffer(req.body)
-          ? JSON.parse(req.body.toString('utf8'))
-          : req.body;
-
-      // Handle different event types
-      if (event.event === 'charge.success') {
-        const { reference, status, amount, metadata } = event.data;
-        const { paymentId, userId, type, credits, planId } = metadata || {};
-
-        if (status === 'success' && userId) {
-          // Find payment by ID or reference
-          let payment = null;
-          if (paymentId) {
-            payment = await storage.getPayment(paymentId);
-          }
-          
-          if (!payment) {
-            const payments = await storage.getPayments();
-            payment = payments.find((p: any) => p.providerRef === reference || p.metadata?.reference === reference);
-          }
-
-          if (payment && payment.status === 'completed') {
-            return res.json({ success: true, message: 'Payment already processed' });
-          }
-
-          // Update payment status
-          if (paymentId) {
-            await storage.updatePayment(paymentId, {
-              status: 'completed',
-              providerRef: reference
-            });
-          }
-
-          // Process based on type
-          const amountInNaira = (event.data.amount as number) / 100; // Convert from kobo
-          
-          if (type === 'wallet_topup') {
-            await storage.topUpWallet(userId, amountInNaira, reference, 'Paystack payment');
-          } else if (type === 'credit_purchase' && credits) {
-            await storage.addCredits(userId, parseInt(String(credits)), `Paystack purchase (webhook): ${paymentId || reference}`);
-          } else if (type === 'subscription' && planId) {
-            await storage.createSubscription({
-              userId,
-              planId,
-              status: 'active',
-              startDate: new Date().toISOString()
-            });
-          }
-        }
+      const event = req.body;
+      if (event?.event === 'charge.success' && event.data?.reference) {
+        await settlePaystackReference(String(event.data.reference));
       }
-
       res.json({ success: true });
     } catch (error: any) {
       console.error('Paystack webhook error:', error);
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: 'Webhook processing failed' });
     }
   });
 
-  app.post("/api/payments/paystack/verify", async (req, res, next) => {
+  app.post("/api/payments/paystack/verify", userAuth, async (req, res) => {
     try {
       const { reference } = req.body;
-
-      if (!reference) {
-        return res.status(400).json({ error: 'Reference required' });
-      }
-
-      // Get Paystack settings from paymentMethods
-      const paymentMethods = await storage.getPaymentMethods();
-      const paystackMethod = paymentMethods.find((m: any) => m.type === 'paystack' && m.active);
-      
-      if (!paystackMethod?.secretKey || !paystackMethod?.publicKey) {
-        return res.status(503).json({ error: 'Paystack not configured or inactive' });
-      }
-
-      // Initialize Paystack service
-      const paystack = new PaystackService({
-        secretKey: paystackMethod.secretKey,
-        publicKey: paystackMethod.publicKey
-      });
-
-      // Verify payment
-      const verification = await paystack.verifyPayment(reference);
-
-      // Process payment if successful
-      if (verification.status && verification.data.status === 'success') {
-        const { paymentId, userId, type, credits, planId } = verification.data.metadata || {};
-
-        if (userId) {
-          // Find payment by ID or reference
-          let payment = null;
-          if (paymentId) {
-            payment = await storage.getPayment(paymentId);
-          }
-          
-          if (!payment) {
-            const payments = await storage.getPayments();
-            payment = payments.find((p: any) => p.providerRef === reference || p.metadata?.reference === reference);
-          }
-          
-          if (payment && payment.status !== 'completed') {
-            // Update payment status
-            await storage.updatePayment(payment.id, {
-              status: 'completed',
-              providerRef: verification.data.reference
-            });
-
-            // Process based on type
-            const amount = verification.data.amount / 100; // Convert from kobo
-            
-            if (type === 'wallet_topup') {
-              await storage.topUpWallet(userId, amount, verification.data.reference, 'Paystack payment (verified)');
-            } else if (type === 'credit_purchase' && credits) {
-              await storage.addCredits(userId, parseInt(String(credits)), `Paystack purchase (verified): ${payment.id}`);
-            } else if (type === 'subscription' && planId) {
-              await storage.createSubscription({
-                userId,
-                planId,
-                status: 'active',
-                startDate: new Date().toISOString()
-              });
-            }
-          }
-        }
-      }
-
-      res.json(verification);
-    } catch (error) {
-      next(error);
+      if (!reference) return res.status(400).json({ error: 'Reference required' });
+      const r = await settlePaystackReference(String(reference), (req as any).userId);
+      if (!r.ok) return res.status(r.code || 400).json({ error: r.error, status: r.status });
+      res.json({ success: true, status: 'success' });
+    } catch (error: any) {
+      console.error('Paystack verify error:', error);
+      res.status(500).json({ error: 'Verification failed' });
     }
   });
+  // Verifies a Flutterwave transaction with Flutterwave and fulfils the matching server-side payment record.
+  async function settleFlutterwaveTransaction(transactionId: string, expectedUserId?: string): Promise<{ ok: boolean; error?: string; code?: number }> {
+    const paymentMethods = await storage.getPaymentMethods();
+    const fw: any = paymentMethods.find((m: any) => m.type === 'flutterwave' && m.active);
+    if (!fw?.secretKey) return { ok: false, error: 'Flutterwave not configured', code: 503 };
+
+    const response = await fetch(`https://api.flutterwave.com/v3/transactions/${encodeURIComponent(transactionId)}/verify`, {
+      headers: { Authorization: `Bearer ${fw.secretKey}`, 'Content-Type': 'application/json' }
+    });
+    const data = (await response.json().catch(() => ({}))) as any;
+    if (data.status !== 'success' || data.data?.status !== 'successful') return { ok: false, error: 'Payment not successful', code: 402 };
+
+    const payment: any = await storage.getPaymentByReference(String(data.data.tx_ref));
+    if (!payment) return { ok: false, error: 'Payment not found', code: 404 };
+    if (expectedUserId && payment.userId !== expectedUserId) return { ok: false, error: 'Forbidden', code: 403 };
+    if (data.data.currency && payment.currency && data.data.currency !== payment.currency) return { ok: false, error: 'Currency mismatch', code: 400 };
+
+    const result = await storage.fulfillPayment(payment.id, String(data.data.tx_ref), Number(data.data.amount));
+    return result.ok ? { ok: true } : { ok: false, error: result.reason, code: 400 };
+  }
 
   // Flutterwave webhook
-  app.post("/api/payments/flutterwave/webhook", async (req, res, next) => {
+  app.post("/api/payments/flutterwave/webhook", async (req, res) => {
     try {
       const secretHash = req.headers['verif-hash'] as string;
-      
-      // Get Flutterwave payment methods
       const paymentMethods = await storage.getPaymentMethods();
-      const flutterwaveMethod = paymentMethods.find((m: any) => m.type === 'flutterwave' && m.active);
-      
-      if (!flutterwaveMethod?.webhookHash) {
-        console.error('Flutterwave webhook hash not configured');
-        return res.status(503).json({ error: 'Flutterwave webhook not configured' });
-      }
+      const fw: any = paymentMethods.find((m: any) => m.type === 'flutterwave' && m.active);
+      if (!fw?.webhookHash) return res.status(503).json({ error: 'Flutterwave webhook not configured' });
 
-      // Verify webhook signature
-      if (!secretHash) {
-        console.error('Missing verif-hash header');
-        return res.status(401).json({ error: 'Missing webhook signature' });
-      }
-
-      if (secretHash !== flutterwaveMethod.webhookHash) {
-        console.error('Invalid webhook signature:', { received: secretHash, expected: flutterwaveMethod.webhookHash });
+      const a = Buffer.from(String(secretHash || ''));
+      const b = Buffer.from(String(fw.webhookHash));
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
         return res.status(401).json({ error: 'Invalid webhook signature' });
       }
 
       const event = req.body;
+      if (event?.event === 'charge.completed' && event.data?.status === 'successful' && event.data?.id) {
+        await settleFlutterwaveTransaction(String(event.data.id));
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('Flutterwave webhook error:', error);
+      res.status(500).json({ error: 'Webhook processing failed' });
+    }
+  });
 
-      // Handle successful payment
-      if (event.event === 'charge.completed' && event.data.status === 'successful') {
-        const { tx_ref, amount, customer, meta } = event.data;
-        const { userId, type, credits, planId } = meta || {};
+  // Verify Flutterwave payment (called from the frontend after checkout)
+  app.post("/api/payments/flutterwave/verify", userAuth, async (req, res) => {
+    try {
+      const { transaction_id } = req.body;
+      if (!transaction_id) return res.status(400).json({ error: 'Transaction ID required' });
+      const r = await settleFlutterwaveTransaction(String(transaction_id), (req as any).userId);
+      if (!r.ok) return res.status(r.code || 400).json({ status: 'failed', error: r.error });
+      res.json({ status: 'success' });
+    } catch (error: any) {
+      console.error('Flutterwave verify error:', error);
+      res.status(500).json({ error: 'Verification failed' });
+    }
+  });
 
-        if (userId) {
-          // Find payment by reference
-          const payments = await storage.getPayments();
-          const payment = payments.find((p: any) => p.metadata?.reference === tx_ref);
+  // Flutterwave callback (user returns from Flutterwave Standard hosted checkout)
+  app.get("/api/payments/flutterwave/callback", async (req, res) => {
+    try {
+      const transactionId = String(req.query.transaction_id || '');
+      const status = String(req.query.status || '');
+      if (status === 'successful' && transactionId) {
+        const r = await settleFlutterwaveTransaction(transactionId);
+        return res.redirect(r.ok
+          ? `/app/wallet?payment=success&tx=${encodeURIComponent(transactionId)}`
+          : `/app/wallet?payment=failed&tx=${encodeURIComponent(transactionId)}`);
+      }
+      return res.redirect(`/app/wallet?payment=cancelled`);
+    } catch (error: any) {
+      console.error('Flutterwave callback error:', error);
+      return res.redirect(`/app/wallet?payment=failed&error=server_error`);
+    }
+  });
 
-          if (!payment) {
-            console.error('Payment not found for reference:', tx_ref);
-            return res.status(404).json({ error: 'Payment not found' });
+  // Verifies a Bachs checkout session or transaction reference and fulfils the payment
+  async function settleBachsTransaction(sessionIdOrRef: string, expectedUserId?: string): Promise<{ ok: boolean; status: string; error?: string; code?: number }> {
+    const paymentMethods = await storage.getPaymentMethods();
+    const bachsMethod: any = paymentMethods.find((m: any) => m.type === 'bachs' && m.active);
+    const bachsSecretKey = bachsMethod?.secretKey || process.env.BACHS_SECRET_KEY;
+    if (!bachsSecretKey) return { ok: false, status: 'failed', error: 'Bachs not configured or inactive', code: 503 };
+
+    let payment: any = await storage.getPaymentByReference(sessionIdOrRef);
+    if (!payment && sessionIdOrRef.startsWith('pay-')) {
+      payment = await storage.getPayment(sessionIdOrRef);
+    }
+    if (!payment) return { ok: false, status: 'failed', error: 'Payment record not found', code: 404 };
+    if (expectedUserId && payment.userId !== expectedUserId) return { ok: false, status: 'failed', error: 'Forbidden', code: 403 };
+    if (payment.status === 'completed') return { ok: true, status: 'success' };
+
+    const isSandbox = (bachsMethod?.metadata as any)?.isSandbox || bachsSecretKey.startsWith('sk_sandbox_');
+    const bachsBaseUrl = isSandbox ? 'https://sandbox-api.bachs.io' : 'https://api.bachs.io';
+
+    let verifiedAmount = Number(payment.amount);
+    let providerRef = sessionIdOrRef;
+
+    try {
+      const vRes = await fetch(`${bachsBaseUrl}/v1/checkout/sessions/${encodeURIComponent(sessionIdOrRef)}`, {
+        headers: { 'Authorization': `Bearer ${bachsSecretKey}` }
+      });
+      if (vRes.ok) {
+        const vData = await vRes.json().catch(() => ({}));
+        const session = vData.data || vData;
+        if (session.payment_status === 'paid' || session.status === 'completed' || session.status === 'success') {
+          if (session.amount || session.pricing?.amount) {
+            verifiedAmount = Number(session.amount || session.pricing?.amount);
           }
+          providerRef = session.id || sessionIdOrRef;
+        } else {
+          return { ok: false, status: 'unpaid', error: 'Bachs session payment not confirmed yet', code: 402 };
+        }
+      }
+    } catch (vErr) {
+      console.warn('[Bachs] Session direct verify request error:', vErr);
+    }
 
-          // Idempotency check - prevent duplicate processing
-          if (payment.status === 'completed') {
-            return res.json({ success: true, message: 'Payment already processed' });
-          }
+    const result = await storage.fulfillPayment(payment.id, providerRef, verifiedAmount);
+    return result.ok ? { ok: true, status: 'success' } : { ok: false, status: 'failed', error: result.reason, code: 400 };
+  }
 
-          // Amount verification - ensure paid amount matches expected amount
-          if (payment.amount !== amount) {
-            console.error('Amount mismatch:', { 
-              paymentId: payment.id,
-              expected: payment.amount, 
-              received: amount 
-            });
-            return res.status(400).json({ error: 'Amount mismatch' });
-          }
+  // Bachs Webhook: validates HMAC-SHA256 signature when secret is configured
+  app.post("/api/payments/bachs/webhook", async (req, res) => {
+    try {
+      const signature = (req.headers['x-bachs-signature'] || req.headers['bachs-signature']) as string;
+      const raw: Buffer | undefined = (req as any).rawBody;
 
-          // Update payment status
-          await storage.updatePayment(payment.id, {
-            status: 'completed',
-            providerRef: tx_ref
-          });
+      const paymentMethods = await storage.getPaymentMethods();
+      const bachsMethod: any = paymentMethods.find((m: any) => m.type === 'bachs' && m.active);
+      const webhookSecret = bachsMethod?.webhookHash || process.env.BACHS_WEBHOOK_SECRET;
 
-          // Process based on type
-          if (type === 'wallet_topup') {
-            await storage.topUpWallet(userId, amount, tx_ref, 'Flutterwave payment');
-          } else if (type === 'credit_purchase' && credits) {
-            await storage.addCredits(userId, parseInt(String(credits)), `Flutterwave webhook purchase: ${payment.id}`);
-          } else if (type === 'subscription' && planId) {
-            await storage.createSubscription({
-              userId,
-              planId,
-              status: 'active',
-              startDate: new Date().toISOString()
-            });
-          }
+      if (webhookSecret && signature && raw) {
+        const computed = crypto.createHmac('sha256', webhookSecret).update(raw).digest('hex');
+        const sigBuf = Buffer.from(signature);
+        const compBuf = Buffer.from(computed);
+        if (sigBuf.length !== compBuf.length || !crypto.timingSafeEqual(sigBuf, compBuf)) {
+          return res.status(401).json({ error: 'Invalid Bachs signature' });
+        }
+      }
+
+      const event = req.body;
+      const eventType = event?.event || event?.type;
+      const eventData = event?.data || event;
+
+      if (
+        eventType === 'collection.succeeded' ||
+        eventType === 'checkout.session.completed' ||
+        eventType === 'payment.successful' ||
+        eventData?.status === 'successful' ||
+        eventData?.payment_status === 'paid'
+      ) {
+        const ref = eventData?.metadata?.paymentId || eventData?.metadata?.reference || eventData?.id || eventData?.reference;
+        if (ref) {
+          await settleBachsTransaction(String(ref));
         }
       }
 
       res.json({ success: true });
-    } catch (error) {
-      next(error);
+    } catch (error: any) {
+      console.error('Bachs webhook error:', error);
+      res.status(500).json({ error: 'Webhook processing failed' });
     }
   });
 
-  // Verify Flutterwave payment (manual verification from frontend)
-  app.post("/api/payments/flutterwave/verify", userAuth, async (req, res, next) => {
+  // Bachs callback: user returns from hosted checkout
+  app.get("/api/payments/bachs/callback", async (req, res) => {
     try {
-      const { transaction_id, tx_ref } = req.body;
+      const paymentId = String(req.query.payment_id || req.query.paymentId || '');
+      const txRef = String(req.query.tx_ref || req.query.sessionId || '');
+      const ref = paymentId || txRef;
 
-      if (!transaction_id && !tx_ref) {
-        return res.status(400).json({ error: 'Transaction ID or reference required' });
+      if (ref) {
+        await settleBachsTransaction(ref);
       }
-
-      // Get Flutterwave payment method
-      const paymentMethods = await storage.getPaymentMethods();
-      const flutterwaveMethod = paymentMethods.find((m: any) => m.type === 'flutterwave' && m.active);
-      
-      if (!flutterwaveMethod?.secretKey) {
-        return res.status(503).json({ error: 'Flutterwave not configured' });
-      }
-
-      // Verify payment with Flutterwave API
-      const response = await fetch(
-        `https://api.flutterwave.com/v3/transactions/${transaction_id}/verify`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${flutterwaveMethod.secretKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      const data = await response.json() as any;
-      
-      if (data.status === 'success' && data.data.status === 'successful') {
-        const { tx_ref, amount, customer, meta } = data.data;
-        const { userId, type, credits, planId } = meta || {};
-
-        if (userId) {
-          // Find payment by reference
-          const payments = await storage.getPayments();
-          const payment = payments.find((p: any) => p.metadata?.reference === tx_ref);
-
-          if (!payment) {
-            console.error('Payment not found for reference:', tx_ref);
-            return res.status(404).json({ error: 'Payment not found' });
-          }
-
-          // Idempotency check
-          if (payment.status === 'completed') {
-            return res.json({ status: 'success', message: 'Payment already processed', data: data.data });
-          }
-
-          // Amount verification
-          if (payment.amount !== amount) {
-            console.error('Amount mismatch during verification:', { 
-              paymentId: payment.id,
-              expected: payment.amount, 
-              received: amount 
-            });
-            return res.status(400).json({ error: 'Amount mismatch' });
-          }
-
-          // Update payment status
-          await storage.updatePayment(payment.id, {
-            status: 'completed',
-            providerRef: tx_ref
-          });
-
-          // Process based on type
-          if (type === 'wallet_topup') {
-            await storage.topUpWallet(userId, amount, tx_ref, 'Flutterwave payment');
-          } else if (type === 'credit_purchase' && credits) {
-            await storage.addCredits(userId, parseInt(String(credits)), `Flutterwave purchase: ${payment.id}`);
-          } else if (type === 'subscription' && planId) {
-            await storage.createSubscription({
-              userId,
-              planId,
-              status: 'active',
-              startDate: new Date().toISOString()
-            });
-          }
-        }
-
-        return res.json({ status: 'success', data: data.data });
-      }
-
-      res.json({ status: 'failed', message: 'Payment verification failed' });
-    } catch (error) {
-      next(error);
+      return res.redirect(`/app/wallet?payment=success&provider=bachs`);
+    } catch (error: any) {
+      console.error('Bachs callback error:', error);
+      return res.redirect(`/app/wallet?payment=failed&error=server_error`);
     }
   });
 
-  // Pay with wallet balance
-  app.post("/api/payments/wallet-payment", userAuth, async (req, res, next) => {
+  // Bachs verify endpoint for frontend / mobile
+  app.post("/api/payments/bachs/verify", userAuth, async (req, res) => {
     try {
-      const { userId, amount, type, planId, credits } = req.body;
-      
-      if (!userId || !amount || !type) {
-        return res.status(400).json({ error: 'Missing required fields' });
-      }
-
-      // Get wallet and check balance
-      const wallet = await storage.getWalletByUserId(userId);
-      if (!wallet) {
-        return res.status(404).json({ error: 'Wallet not found' });
-      }
-
-      const balance = parseFloat(String(wallet.balance ?? '0'));
-      if (balance < amount) {
-        return res.status(400).json({ error: 'Insufficient wallet balance' });
-      }
-
-      // Deduct from wallet
-      await storage.deductFromWallet(
-        userId,
-        amount,
-        type,
-        `WALLET-PAY-${Date.now()}`,
-        `Payment for ${type.replace('_', ' ')}`
-      );
-
-      // Process based on type
-      if (type === 'credit_purchase' && credits) {
-        // Add credits to user
-        await storage.addCredits(userId, parseInt(String(credits)), `Wallet payment: ${type}`);
-      } else if (type === 'subscription' && planId) {
-        // Activate subscription
-        await storage.createSubscription({
-          userId,
-          planId,
-          status: 'active',
-          startDate: new Date().toISOString()
-        });
-      }
-
-      res.json({ 
-        success: true,
-        message: 'Payment successful',
-        newBalance: (balance - amount).toFixed(2)
-      });
-    } catch (error) {
-      next(error);
+      const { reference, sessionId } = req.body;
+      const ref = reference || sessionId;
+      if (!ref) return res.status(400).json({ error: 'Reference or sessionId required' });
+      const r = await settleBachsTransaction(String(ref), (req as any).userId);
+      if (!r.ok) return res.status(r.code || 400).json({ error: r.error, status: r.status });
+      res.json({ success: true, status: 'success' });
+    } catch (error: any) {
+      console.error('Bachs verify error:', error);
+      res.status(500).json({ error: 'Verification failed' });
     }
   });
 
+  // The wallet is credit-backed and cannot be spent on plans or credit packs.
+  app.post("/api/payments/wallet-payment", userAuth, async (_req, res) => {
+    res.status(410).json({ error: 'Wallet payment is no longer supported. Please pay by card.' });
+  });
   // Admin: Approve manual payment
   app.post("/api/admin/payments/:paymentId/approve", adminAuth, async (req, res, next) => {
     try {
@@ -4235,18 +4170,8 @@ AI:`;
   // Flagged Posts Management
   app.get("/api/admin/flagged-posts", adminAuth, async (req, res, next) => {
     try {
-      const db = admin.firestore();
-      const FIREBASE_APP_ID = process.env.FIREBASE_APP_ID || 'legal-13d13';
-      
-      const postsRef = db.collection('artifacts').doc(FIREBASE_APP_ID)
-        .collection('public').doc('data').collection('forum_posts');
-      
-      const snapshot = await postsRef.where('shadowedForReview', '==', true).get();
-      const flaggedPosts = snapshot.docs.map((doc: any) => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
+      const posts = await storage.getForumPosts();
+      const flaggedPosts = posts.filter((p: any) => p.flagged || p.shadowedForReview || (p.flagCount && p.flagCount > 0));
       res.json(flaggedPosts);
     } catch (error) {
       next(error);
@@ -4554,7 +4479,7 @@ AI:`;
   });
 
   // Subscriptions
-  app.get("/api/subscription/:userId", async (req, res, next) => {
+  app.get("/api/subscription/:userId", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
       const subscription = await storage.getUserPlan(userId);
@@ -4567,46 +4492,26 @@ AI:`;
     }
   });
 
-  app.post("/api/subscription/upgrade", async (req, res, next) => {
+  // Direct upgrades are only for free plans (or admins); paid plans activate through a verified payment.
+  app.post("/api/subscription/upgrade", userAuth, async (req, res, next) => {
     try {
-      const { userId, planId } = req.body;
-      
-      if (!userId || !planId) {
-        return res.status(400).json({ error: 'Missing required fields' });
+      const { planId } = req.body;
+      const userId = (req as any).userId;
+      if (!planId) return res.status(400).json({ error: 'Missing required fields' });
+      if (req.body.userId && req.body.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
+
+      const plan: any = await storage.getPlanById(planId);
+      if (!plan) return res.status(404).json({ error: 'Plan not found' });
+      if (Number(plan.price) > 0 && !(req as any).isAdmin) {
+        return res.status(402).json({ error: 'Payment required for this plan' });
       }
 
-      const plan = await storage.getPlanById(planId);
-      if (!plan) {
-        return res.status(404).json({ error: 'Plan not found' });
-      }
-
-      // Cancel existing subscription if any
-      const existingSub = await storage.getUserSubscription(userId);
-      if (existingSub?.id) {
-        await storage.updateSubscriptionStatus(existingSub.id, 'cancelled');
-      }
-
-      const subscription = await storage.createSubscription({
-        userId,
-        planId,
-        status: 'active',
-        startDate: new Date().toISOString()
-      });
-
-      if (plan.credits && plan.credits > 0) {
-        await storage.addCredits(userId, plan.credits, `Subscribed to ${plan.name}`);
-      }
-
-      res.json({
-        success: true,
-        subscription,
-        message: `Upgraded to ${plan.name} plan`
-      });
+      const subscription = await storage.activatePlan(userId, planId);
+      res.json({ success: true, subscription, message: `Upgraded to ${plan.name} plan` });
     } catch (error) {
       next(error);
     }
   });
-
   // ===== Coupons API (Admin) =====
   
   app.get("/api/admin/coupons", adminAuth, async (req, res, next) => {
@@ -4797,12 +4702,13 @@ AI:`;
   // ===== Booking System API =====
 
   // Create a booking (user books vendor service)
-  app.post("/api/bookings", async (req, res, next) => {
+  app.post("/api/bookings", userAuth, async (req, res, next) => {
     try {
-      const { serviceId, userId, vendorId, totalAmount, description, scheduledDate, milestones, chatId } = req.body;
+      const { serviceId, vendorId, totalAmount = 0, description, scheduledDate, chatId } = req.body;
+      const userId = (req as any).userId;
       
-      if (!serviceId || !userId || !vendorId || totalAmount === undefined) {
-        return res.status(400).json({ error: 'Missing required fields: serviceId, userId, vendorId, totalAmount' });
+      if (!serviceId || !userId || !vendorId) {
+        return res.status(400).json({ error: 'Missing required fields: serviceId, vendorId' });
       }
 
       // Automatically fetch the user's SabiGuard chat to generate a Pre-Case File summary
@@ -4836,27 +4742,6 @@ AI:`;
         scheduledDate: scheduledDate ? new Date(scheduledDate).toISOString() : null
       });
 
-      if (milestones && Array.isArray(milestones)) {
-        let order = 1;
-        for (const milestone of milestones) {
-          const amount = (parseFloat(totalAmount) * (milestone.amountPercent / 100)).toFixed(2);
-          await storage.createMilestone({
-            bookingId: booking.id,
-            title: milestone.title,
-            description: milestone.description,
-            amountPercent: milestone.amountPercent,
-            amount,
-            order: order++,
-            dueDate: milestone.dueDate ? new Date(milestone.dueDate).toISOString() : null
-          });
-        }
-      }
-
-      await storage.createEscrowAccount({
-        bookingId: booking.id,
-        totalAmount: totalAmount.toString()
-      });
-
       res.json(booking);
     } catch (error) {
       next(error);
@@ -4864,9 +4749,10 @@ AI:`;
   });
 
   // Get user's bookings
-  app.get("/api/bookings/user/:userId", async (req, res, next) => {
+  app.get("/api/bookings/user/:userId", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
+      if (userId !== (req as any).userId && !(req as any).isAdmin) return res.status(403).json({ error: 'Forbidden' });
       const bookings = await storage.getBookingsByUserId(userId);
       res.json(bookings);
     } catch (error) {
@@ -4875,9 +4761,10 @@ AI:`;
   });
 
   // Get vendor's bookings
-  app.get("/api/bookings/vendor/:vendorId", async (req, res, next) => {
+  app.get("/api/bookings/vendor/:vendorId", userAuth, async (req, res, next) => {
     try {
       const { vendorId } = req.params;
+      if (vendorId !== (req as any).userId && !(req as any).isAdmin) return res.status(403).json({ error: 'Forbidden' });
       const bookings = await storage.getBookingsByVendorId(vendorId);
       res.json(bookings);
     } catch (error) {
@@ -4885,8 +4772,8 @@ AI:`;
     }
   });
 
-  // Get booking details with milestones, escrow, contract
-  app.get("/api/bookings/:id", async (req, res, next) => {
+  // Get booking details with contract
+  app.get("/api/bookings/:id", bookingParticipantAuth, async (req, res, next) => {
     try {
       const { id } = req.params;
       const details = await storage.getBookingDetails(id);
@@ -4915,132 +4802,6 @@ AI:`;
       await storage.updateBookingStatus(id, status);
       const updated = await storage.getBookingById(id);
       res.json(updated);
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // ===== Escrow Management =====
-
-  // Fund escrow (deduct from user wallet)
-  app.post("/api/bookings/:id/escrow/fund", bookingParticipantAuth, async (req, res, next) => {
-    try {
-      const { id } = req.params;
-      const { amount } = req.body;
-      const userId = req.userId;
-      const booking = req.booking;
-      
-      if (!userId || !booking) {
-        return res.status(401).json({ error: 'Authentication required or booking not found' });
-      }
-      
-      if (!amount) {
-        return res.status(400).json({ error: 'amount is required' });
-      }
-
-      if (booking.userId !== userId) {
-        return res.status(403).json({ error: 'Only the booking user can fund the escrow' });
-      }
-
-      const escrow = await storage.fundEscrow(id, parseFloat(amount), userId);
-      if (!escrow) {
-        return res.status(400).json({ error: 'Failed to fund escrow. Check wallet balance.' });
-      }
-
-      res.json(escrow);
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Mark milestone as completed (vendor marks completion)
-  app.post("/api/bookings/:id/milestones/:milestoneId/complete", bookingParticipantAuth, async (req, res, next) => {
-    try {
-      const { id, milestoneId } = req.params;
-      const userId = req.userId;
-      const booking = req.booking;
-
-      if (!userId || !booking) {
-        return res.status(401).json({ error: 'Authentication required or booking not found' });
-      }
-
-      if (booking.vendorId !== userId) {
-        return res.status(403).json({ error: 'Only the vendor can mark milestones as completed' });
-      }
-
-      const milestone = await storage.getMilestoneById(milestoneId);
-      if (!milestone || milestone.bookingId !== id) {
-        return res.status(404).json({ error: 'Milestone not found for this booking' });
-      }
-
-      await storage.updateMilestoneStatus(milestoneId, 'completed');
-      const updated = await storage.getMilestoneById(milestoneId);
-      res.json(updated);
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Release milestone funds to vendor
-  app.post("/api/bookings/:id/milestones/:milestoneId/release", bookingParticipantAuth, async (req, res, next) => {
-    try {
-      const { id, milestoneId } = req.params;
-      const userId = req.userId;
-      const booking = req.booking;
-      
-      if (!userId || !booking) {
-        return res.status(401).json({ error: 'Authentication required or booking not found' });
-      }
-      
-      if (booking.userId !== userId) {
-        return res.status(403).json({ error: 'Only the booking user can release milestone funds' });
-      }
-
-      const escrow = await storage.getEscrowByBookingId(id);
-      if (!escrow) {
-        return res.status(404).json({ error: 'Escrow account not found' });
-      }
-
-      const milestone = await storage.getMilestoneById(milestoneId);
-      if (!milestone || milestone.bookingId !== id) {
-        return res.status(404).json({ error: 'Milestone not found for this booking' });
-      }
-
-      if (milestone.status === 'released') {
-        return res.status(400).json({ error: 'Milestone funds already released' });
-      }
-
-      const milestoneAmount = parseFloat(milestone.amount || '0');
-      const fundedAmount = parseFloat(escrow.fundedAmount || '0');
-      const releasedAmount = parseFloat(escrow.releasedAmount || '0');
-      const availableInEscrow = fundedAmount - releasedAmount;
-
-      if (milestoneAmount > availableInEscrow) {
-        return res.status(400).json({ 
-          error: 'Insufficient escrow balance', 
-          required: milestoneAmount,
-          available: availableInEscrow
-        });
-      }
-
-      const vendorId = booking.vendorId;
-      if (!vendorId) {
-        return res.status(400).json({ error: 'Vendor ID not found for this booking' });
-      }
-
-      const event = await storage.releaseEscrowMilestone(
-        escrow.id,
-        milestoneId,
-        vendorId,
-        userId
-      );
-
-      if (!event) {
-        return res.status(400).json({ error: 'Failed to release milestone funds' });
-      }
-
-      const updatedMilestone = await storage.getMilestoneById(milestoneId);
-      res.json({ milestone: updatedMilestone, event });
     } catch (error) {
       next(error);
     }
@@ -5190,7 +4951,7 @@ AI:`;
       await storage.createBookingMessage({
         bookingId: id,
         senderId: 'system',
-        message: 'A dispute has been opened. Please provide all evidence to enable admin settle the escrow.',
+        message: 'A dispute has been opened. Please provide all evidence so an admin can review it.',
         isAdminMessage: true
       });
 
@@ -5254,15 +5015,77 @@ AI:`;
   // ===== SabiGuard, SabiMove, SabiWork Service Endpoints =====
 
   // SabiGuard - AI Legal Assistant & Chat
+  const loadOwnedChat = async (req: any, res: Response, chatId: string) => {
+    const chat = await storage.getSabiGuardChat(chatId);
+    if (!chat) { res.status(404).json({ error: "Chat not found" }); return null; }
+    if (chat.userId !== req.userId && !req.isAdmin) { res.status(403).json({ error: "Forbidden" }); return null; }
+    return chat;
+  };
+
+  const chatBytes = (text: string) => Buffer.byteLength(text || '', 'utf8');
+
   app.get("/api/sabiguard/chats", userAuth, async (req, res, next) => {
     try {
-      const userId = req.query.userId as string;
-      if (!userId) {
-        return res.status(400).json({ error: "userId is required" });
+      const userId = (req.query.userId as string) || (req as any).userId;
+      if (userId !== (req as any).userId && !(req as any).isAdmin) {
+        return res.status(403).json({ error: "Forbidden" });
       }
-      const chats = await storage.getSabiGuardChats(userId);
-      console.log('CHATS RETURNED TO UI:', chats.length);
-      res.json(chats);
+      res.json(await storage.getSabiGuardChats(userId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/sabiguard/storage", userAuth, async (req, res, next) => {
+    try {
+      const profile = await storage.getUserProfile((req as any).userId);
+      const limit = profile?.chatStorageLimit || 524288;
+      const used = profile?.chatStorageUsed || 0;
+      const chats = await storage.getSabiGuardChats((req as any).userId);
+      res.json({ used, limit, remaining: Math.max(0, limit - used), chatCount: chats.length });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // --- WhatsApp / Telegram account linking ---
+  app.post("/api/channels/link-code", userAuth, async (req, res, next) => {
+    try {
+      const userId = (req as any).userId;
+      const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      const code = Array.from({ length: 8 }, () => alphabet[crypto.randomInt(alphabet.length)]).join("");
+      await supabase.from("channel_link_codes").delete().eq("user_id", userId).is("used_at", null);
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const { error } = await supabase.from("channel_link_codes").insert({ code, user_id: userId, expires_at: expiresAt });
+      if (error) throw error;
+      res.json({ code, expiresAt, instructions: `Send "link ${code}" to the SabiRight WhatsApp or Telegram bot within 10 minutes.` });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/channels/links", userAuth, async (req, res, next) => {
+    try {
+      const { data, error } = await supabase
+        .from("channel_links")
+        .select("channel, linked_at")
+        .eq("user_id", (req as any).userId);
+      if (error) throw error;
+      res.json(data || []);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.delete("/api/channels/links/:channel", userAuth, async (req, res, next) => {
+    try {
+      const { error } = await supabase
+        .from("channel_links")
+        .delete()
+        .eq("user_id", (req as any).userId)
+        .eq("channel", req.params.channel);
+      if (error) throw error;
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }
@@ -5271,8 +5094,10 @@ AI:`;
   app.get("/api/sabiguard/chats/:userId", userAuth, async (req, res, next) => {
     try {
       const { userId } = req.params;
-      const chats = await storage.getSabiGuardChats(userId);
-      res.json(chats);
+      if (userId !== (req as any).userId && !(req as any).isAdmin) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+      res.json(await storage.getSabiGuardChats(userId));
     } catch (error) {
       next(error);
     }
@@ -5281,8 +5106,9 @@ AI:`;
   app.get("/api/sabiguard/chats/:chatId/messages", userAuth, async (req, res, next) => {
     try {
       const { chatId } = req.params;
+      if (!(await loadOwnedChat(req, res, chatId))) return;
       const messages = await storage.getSabiGuardMessages(chatId);
-      res.json(messages);
+      res.json(messages.map((m: any) => ({ ...m, text: m.content })));
     } catch (error) {
       next(error);
     }
@@ -5291,32 +5117,24 @@ AI:`;
   app.post("/api/sabiguard/chats/:chatId/messages", userAuth, async (req, res, next) => {
     try {
       const { chatId } = req.params;
-      const { role, text, userId } = req.body;
-      if (!role || !text) {
+      const { role, text } = req.body;
+      const userId = (req as any).userId;
+      if (!role || !text || !['user', 'ai'].includes(role)) {
         return res.status(400).json({ error: "Role and text are required" });
       }
+      if (!(await loadOwnedChat(req, res, chatId))) return;
 
-      // Check storage limits if userId is provided
-      if (userId) {
-        const profile = await storage.getUserProfile(userId);
-        if (profile) {
-          const limit = profile.chatStorageLimit || 524288;
-          const used = profile.chatStorageUsed || 0;
-          if (used >= limit) {
-            return res.status(400).json({ error: "Storage limit reached" });
-          }
-        }
+      const profile = await storage.getUserProfile(userId);
+      const limit = profile?.chatStorageLimit || 524288;
+      const used = profile?.chatStorageUsed || 0;
+      const size = chatBytes(text);
+      if (used + size > limit) {
+        return res.status(413).json({ error: "Storage limit reached", code: "STORAGE_FULL" });
       }
 
-      const message = await storage.addSabiGuardMessage(chatId, role, text);
-      
-      // Update storage used
-      if (userId) {
-        const bytesUsed = text.length;
-        await storage.updateChatStorageUsed(userId, bytesUsed);
-      }
-
-      res.json(message);
+      await storage.addSabiGuardMessage(chatId, role, text);
+      await storage.updateChatStorageUsed(userId, size);
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }
@@ -5324,9 +5142,9 @@ AI:`;
 
   app.post("/api/sabiguard/chats", userAuth, async (req, res, next) => {
     try {
-      const { userId, title } = req.body;
-      const chat = await storage.createSabiGuardChat(userId, title || "New Chat");
-      res.json(chat);
+      const userId = (req as any).userId;
+      const title = String(req.body?.title || "New Chat").slice(0, 80);
+      res.json(await storage.createSabiGuardChat(userId, title));
     } catch (error) {
       next(error);
     }
@@ -5335,20 +5153,26 @@ AI:`;
   app.delete("/api/sabiguard/chats/:chatId", userAuth, async (req, res, next) => {
     try {
       const { chatId } = req.params;
+      const chat = await loadOwnedChat(req, res, chatId);
+      if (!chat) return;
+      const messages = await storage.getSabiGuardMessages(chatId);
+      const freed = messages.reduce((n: number, m: any) => n + chatBytes(m.content), 0);
       await storage.deleteSabiGuardChat(chatId);
-      res.json({ success: true });
+      await storage.updateChatStorageUsed(chat.userId, -freed);
+      res.json({ success: true, freedBytes: freed });
     } catch (error) {
       next(error);
     }
   });
-
   app.post("/api/sabiguard/query", userAuth, async (req, res, next) => {
     try {
-      const { userId, query, chatId } = req.body;
+      const { query, chatId } = req.body;
+      const userId = (req as any).userId;
   
       if (!query) {
         return res.status(400).json({ error: "Query is required" });
       }
+      if (chatId && !(await loadOwnedChat(req, res, chatId))) return;
 
       // Check storage limits
       const profile = await storage.getUserProfile(userId);
@@ -5369,30 +5193,20 @@ AI:`;
         return res.status(featureAccess.status).json({ error: featureAccess.error });
       }
 
-      const userPlan = featureAccess.plan;
-      if (userPlan) {
-        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
-        if (monthlyCredits > 0) {
-          await storage.refreshMonthlyCredits(userId, monthlyCredits);
-        }
-      }
+      const costSetting = await storage.getAdminSetting('credit_cost_ai_query');
+      const sabiguardCost = costSetting?.value ? Number(costSetting.value) : 1;
 
-      const costSetting = await storage.getAdminSetting('credit_cost_marketplace_feature');
-      const sabiguardCost = costSetting?.value ? Number(costSetting.value) : 5;
-
-      const userCredits = await storage.getUserCredits(userId);
-      const available = (userCredits?.totalCredits || 0) - (userCredits?.usedCredits || 0);
+      const balance = await storage.getBalance(userId);
+      const deducted = await storage.deductCredits(userId, sabiguardCost, "SabiGuard query", "SabiGuard query");
   
-      if (available < sabiguardCost) {
-        return res.status(400).json({ 
+      if (!deducted) {
+        console.warn(`[SabiGuard 402] Insufficient credits: userId=${userId}, required=${sabiguardCost}, available=${balance.availableCredits}`);
+        return res.status(402).json({ 
           error: "Insufficient credits", 
           required: sabiguardCost,
-          available
+          available: balance.availableCredits
         });
       }
-  
-      // Deduct credits (subtract instead of add)
-      await storage.deductCredits(userId, sabiguardCost, "SabiGuard query", "SabiGuard query");
   
       // Get AI Response
       let aiResponseText = "";
@@ -5409,6 +5223,7 @@ AI:`;
         aiResponseText = await generateAIResponse(prompt) || "I'm sorry, I couldn't generate a response at this time.";
       } catch (aiErr: any) {
         console.error('SabiGuard AI Error:', aiErr);
+        await storage.refundCredits(userId, sabiguardCost, "SabiGuard query");
         aiResponseText = `Error generating AI response: ${aiErr.message}. Please check API keys.`;
       }
       
@@ -5418,7 +5233,7 @@ AI:`;
         await storage.addSabiGuardMessage(chatId, "ai", aiResponseText);
         
         // Track storage used (rough estimate: characters * 1 byte)
-        const bytesUsed = (query.length + aiResponseText.length);
+        const bytesUsed = chatBytes(query) + chatBytes(aiResponseText);
         await storage.updateChatStorageUsed(userId, bytesUsed);
 
         // MOAT Integration: Use chat data for threat analysis
@@ -5444,14 +5259,14 @@ AI:`;
         userId,
         type: "service_used",
         title: "SabiGuard Query Processed",
-        message: `${sabiguardCost} credits deducted. Remaining: ${available - sabiguardCost}`,
+        message: `${sabiguardCost} credits deducted. Remaining: ${balance.availableCredits - sabiguardCost}`,
         data: { service: "sabiguard", creditsDeducted: sabiguardCost }
       });
   
       res.json({ 
         success: true, 
         response,
-        creditsRemaining: available - sabiguardCost
+        creditsRemaining: balance.availableCredits - sabiguardCost
       });
     } catch (error) {
       next(error);
@@ -5485,30 +5300,20 @@ AI:`;
         return res.status(featureAccess.status).json({ error: featureAccess.error });
       }
 
-      const userPlan = featureAccess.plan;
-      if (userPlan) {
-        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
-        if (monthlyCredits > 0) {
-          await storage.refreshMonthlyCredits(userId, monthlyCredits);
-        }
-      }
-
       const costSetting = await storage.getAdminSetting('credit_cost_event_creation');
       const sabimoveCost = costSetting?.value ? Number(costSetting.value) : 3;
 
-      const userCredits = await storage.getUserCredits(userId);
-      const available = (userCredits?.totalCredits || 0) - (userCredits?.usedCredits || 0);
+      const balance = await storage.getBalance(userId);
+      const deducted = await storage.deductCredits(userId, sabimoveCost, "SabiMove route planning", "SabiMove route planning");
   
-      if (available < sabimoveCost) {
-        return res.status(400).json({ 
+      if (!deducted) {
+        console.warn(`[SabiMove 402] Insufficient credits: userId=${userId}, required=${sabimoveCost}, available=${balance.availableCredits}`);
+        return res.status(402).json({ 
           error: "Insufficient credits",
           required: sabimoveCost,
-          available
+          available: balance.availableCredits
         });
       }
-  
-      // Deduct credits
-      await storage.deductCredits(userId, sabimoveCost, "SabiMove route planning", "SabiMove route planning");
   
       // Create route (uses existing route storage)
       const route = await storage.createRoute({
@@ -5528,16 +5333,23 @@ AI:`;
         userId,
         type: "service_used",
         title: "SabiMove Route Created",
-        message: `${sabimoveCost} credits deducted. Remaining: ${available - sabimoveCost}`,
+        message: `${sabimoveCost} credits deducted. Remaining: ${balance.availableCredits - sabimoveCost}`,
         data: { service: "sabimove", routeId: route.id, creditsDeducted: sabimoveCost }
       });
   
       res.json({ 
         success: true, 
         route,
-        creditsRemaining: available - sabimoveCost
+        creditsRemaining: balance.availableCredits - sabimoveCost
       });
     } catch (error) {
+      if (req.body?.userId) {
+        try {
+          const costSetting = await storage.getAdminSetting('credit_cost_event_creation');
+          const sabimoveCost = costSetting?.value ? Number(costSetting.value) : 3;
+          await storage.refundCredits(req.body.userId, sabimoveCost, "SabiMove route planning");
+        } catch {}
+      }
       next(error);
     }
   });
@@ -5564,30 +5376,20 @@ AI:`;
         return res.status(featureAccess.status).json({ error: featureAccess.error });
       }
 
-      const userPlan = featureAccess.plan;
-      if (userPlan) {
-        const monthlyCredits = userPlan.monthlyCredits || userPlan.credits || 0;
-        if (monthlyCredits > 0) {
-          await storage.refreshMonthlyCredits(userId, monthlyCredits);
-        }
-      }
-
       const costSetting = await storage.getAdminSetting('credit_cost_job_application');
       const sabiworkCost = costSetting?.value ? Number(costSetting.value) : 2;
 
-      const userCredits = await storage.getUserCredits(userId);
-      const available = (userCredits?.totalCredits || 0) - (userCredits?.usedCredits || 0);
+      const balance = await storage.getBalance(userId);
+      const deducted = await storage.deductCredits(userId, sabiworkCost, "SabiWork job recommendations", "SabiWork job recommendations");
   
-      if (available < sabiworkCost) {
-        return res.status(400).json({ 
+      if (!deducted) {
+        console.warn(`[SabiWork 402] Insufficient credits: userId=${userId}, required=${sabiworkCost}, available=${balance.availableCredits}`);
+        return res.status(402).json({ 
           error: "Insufficient credits",
           required: sabiworkCost,
-          available
+          available: balance.availableCredits
         });
       }
-  
-      // Deduct credits
-      await storage.deductCredits(userId, sabiworkCost, "SabiWork job recommendations", "SabiWork job recommendations");
   
       // Get job recommendations (uses existing vendor services)
       const allServices = await storage.getVendorServices({});
@@ -5603,16 +5405,23 @@ AI:`;
         userId,
         type: "service_used",
         title: "SabiWork Recommendations Generated",
-        message: `${sabiworkCost} credits deducted. Remaining: ${available - sabiworkCost}`,
+        message: `${sabiworkCost} credits deducted. Remaining: ${balance.availableCredits - sabiworkCost}`,
         data: { service: "sabiwork", count: recommendations.length, creditsDeducted: sabiworkCost }
       });
   
       res.json({ 
         success: true, 
         recommendations,
-        creditsRemaining: available - sabiworkCost
+        creditsRemaining: balance.availableCredits - sabiworkCost
       });
     } catch (error) {
+      if (req.body?.userId) {
+        try {
+          const costSetting = await storage.getAdminSetting('credit_cost_job_application');
+          const sabiworkCost = costSetting?.value ? Number(costSetting.value) : 2;
+          await storage.refundCredits(req.body.userId, sabiworkCost, "SabiWork job recommendations");
+        } catch {}
+      }
       next(error);
     }
   });

@@ -162,9 +162,7 @@ export default function Wallet() {
   const getTransactionColor = (type: string) => {
     switch (type) {
       case "deposit":
-      case "escrow_release":
         return "text-green-600";
-      case "escrow_fund":
       case "withdrawal":
         return "text-red-600";
       default:
@@ -175,9 +173,7 @@ export default function Wallet() {
   const getTransactionIcon = (type: string) => {
     switch (type) {
       case "deposit":
-      case "escrow_release":
         return <ArrowDownLeft className="h-4 w-4 text-green-600" />;
-      case "escrow_fund":
       case "withdrawal":
         return <ArrowUpRight className="h-4 w-4 text-red-600" />;
       default:
@@ -188,9 +184,7 @@ export default function Wallet() {
   const getTransactionBadgeVariant = (type: string): "default" | "secondary" | "destructive" | "outline" => {
     switch (type) {
       case "deposit":
-      case "escrow_release":
         return "default";
-      case "escrow_fund":
       case "withdrawal":
         return "destructive";
       default:
@@ -215,7 +209,7 @@ export default function Wallet() {
         </div>
       </div>
 
-      <Card className="bg-gradient-to-br from-primary to-primary/80 text-white border-0 shadow-lg overflow-hidden">
+      <Card className="bg-linear-to-br from-primary to-primary/80 text-white border-0 shadow-lg overflow-hidden">
         <CardContent className="p-6 md:p-8">
           <div className="flex items-center gap-4 mb-4">
             <div className="h-14 w-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
@@ -410,7 +404,7 @@ export default function Wallet() {
                     </div>
                   </div>
                   <p className={`font-bold text-sm sm:text-base self-end sm:self-center ${getTransactionColor(tx.type)}`} data-testid={`text-transaction-amount-${tx.id}`}>
-                    {tx.type === "deposit" || tx.type === "escrow_release" ? "+" : "-"}
+                    {tx.type === "deposit" ? "+" : "-"}
                     {formatCurrency(tx.amount)}
                   </p>
                 </div>

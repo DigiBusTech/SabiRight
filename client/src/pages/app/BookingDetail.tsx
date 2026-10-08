@@ -213,14 +213,21 @@ export default function BookingDetail() {
       <Card className="flex-1 flex flex-col overflow-hidden border-slate-200 shadow-sm">
         <CardContent className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
           {/* Pre-Case File - visible for BOTH user/citizen and professional */}
-          {booking.description.includes("---") && (
-            <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/30 text-blue-800 dark:text-blue-300 rounded-2xl p-4 mb-4 shadow-sm">
-              <p className="text-xs font-bold text-blue-800 dark:text-blue-300 mb-2 flex items-center gap-1.5">
-                <FileText className="h-4 w-4" />
-                SabiRight Pre-Case File & AI Chat Summary
-              </p>
-              <div className="prose prose-sm dark:prose-invert text-blue-700 dark:text-blue-300 max-w-none">
-                <p className="whitespace-pre-wrap">{booking.description.split("---")[1].trim()}</p>
+          {(booking.caseFile || booking.description.includes("---")) && (
+            <div className="bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-900/30 rounded-2xl p-4 mb-4 shadow-xs">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-purple-800 dark:text-purple-300 flex items-center gap-1.5">
+                  <FileText className="h-4 w-4 text-primary" />
+                  SabiRight Pre-Case Intake Brief {booking.caseFile?.case_ref ? `(${booking.caseFile.case_ref})` : ''}
+                </p>
+                {booking.caseFile?.urgency_level && (
+                  <Badge className="bg-red-100 text-red-700 text-[10px] font-bold uppercase">
+                    {booking.caseFile.urgency_level} Urgency
+                  </Badge>
+                )}
+              </div>
+              <div className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
+                {booking.caseFile?.issue_summary || (booking.description.includes("---") ? booking.description.split("---")[1].trim() : booking.description)}
               </div>
             </div>
           )}

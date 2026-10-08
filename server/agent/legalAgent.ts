@@ -1,6 +1,7 @@
 import { LlmAgent, Gemini } from '@google/adk';
 import { getMcpTools } from './mcpAdapter.js';
-import { firestoreStorage as storage } from '../firestoreStorage.js';
+import { supabaseStorage as storage } from '../supabaseStorage.js';
+import { generateAIResponse } from '../aiService.js';
 import path from 'path';
 
 /**
@@ -83,22 +84,13 @@ STRICT OPERATING RULES:
 
 /**
  * Summarizes the latest chat history into a pre-vetted case file.
+ * Tries the Gemini REST API directly first (fastest when configured), then falls
+ * back to the unified generateAIResponse() which honours whichever provider the
+ * admin has set as active (OpenAI, Groq, Anthropic, etc.).
  */
 export async function summarizeCaseForProfessional(chatHistory: any[], userId: string) {
-  const providerSetting = await storage.getAdminSetting('google_gemini_api_key');
-  const apiKey = providerSetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
-
-  if (!apiKey) {
-    throw new Error('Gemini API key not configured for summarization.');
-  }
-
-  const model = new Gemini({
-    model: 'gemini-2.0-flash',
-    apiKey,
-  });
-
   const historyText = chatHistory.map(msg => `${(msg.role || 'USER').toUpperCase()}: ${msg.content || msg.text || ''}`).join('\n');
-  
+
   const prompt = `You are the SabiRight Case Summarizer.
 Extract the key facts, statutory references, and user goals from the conversation into the following Pre-Case File format EXACTLY:
 
@@ -124,23 +116,38 @@ Evidence Mentioned: [List any documents, media, or specific files the user refer
 Primary Objective: [e.g., "Legal representation for bail application", "Consultation for next steps"]
 
 5. Agentic Assessment (Internal Note)
-Counselor/Agent Notes: [Concise summary of the AI’s preliminary analysis of the legal situation, highlighting potential risks or procedural requirements.]
+Counselor/Agent Notes: [Concise summary of the AI's preliminary analysis of the legal situation, highlighting potential risks or procedural requirements.]
 
 Here is the chat history:
 ${historyText}`;
 
+  // Path 1: Direct Gemini REST call — fastest when the Gemini API key is configured
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-    });
-    const data = await res.json();
-    if (data.candidates && data.candidates[0].content.parts[0].text) {
-      return data.candidates[0].content.parts[0].text;
+    const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
+    const apiKey = geminiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+
+    if (apiKey) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      const data = await res.json();
+      if (data.candidates && data.candidates[0]?.content?.parts?.[0]?.text) {
+        return data.candidates[0].content.parts[0].text;
+      }
     }
   } catch (err) {
-    console.error('Direct Gemini fetch failed:', err);
+    console.error('[LegalAgent] Direct Gemini summarization failed, falling back to active provider:', err);
   }
-  return "Unable to generate summary.";
+
+  // Path 2: Unified provider fallback — uses whichever AI provider the admin has active
+  try {
+    const summary = await generateAIResponse(prompt, true /* skipMoatGrounding — this is a structured task, not a citizen query */);
+    if (summary) return summary;
+  } catch (err) {
+    console.error('[LegalAgent] Fallback generateAIResponse summarization also failed:', err);
+  }
+
+  return 'Unable to generate summary.';
 }

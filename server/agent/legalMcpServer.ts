@@ -4,54 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import admin from "firebase-admin";
-import fs from "fs";
-import path from "path";
-import { firestoreStorage } from "../firestoreStorage.js";
-
-// Initialize Firebase Admin for the MCP process with full fallback stages
-const serviceAccountPath = path.join(process.cwd(), 'legal-13d13-firebase-adminsdk-fbsvc-e736182a52.json');
-if (admin.apps.length === 0) {
-  if (fs.existsSync(serviceAccountPath)) {
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      projectId: 'legal-13d13'
-    });
-    console.error("[legalMcpServer] Firebase Admin initialized with service account file.");
-  } else if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    try {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: serviceAccount.project_id || 'legal-13d13'
-      });
-      console.error("[legalMcpServer] Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT_JSON.");
-    } catch (err) {
-      console.error("[legalMcpServer] Failed to initialize via JSON env var:", err);
-    }
-  } else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
-    try {
-      let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-      if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
-        privateKey = privateKey.slice(1, -1);
-      }
-      admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId: process.env.FIREBASE_PROJECT_ID || 'legal-13d13',
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: privateKey.replace(/\\n/g, '\n'),
-        }),
-        projectId: process.env.FIREBASE_PROJECT_ID || 'legal-13d13'
-      });
-      console.error("[legalMcpServer] Firebase Admin initialized via individual env credentials.");
-    } catch (err) {
-      console.error("[legalMcpServer] Failed to initialize via individual credentials:", err);
-    }
-  } else {
-    console.warn("[legalMcpServer] Firebase Admin not initialized. Tools might fail.");
-  }
-}
+import { supabaseStorage as storage } from "../supabaseStorage.js";
 
 /**
  * MCP Server for Nigerian Legal Data
@@ -154,7 +107,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === "search_legal_faqs") {
       const query = String(args?.query || "");
       const normalizedQuery = normalizeLegalQuery(query);
-      const faqs = await firestoreStorage.getFaqs();
+      const faqs = await storage.getFaqs();
       const keywords = normalizedQuery.split(' ');
       const results = faqs.filter(faq => {
         const content = `${faq.question} ${faq.answer} ${faq.category}`.toLowerCase();
@@ -170,7 +123,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const query = String(args?.query || "");
       const category = args?.category as string | undefined;
       const normalizedQuery = normalizeLegalQuery(query);
-      const moatData = await firestoreStorage.getMoatData(category);
+      const moatData = await storage.getMoatData(category);
       const keywords = normalizedQuery.split(' ');
       const results = moatData.filter(item => {
         const content = `${item.title} ${item.content} ${item.category}`.toLowerCase();
@@ -183,7 +136,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "search_legal_professionals") {
-      const services = await firestoreStorage.getVendorServices(args as any);
+      const services = await storage.getVendorServices(args as any);
       return {
         content: [{ type: "text", text: JSON.stringify(services.slice(0, 5)) }],
       };

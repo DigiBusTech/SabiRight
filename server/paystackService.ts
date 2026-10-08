@@ -1,3 +1,7 @@
+﻿import crypto from "crypto";
+
+const BASE = "https://api.paystack.co";
+
 class PaystackService {
   private secretKey: string;
   private publicKey: string;
@@ -5,41 +9,40 @@ class PaystackService {
   constructor(config: { secretKey: string; publicKey: string }) {
     this.secretKey = config.secretKey;
     this.publicKey = config.publicKey;
-    console.warn("PaystackService: Using placeholder implementation.");
   }
 
-  async initializePayment(data: any): Promise<any> {
-    console.warn("PaystackService.initializePayment: Placeholder implementation");
-    return {
-      status: true,
-      data: {
-        authorization_url: "https://paystack.com/dummy-auth-url",
-        access_code: "dummy-access-code",
-        reference: data.reference || `dummy_ref_${Date.now()}`,
+  private async call(path: string, init: RequestInit = {}): Promise<any> {
+    const res = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${this.secretKey}`,
+        "Content-Type": "application/json",
+        ...(init.headers || {}),
       },
-    };
+    });
+    const json: any = await res.json().catch(() => ({}));
+    if (!res.ok && json.status === undefined) json.status = false;
+    return json;
+  }
+
+  // data.amount must be in kobo
+  async initializePayment(data: { email: string; amount: number; reference: string; currency?: string; callback_url?: string; metadata?: any }): Promise<any> {
+    return this.call("/transaction/initialize", { method: "POST", body: JSON.stringify(data) });
   }
 
   async verifyPayment(reference: string): Promise<any> {
-    console.warn("PaystackService.verifyPayment: Placeholder implementation");
-    return {
-      status: true,
-      data: {
-        status: "success",
-        reference,
-        amount: 10000, // Dummy amount in kobo
-        currency: "NGN",
-        metadata: { paymentId: "dummy_payment_id", userId: "mock-user", type: "credit_purchase", credits: 10 },
-      },
-    };
+    return this.call(`/transaction/verify/${encodeURIComponent(reference)}`);
   }
 
-  verifyWebhookSignature(payload: string, signature: string): boolean {
-    console.warn("PaystackService.verifyWebhookSignature: Placeholder implementation");
-    // In a real implementation, you would compute the HMAC signature
-    // and compare it with the provided signature.
-    return true; // Always return true for placeholder
+  // Signature is HMAC-SHA512 of the raw request body using the secret key.
+  verifyWebhookSignature(rawBody: string | Buffer, signature: string): boolean {
+    if (!signature || !this.secretKey) return false;
+    const expected = crypto.createHmac("sha512", this.secretKey).update(rawBody).digest("hex");
+    const a = Buffer.from(expected);
+    const b = Buffer.from(String(signature));
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
   }
 }
 
 export default PaystackService;
+

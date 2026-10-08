@@ -222,21 +222,21 @@ export default function EmailVerification() {
         <CardContent>
           <ul className="space-y-3">
             <li className="flex items-start gap-3">
-              <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold text-sm">Full Feature Access</p>
                 <p className="text-xs text-slate-600">Unlock all marketplace and civic features</p>
               </div>
             </li>
             <li className="flex items-start gap-3">
-              <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold text-sm">Become a Vendor</p>
                 <p className="text-xs text-slate-600">List services and reach customers</p>
               </div>
             </li>
             <li className="flex items-start gap-3">
-              <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
               <div>
                 <p className="font-bold text-sm">Community Trust</p>
                 <p className="text-xs text-slate-600">Build reputation as verified citizen</p>

@@ -148,17 +148,22 @@ export default function Dashboard() {
     enabled: !!user?.uid,
   });
 
-  const { data: credits } = useQuery({
+  const { data: credits, error: creditsError, refetch: refetchCredits } = useQuery({
     queryKey: [`credits-${user?.uid}`],
     queryFn: async () => {
       if (!user) return null;
       const token = await user.getIdToken();
-      const res = await fetch(`/api/credits/${user.uid}`, {
+      const res = await fetch(`/api/credits/${user.uid}/available`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      return res.ok ? res.json() : null;
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to fetch credits');
+      }
+      return res.json();
     },
     enabled: !!user?.uid,
+    refetchInterval: 30000,
   });
 
   const handleRefreshTraffic = async () => {
@@ -195,7 +200,7 @@ export default function Dashboard() {
     }
   };
 
-  const availableCredits = Math.max(0, (credits?.totalCredits || 0) - (credits?.usedCredits || 0));
+  const availableCredits = credits ? (credits.availableCredits ?? Math.max(0, (credits.totalCredits || 0) - (credits.usedCredits || 0))) : 0;
 
   return (
     <motion.div 
@@ -432,14 +437,24 @@ export default function Dashboard() {
                   </div>
                   <div>
                     <p className="text-xs text-slate-600 dark:text-slate-400">Available Credits</p>
-                    <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{availableCredits}</p>
+                    {creditsError ? (
+                      <p className="text-sm font-semibold text-red-500">Failed to load</p>
+                    ) : (
+                      <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{availableCredits}</p>
+                    )}
                   </div>
                 </div>
-                <Link href="/app/credits">
-                  <Button variant="outline" size="sm" className="w-full border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-950/50">
-                    Get More Credits
+                {creditsError ? (
+                  <Button variant="outline" size="sm" onClick={() => refetchCredits()} className="w-full border-red-300 text-red-600 hover:bg-red-50">
+                    Retry Loading Credits
                   </Button>
-                </Link>
+                ) : (
+                  <Link href="/app/credits">
+                    <Button variant="outline" size="sm" className="w-full border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-950/50">
+                      Get More Credits
+                    </Button>
+                  </Link>
+                )}
               </CardContent>
             </Card>
           </motion.div>

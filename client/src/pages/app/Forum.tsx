@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, ArrowBigUp, ArrowBigDown, Flag, Trash2, Send, CornerDownRight, Reply, TrendingUp, Clock, Award, ShieldAlert, Users, Info, Plus, MapPin } from "lucide-react";
@@ -6,8 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { db, FIREBASE_APP_ID } from "@/lib/firebase";
-import { collection, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, increment, arrayUnion, orderBy, query, deleteDoc } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -79,64 +77,36 @@ export default function Forum() {
 
   const displayedPosts = user ? posts : posts.slice(0, 5);
 
-  useEffect(() => {
-    // ... query setup ...
-    // Note: Firestore rules must allow public read for this to work
-    let q = query(
-        collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts'),
-        orderBy('timestamp', 'desc')
-    );
-
-
-    if (sortBy === 'top') {
-        q = query(
-            collection(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts'),
-            orderBy('upvotes', 'desc')
-        );
-    }
-
-    const unsubscribe = onSnapshot(q, 
-        (snapshot) => {
-            let postsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Post));
-            
-            if (sortBy === 'hot') {
-                // Simple hot algorithm: (upvotes - downvotes) / hours since post
-                const now = Date.now();
-                postsData.sort((a, b) => {
-                    const aScore = (a.upvotes || 0) - (a.downvotes || 0);
-                    const bScore = (b.upvotes || 0) - (b.downvotes || 0);
-                    const aAge = (now - (a.timestamp?.toMillis() || now)) / 3600000 + 2;
-                    const bAge = (now - (b.timestamp?.toMillis() || now)) / 3600000 + 2;
-                    return (bScore / bAge) - (aScore / aAge);
-                });
-            }
-            
-            // Secondary sort by city if user city is available
-            if (profile?.city) {
-              // We don't want to override the primary sort, but maybe highlight city posts?
-              // For now, let's keep the primary sort and just ensure city is visible
-            }
-            
-            setPosts(postsData);
-        },
-        (error) => {
-            console.error("[Forum] Firestore Snapshot error:", error);
-            if (error.code === 'permission-denied') {
-                toast({
-                    title: "Access Denied",
-                    description: "You don't have permission to view forum posts. Please ensure you are logged in.",
-                    variant: "destructive"
-                });
-            } else {
-                toast({
-                    title: "Connection Error",
-                    description: "Failed to connect to the forum. Trying to reconnect...",
-                    variant: "destructive"
-                });
-            }
+  const fetchPosts = useCallback(async () => {
+    try {
+      const cityQuery = profile?.city ? `?city=${encodeURIComponent(profile.city)}` : '';
+      const res = await fetch(`/api/forum/posts${cityQuery}`);
+      if (res.ok) {
+        let postsData = await res.json();
+        if (sortBy === 'hot') {
+          const now = Date.now();
+          postsData.sort((a: any, b: any) => {
+            const aScore = (a.upvotes || 0) - (a.downvotes || 0);
+            const bScore = (b.upvotes || 0) - (b.downvotes || 0);
+            const aAge = (now - new Date(a.createdAt || a.timestamp || now).getTime()) / 3600000 + 2;
+            const bAge = (now - new Date(b.createdAt || b.timestamp || now).getTime()) / 3600000 + 2;
+            return (bScore / bAge) - (aScore / aAge);
+          });
+        } else if (sortBy === 'top') {
+          postsData.sort((a: any, b: any) => (b.upvotes || 0) - (a.upvotes || 0));
         }
-    );
+        setPosts(postsData || []);
+      }
+    } catch (e) {
+      console.error("[Forum] Fetch posts error:", e);
+    }
   }, [profile?.city, sortBy]);
+
+  useEffect(() => {
+    fetchPosts();
+    const interval = setInterval(fetchPosts, 15000);
+    return () => clearInterval(interval);
+  }, [fetchPosts]);
 
   const handleCreatePost = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -232,8 +202,7 @@ export default function Forum() {
               : c
       );
 
-      const postRef = doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', postId);
-      await updateDoc(postRef, { comments: newComments });
+      setPosts(prev => prev.map(p => p.id === postId ? { ...p, comments: newComments } : p));
   };
 
   const handleFlag = async (postId: string) => {
@@ -278,8 +247,19 @@ export default function Forum() {
 
   const handleDelete = async (postId: string) => {
       if (!confirm("Are you sure you want to delete this post?")) return;
-      await deleteDoc(doc(db, 'artifacts', FIREBASE_APP_ID, 'public', 'data', 'forum_posts', postId));
-      toast({ title: "Deleted", description: "Post removed." });
+      try {
+        const idToken = await user?.getIdToken();
+        const res = await fetch(`/api/forum/posts/${postId}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${idToken}` }
+        });
+        if (res.ok) {
+          setPosts(prev => prev.filter(p => p.id !== postId));
+          toast({ title: "Deleted", description: "Post removed." });
+        }
+      } catch (e) {
+        toast({ title: "Error", description: "Failed to delete post", variant: "destructive" });
+      }
   };
 
   const handleComment = async (e: React.FormEvent, postId: string) => {

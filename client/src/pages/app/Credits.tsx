@@ -162,7 +162,7 @@ export default function Credits() {
               <ul className="space-y-2">
                 {plan.features.map((feature, idx) => (
                   <li key={idx} className="flex items-start gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                    <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -190,23 +190,23 @@ export default function Credits() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div className="flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
               <p><strong>SabiGuard AI:</strong> Each SabiGuard legal query costs 5 credits</p>
             </div>
             <div className="flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
               <p><strong>Civic AI:</strong> Standard civic education queries cost 1 credit</p>
             </div>
             <div className="flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
               <p><strong>SabiMove:</strong> Advanced route planning costs 3 credits</p>
             </div>
             <div className="flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
               <p><strong>Job Search:</strong> AI job search and recommendations cost 2 credits</p>
             </div>
             <div className="flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
               <p><strong>Daily Bonus:</strong> Log in daily to receive free credits!</p>
             </div>
           </CardContent>

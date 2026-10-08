@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 
 interface SurveyDialogProps {
   isOpen: boolean;
@@ -22,7 +22,8 @@ export function SurveyDialog({ isOpen, onClose, feature }: SurveyDialogProps) {
 
   const submitSurvey = useMutation({
     mutationFn: async (data: { feature: string; rating: number; feedback: string }) => {
-      const token = await auth.currentUser?.getIdToken();
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
       const res = await fetch("/api/surveys", {
         method: "POST",
         headers: { 

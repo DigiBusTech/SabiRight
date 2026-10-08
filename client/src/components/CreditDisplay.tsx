@@ -4,6 +4,7 @@ import { Zap, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useLocation } from "wouter";
 
 interface CreditDisplayProps {
   compact?: boolean;
@@ -13,13 +14,17 @@ interface CreditDisplayProps {
 
 export function CreditDisplay({ compact = false, onClick, className }: CreditDisplayProps) {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
 
   const { data: credits, isLoading, error, refetch } = useQuery({
     queryKey: [`credits-${user?.uid}`],
     queryFn: async () => {
       if (!user?.uid) return null;
       try {
-        const res = await fetch(`/api/credits/${user.uid}/available`);
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/credits/${user.uid}/available`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
         if (!res.ok) {
           const errorData = await res.json().catch(() => ({}));
           throw new Error(errorData.error || 'Failed to fetch credits');
@@ -64,8 +69,8 @@ export function CreditDisplay({ compact = false, onClick, className }: CreditDis
     );
   }
 
-  const available = credits.totalCredits || 0;
-  const total = (credits.totalCredits || 0) + (credits.usedCredits || 0);
+  const available = credits.availableCredits ?? Math.max(0, (credits.totalCredits || 0) - (credits.usedCredits || 0));
+  const total = credits.totalCredits || available;
 
   const percentageUsed = total > 0 
     ? Math.round((credits.usedCredits / total) * 100)
@@ -92,7 +97,7 @@ export function CreditDisplay({ compact = false, onClick, className }: CreditDis
   }
 
   return (
-    <div className={cn("bg-gradient-to-r from-blue-50 to-slate-50 border border-blue-100 rounded-lg p-4", className)}>
+    <div className={cn("bg-linear-to-r from-blue-50 to-slate-50 border border-blue-100 rounded-lg p-4", className)}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className={`h-8 w-8 rounded-full ${isLow ? 'bg-red-100' : 'bg-blue-100'} flex items-center justify-center`}>
@@ -125,7 +130,11 @@ export function CreditDisplay({ compact = false, onClick, className }: CreditDis
       </p>
 
       {isLow && (
-        <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+        <Button
+          size="sm"
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+          onClick={() => navigate('/app/wallet')}
+        >
           Upgrade Plan
         </Button>
       )}

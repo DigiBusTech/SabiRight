@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { Save, Languages, Check, ShieldAlert, Upload, Download, Trash2, Smartphone, AlertTriangle, Video } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,11 @@ import { Badge } from "@/components/ui/badge";
 export function GeneralSettings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const getAdminToken = async () => {
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token || '';
+  };
 
   // Branding states
   const [siteTitle, setSiteTitle] = useState("SabiRight");
@@ -29,7 +34,7 @@ export function GeneralSettings() {
   const { data: moatItems = [] } = useQuery<any[]>({
     queryKey: ['admin-moat'],
     queryFn: async () => {
-      const token = await auth.currentUser?.getIdToken();
+      const token = await getAdminToken();
       const res = await fetch('/api/admin/moat', { headers: { Authorization: `Bearer ${token}` } });
       return res.ok ? res.json() : [];
     }
@@ -39,7 +44,7 @@ export function GeneralSettings() {
   const { data: settings = [] } = useQuery<any[]>({
     queryKey: ['admin-settings'],
     queryFn: async () => {
-      const token = await auth.currentUser?.getIdToken();
+      const token = await getAdminToken();
       const res = await fetch('/api/admin/settings', {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -97,7 +102,7 @@ export function GeneralSettings() {
   // Settings save mutation
   const saveSettingMutation = useMutation({
     mutationFn: async ({ key, value }: { key: string; value: any }) => {
-      const token = await auth.currentUser?.getIdToken();
+      const token = await getAdminToken();
       const res = await fetch('/api/admin/settings', {
         method: 'POST',
         headers: {
@@ -182,7 +187,7 @@ export function GeneralSettings() {
 
   const handleClearCache = async () => {
     try {
-      const token = await auth.currentUser?.getIdToken();
+      const token = await getAdminToken();
       await fetch('/api/admin/clear-cache', { 
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }

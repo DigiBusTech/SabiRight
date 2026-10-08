@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Plus, Save, Loader2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 
 export function CreditsSettings() {
   const { toast } = useToast();
@@ -16,7 +16,8 @@ export function CreditsSettings() {
   const { data: settings = [] } = useQuery<any[]>({
     queryKey: ['admin-settings'],
     queryFn: async () => {
-      const token = await auth.currentUser?.getIdToken();
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
       const res = await fetch('/api/admin/settings', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -26,7 +27,8 @@ export function CreditsSettings() {
 
   const saveSetting = useMutation({
     mutationFn: async ({ key, value, category }: { key: string, value: string, category: string }) => {
-      const token = await auth.currentUser?.getIdToken();
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
       const res = await fetch('/api/admin/settings', {
         method: 'POST',
         headers: { 
@@ -64,7 +66,7 @@ export function CreditsSettings() {
         </div>
       </div>
 
-      <Card className="rounded-[2rem] border-none shadow-sm overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-sm overflow-hidden">
         <CardHeader className="p-8 pb-4">
           <CardTitle>Referral Rewards</CardTitle>
         </CardHeader>
@@ -102,7 +104,7 @@ export function CreditsSettings() {
         </CardContent>
       </Card>
       
-      <Card className="rounded-[2rem] border-none shadow-sm overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-sm overflow-hidden">
         <CardHeader className="p-8 pb-4">
           <CardTitle>Feature Costs</CardTitle>
         </CardHeader>

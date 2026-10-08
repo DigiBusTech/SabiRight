@@ -1,6 +1,6 @@
 import { FunctionTool } from '@google/adk';
 import { z } from 'zod';
-import { firestoreStorage } from '../firestoreStorage.js';
+import { supabaseStorage as storage } from '../supabaseStorage.js';
 
 /**
  * Normalizes legal search queries to handle Nigerian legal syntax and localized phrasing.
@@ -39,7 +39,7 @@ export const legalFaqTool = new FunctionTool({
   }) as any,
   execute: async ({ query }: any) => {
     const normalizedQuery = normalizeLegalQuery(query);
-    const faqs = await firestoreStorage.getFaqs();
+    const faqs = await storage.getFaqs();
     
     // Simple keyword search for now, could be improved with vector search if available
     const keywords = normalizedQuery.split(' ');
@@ -78,7 +78,7 @@ export const moatDataTool = new FunctionTool({
   }) as any,
   execute: async ({ query, category }: any) => {
     const normalizedQuery = normalizeLegalQuery(query);
-    const moatData = await firestoreStorage.getMoatData(category);
+    const moatData = await storage.getMoatData(category);
     
     const keywords = normalizedQuery.split(' ');
     const results = moatData.filter((item: any) => {
@@ -116,7 +116,7 @@ export const professionalSearchTool = new FunctionTool({
     specialization: z.string().optional().describe('The legal area (e.g., Tenancy, Criminal, Corporate).'),
   }) as any,
   execute: async (filters: any) => {
-    const services = await firestoreStorage.getVendorServices(filters as any);
+    const services = await storage.getVendorServices(filters as any);
     
     if (services.length === 0) {
       return { 

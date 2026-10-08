@@ -130,7 +130,7 @@ export function AnalyticsSettings() {
          <Button variant="outline" className="gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg> Export for Power BI</Button>
       </div>
 
-      <Card className="rounded-[2rem] border-none shadow-sm">
+      <Card className="rounded-4xl border-none shadow-sm">
          <CardContent className="p-8">
             <div className="flex justify-between items-start mb-6">
                <div>
@@ -159,7 +159,7 @@ export function AnalyticsSettings() {
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-         <Card className="rounded-[2rem] border-none shadow-sm">
+         <Card className="rounded-4xl border-none shadow-sm">
             <CardContent className="p-8">
                <h4 className="font-bold text-lg mb-1">Payment Status</h4>
                <p className="text-sm text-slate-500 mb-6">Distribution of all transactions</p>
@@ -194,7 +194,7 @@ export function AnalyticsSettings() {
             </CardContent>
          </Card>
 
-         <Card className="rounded-[2rem] border-none shadow-sm">
+         <Card className="rounded-4xl border-none shadow-sm">
             <CardContent className="p-8">
                <h4 className="font-bold text-lg mb-1">User Growth</h4>
                <p className="text-sm text-slate-500 mb-6">New users per month (Last 6 months)</p>
@@ -213,7 +213,7 @@ export function AnalyticsSettings() {
          </Card>
       </div>
 
-      <Card className="rounded-[2rem] border-none shadow-sm">
+      <Card className="rounded-4xl border-none shadow-sm">
          <CardContent className="p-8">
             <h4 className="font-bold text-lg mb-6">Top Users by Spending</h4>
             <div className="bg-slate-50 dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 flex justify-between items-center">
@@ -227,7 +227,7 @@ export function AnalyticsSettings() {
       </Card>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <Card className="rounded-[2rem] border-none shadow-sm">
+         <Card className="rounded-4xl border-none shadow-sm">
             <CardContent className="p-8 text-center">
                <h4 className="font-bold text-lg mb-1">Gender Distribution</h4>
                <p className="text-sm text-slate-500 mb-6">Breakdown of users by gender</p>
@@ -253,7 +253,7 @@ export function AnalyticsSettings() {
                </div>
             </CardContent>
          </Card>
-         <Card className="rounded-[2rem] border-none shadow-sm">
+         <Card className="rounded-4xl border-none shadow-sm">
             <CardContent className="p-8">
                <h4 className="font-bold text-lg mb-1 text-center">Age Groups</h4>
                <p className="text-sm text-slate-500 mb-6 text-center">User distribution by age</p>
@@ -269,7 +269,7 @@ export function AnalyticsSettings() {
                </div>
             </CardContent>
          </Card>
-         <Card className="rounded-[2rem] border-none shadow-sm">
+         <Card className="rounded-4xl border-none shadow-sm">
             <CardContent className="p-8">
                <h4 className="font-bold text-lg mb-1 text-center">Geographic Distribution</h4>
                <p className="text-sm text-slate-500 mb-6 text-center">Top 10 states by user count</p>

@@ -282,8 +282,7 @@ export default function Marketplace() {
           vendorId: bookingProvider.vendorId,
           totalAmount: 0,
           description: bookingDescription,
-          scheduledDate: null,
-          milestones: []
+          scheduledDate: null
         })
       });
       
@@ -345,9 +344,9 @@ export default function Marketplace() {
       </motion.div>
 
       {/* Proximity Info Banner */}
-      <motion.div variants={itemVariants} className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-4 shadow-sm">
+      <motion.div variants={itemVariants} className="bg-linear-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-4 shadow-sm">
         <div className="flex gap-3">
-          <div className="h-10 w-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+          <div className="h-10 w-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
             <TrendingUp className="h-5 w-5 text-blue-600" />
           </div>
           <div>
@@ -455,7 +454,7 @@ export default function Marketplace() {
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="font-bold text-base md:text-lg text-slate-900 dark:text-slate-100 truncate">{provider.name}</h3>
                           {provider.verified && (
-                            <div className="h-4 w-4 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0" title="Verified">
+                            <div className="h-4 w-4 bg-green-500 rounded-full flex items-center justify-center shrink-0" title="Verified">
                               <Check className="h-2.5 w-2.5 text-white stroke-[4px]" />
                             </div>
                           )}
@@ -494,7 +493,7 @@ export default function Marketplace() {
                         <span className="text-[11px] text-slate-400 font-medium">({provider.reviewCount} reviews)</span>
                       </div>
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
-                        <MapPin className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" /> <span className="truncate">{provider.location}</span>
+                        <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" /> <span className="truncate">{provider.location}</span>
                       </div>
                     </div>
 

@@ -39,7 +39,7 @@ export function ApiKeysSettings() {
         </div>
       </div>
 
-      <Card className="rounded-[2rem] border-none shadow-sm overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-sm overflow-hidden">
         <div className="p-8 pb-4 flex justify-between items-center">
           <div>
             <h3 className="font-bold text-lg">AI Configuration</h3>
@@ -61,7 +61,7 @@ export function ApiKeysSettings() {
                <div className="space-y-2">
                  <Label>Primary AI Model</Label>
                  <select className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm">
-                    <option>Groq (Llama 3/Mixtral) - Free/Fast</option>
+                    <option>Groq (Qwen 2.5 / GPT-OSS) - Free/Fast</option>
                  </select>
                  <p className="text-xs text-slate-500 mt-1">The default model used for intelligent suggestions and automated tasks.</p>
                </div>
@@ -120,7 +120,7 @@ export function ApiKeysSettings() {
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
                   </Button>
                 </div>
-                <p className="text-xs text-slate-500">Fast & Free Llama 3 / Mixtral models via Groq Cloud.</p>
+                <p className="text-xs text-slate-500">Fast & Free open models (Qwen 2.5, GPT-OSS) via Groq Cloud.</p>
               </div>
 
                <div className="pt-4 space-y-4 border-t border-slate-100 dark:border-slate-800">

@@ -1,13 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
-  updateProfile,
-  GoogleAuthProvider,
-  signInWithPopup
-} from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -86,33 +79,14 @@ export default function Login() {
 
   const handleGoogleAuth = async () => {
     setLoading(true);
-    const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      
-      // Check if profile exists and has required fields
-      const idToken = await user.getIdToken();
-      const response = await fetch(`/api/profile/${user.uid}`, {
-        headers: { 'Authorization': `Bearer ${idToken}` }
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/app`
+        }
       });
-      
-      const profile = await response.json();
-      
-      // If profile is missing required fields, show the completion form
-      if (!profile || !profile.userId || !profile.phoneNumber || !profile.dob || !profile.gender || !profile.state) {
-        setGoogleUser(user);
-        setName(user.displayName || "");
-        setIsCompletingGoogleProfile(true);
-        toast({ 
-          title: "Almost there!", 
-          description: "Please provide a few more details to complete your profile." 
-        });
-        return;
-      }
-
-      toast({ title: "Welcome back!", description: `Signed in as ${user.displayName}` });
-      setLocation("/app");
+      if (error) throw error;
     } catch (error: any) {
       console.error(error);
       toast({ 
@@ -120,7 +94,6 @@ export default function Login() {
         description: error.message, 
         variant: "destructive" 
       });
-    } finally {
       setLoading(false);
     }
   };
@@ -131,8 +104,9 @@ export default function Login() {
 
     setLoading(true);
     try {
-      const idToken = await googleUser.getIdToken();
-      await fetch(`/api/profile/${googleUser.uid}`, {
+      const { data: { session } } = await supabase.auth.getSession();
+      const idToken = session?.access_token || '';
+      await fetch(`/api/profile/${googleUser.id || googleUser.uid}`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -189,22 +163,32 @@ export default function Login() {
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+        if (error) throw error;
         toast({ title: "Welcome back!", description: "Successfully logged in." });
       } else {
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        if (auth.currentUser) {
-          await updateProfile(auth.currentUser, { displayName: name });
-          
-          const idToken = await auth.currentUser.getIdToken();
-          await fetch(`/api/profile/${auth.currentUser.uid}`, {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: name }
+          }
+        });
+        if (error) throw error;
+        if (data.user) {
+          const session = data.session;
+          const idToken = session?.access_token || '';
+          await fetch(`/api/profile/${data.user.id}`, {
             method: 'POST',
             headers: { 
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
+              ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {})
             },
             body: JSON.stringify({ 
-              email: auth.currentUser.email, 
+              email: data.user.email, 
               displayName: name,
               phoneNumber,
               dob,
@@ -215,7 +199,7 @@ export default function Login() {
             })
           });
         }
-        toast({ title: "Account created!", description: "Welcome to Digital Citizen." });
+        toast({ title: "Account created!", description: "Welcome to SabiRight." });
       }
       setLocation("/app");
     } catch (error: any) {
@@ -235,7 +219,7 @@ export default function Login() {
       {/* Left Column - Decorative Content (Desktop) */}
       <div className="hidden lg:flex lg:w-1/2 bg-slate-900 relative p-12 flex-col justify-between overflow-hidden">
         <div className="absolute inset-0 z-0">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent" />
+          <div className="absolute inset-0 bg-linear-to-br from-primary/20 to-transparent" />
           <img 
             src="https://images.unsplash.com/photo-1589829545856-d10d557cf95f?q=80&w=2070&auto=format&fit=crop" 
             alt="Legal Background" 

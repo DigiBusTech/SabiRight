@@ -54,7 +54,7 @@ export function VerifiedServices() {
       <CardContent className="grid gap-4 sm:grid-cols-2">
         {SERVICES.map((service) => (
           <div key={service.id} className="flex items-start gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50 hover:bg-slate-100 transition-colors">
-            <div className={`h-10 w-10 rounded-full flex items-center justify-center bg-${service.color}-100 text-${service.color}-600 flex-shrink-0`}>
+            <div className={`h-10 w-10 rounded-full flex items-center justify-center bg-${service.color}-100 text-${service.color}-600 shrink-0`}>
               <service.icon className="h-5 w-5" />
             </div>
             <div className="flex-1 min-w-0">

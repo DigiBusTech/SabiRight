@@ -223,7 +223,7 @@ export default function Notifications() {
                   data-testid={`notification-row-${notification.id}`}
                 >
                   <div className="flex gap-4">
-                    <div className="flex-shrink-0 mt-1">
+                    <div className="shrink-0 mt-1">
                       <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center">
                         {typeIcons[notification.type] || typeIcons.system}
                       </div>
@@ -256,7 +256,7 @@ export default function Notifications() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="flex-shrink-0"
+                            className="shrink-0"
                             onClick={() => markAsRead(notification.id)}
                             data-testid={`button-mark-read-${notification.id}`}
                           >

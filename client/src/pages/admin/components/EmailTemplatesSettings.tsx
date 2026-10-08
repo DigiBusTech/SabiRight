@@ -38,7 +38,7 @@ export function EmailTemplatesSettings() {
         </div>
       </div>
 
-      <Card className="rounded-[2rem] border-none shadow-sm overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-sm overflow-hidden">
         <div className="p-8 pb-4 flex justify-between items-center">
           <div>
             <h3 className="font-bold text-lg">Rich Email Templates</h3>

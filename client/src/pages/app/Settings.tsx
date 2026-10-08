@@ -26,8 +26,6 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation } from "wouter";
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
 import { 
   User, 
   Mail, 
@@ -43,8 +41,12 @@ import {
   Share2,
   Copy,
   Gift,
-  RefreshCw
+  RefreshCw,
+  Link2,
+  MessageSquare,
+  CheckCircle2
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 const NIGERIAN_CITIES = [
   "Lagos",
@@ -83,7 +85,7 @@ const CITY_STATE_MAP: Record<string, string> = {
 };
 
 export default function Settings() {
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, signOut } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   
@@ -93,6 +95,69 @@ export default function Settings() {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isGeneratingReferral, setIsGeneratingReferral] = useState(false);
+  const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [isGeneratingLinkCode, setIsGeneratingLinkCode] = useState(false);
+
+  const { data: linkedChannels = [], refetch: refetchChannels } = useQuery<{ channel: string; linked_at: string }[]>({
+    queryKey: ['channel-links', user?.uid],
+    queryFn: async () => {
+      const token = await user?.getIdToken?.();
+      const res = await fetch('/api/channels/links', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user
+  });
+
+  const handleGenerateLinkCode = async () => {
+    setIsGeneratingLinkCode(true);
+    try {
+      const token = await user?.getIdToken?.();
+      const res = await fetch('/api/channels/link-code', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) throw new Error('Failed to generate link code');
+      const data = await res.json();
+      setLinkCode(data.code);
+      toast({
+        title: "Link Code Generated",
+        description: `Send "link ${data.code}" to the SabiRight WhatsApp or Telegram bot within 10 minutes.`
+      });
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err.message || "Could not generate link code",
+        variant: "destructive"
+      });
+    } finally {
+      setIsGeneratingLinkCode(false);
+    }
+  };
+
+  const handleUnlinkChannel = async (channel: string) => {
+    try {
+      const token = await user?.getIdToken?.();
+      const res = await fetch(`/api/channels/links/${channel}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) throw new Error('Failed to unlink channel');
+      refetchChannels();
+      toast({
+        title: "Channel Unlinked",
+        description: `Your ${channel.toUpperCase()} account has been unlinked.`
+      });
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err.message || "Failed to unlink channel",
+        variant: "destructive"
+      });
+    }
+  };
 
   const referralLink = profile?.referralCode 
     ? `${window.location.origin}/auth/register?ref=${profile.referralCode}` 
@@ -156,7 +221,7 @@ export default function Settings() {
   const handleDeleteAccount = async () => {
     setIsDeleting(true);
     try {
-      await signOut(auth);
+      await signOut();
       toast({ title: "Account Deleted", description: "Your account has been deleted" });
       setLocation("/");
     } catch (err) {
@@ -287,6 +352,86 @@ export default function Settings() {
               </>
             )}
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Link2 className="h-5 w-5 text-primary" />
+            WhatsApp & Telegram Bot Integration
+          </CardTitle>
+          <CardDescription>
+            Connect your WhatsApp or Telegram to sync your credit allowance, AI legal queries, and case files.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {linkedChannels.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase text-slate-500 block">Connected Channels</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {linkedChannels.map((c) => (
+                  <div key={c.channel} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      <span className="text-sm font-semibold capitalize">{c.channel} Connected</span>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-destructive h-7 text-xs" 
+                      onClick={() => handleUnlinkChannel(c.channel)}
+                    >
+                      Disconnect
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl space-y-3">
+            <p className="text-sm text-slate-700">
+              Link your WhatsApp or Telegram chat to access your SabiRight credits and legal AI assistant from your phone anytime.
+            </p>
+            {linkCode ? (
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase text-slate-500 block">Your Single-Use Link Command</Label>
+                <div className="flex gap-2">
+                  <Input 
+                    readOnly 
+                    value={`link ${linkCode}`} 
+                    className="bg-white border-primary/20 font-mono text-sm font-bold text-primary"
+                  />
+                  <Button 
+                    size="icon" 
+                    variant="outline" 
+                    onClick={() => copyToClipboard(`link ${linkCode}`)}
+                    className="shrink-0"
+                  >
+                    <Copy className="h-4 w-4 text-primary" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Send this exact message to the SabiRight WhatsApp bot or Telegram bot within 10 minutes.
+                </p>
+              </div>
+            ) : (
+              <Button 
+                onClick={handleGenerateLinkCode} 
+                disabled={isGeneratingLinkCode}
+                variant="outline"
+                className="w-full font-bold"
+              >
+                {isGeneratingLinkCode ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageSquare className="mr-2 h-4 w-4 text-primary" />
+                )}
+                Generate Link Code for WhatsApp / Telegram
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 

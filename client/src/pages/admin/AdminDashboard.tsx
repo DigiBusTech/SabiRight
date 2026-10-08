@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ import {
   Settings, Users, CreditCard, MapPin, Calendar, Briefcase, Store, 
   Shield, Key, CheckCircle2, XCircle, Eye, EyeOff, Save, Bell, Mail, Trash2, Plus, Edit, Building2, Coins, ShieldCheck,
   BarChart3, Download, FileSpreadsheet, FileText, Flag, LogIn, User, ChevronRight, HelpCircle, MessageSquare, Upload,
-  Menu, X, ChevronLeft, LayoutDashboard, Search, Filter, RefreshCcw, Copy, Check, Languages, BrainCircuit, Star, Smartphone, AlertTriangle
+  Menu, X, ChevronLeft, LayoutDashboard, Search, Filter, RefreshCcw, Copy, Check, Languages, BrainCircuit, Star, Smartphone, AlertTriangle, Loader2
 } from "lucide-react";
 import { 
   Table, 
@@ -56,14 +56,15 @@ import 'react-quill-new/dist/quill.snow.css';
 import { GeneralSettings } from "./components/GeneralSettings";
 
 const getAdminHeaders = async () => {
-  const token = await auth.currentUser?.getIdToken();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token || '';
   return {
     'Content-Type': 'application/json',
     'Authorization': token ? `Bearer ${token}` : ''
   };
 };
 
-const formatFirestoreDate = (date: any) => {
+const formatDate = (date: any) => {
   if (!date) return new Date();
   if (date instanceof Date) return date;
   if (typeof date === 'object' && '_seconds' in date) {
@@ -90,16 +91,16 @@ export const VENDOR_FEATURES = [
   { id: "ai_growth_suggestions", label: "AI Approach Suggestions" }
 ];
 
-const PaymentItem = ({ payment, isManual }: { payment: any; isManual: boolean }) => {
+const PaymentItem = ({ payment, isManual }: { payment: any; isManual: boolean; key?: any }) => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   
   const approvePayment = useMutation({
     mutationFn: async (paymentId: string) => {
-      const idToken = await auth.currentUser?.getIdToken();
+      const headers = await getAdminHeaders();
       const res = await fetch(`/api/admin/payments/${paymentId}/approve`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${idToken}` }
+        headers
       });
       if (!res.ok) throw new Error('Failed to approve payment');
       return res.json();
@@ -112,13 +113,10 @@ const PaymentItem = ({ payment, isManual }: { payment: any; isManual: boolean })
 
   const rejectPayment = useMutation({
     mutationFn: async ({ paymentId, reason }: { paymentId: string; reason?: string }) => {
-      const idToken = await auth.currentUser?.getIdToken();
+      const headers = await getAdminHeaders();
       const res = await fetch(`/api/admin/payments/${paymentId}/reject`, {
         method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${idToken}`,
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({ reason })
       });
       if (!res.ok) throw new Error('Failed to reject payment');
@@ -148,7 +146,7 @@ const PaymentItem = ({ payment, isManual }: { payment: any; isManual: boolean })
           <p className="text-xs md:text-sm text-slate-500">{payment?.description || 'No description'}</p>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-[10px] md:text-xs text-slate-400">
-              {payment?.createdAt ? formatFirestoreDate(payment.createdAt).toLocaleString() : 'Date unknown'}
+              {payment?.createdAt ? formatDate(payment.createdAt).toLocaleString() : 'Date unknown'}
             </p>
             <span className="text-[10px] text-slate-300">|</span>
             <p className="text-[10px] text-slate-400">Method: {(payment?.provider || payment?.paymentMethod) || 'Unknown'}</p>
@@ -301,7 +299,7 @@ export default function AdminDashboard() {
         const endDate = customEndDate ? new Date(customEndDate) : new Date();
         endDate.setHours(23, 59, 59, 999);
         return data.filter(item => {
-          const itemDate = formatFirestoreDate(item[dateField]);
+          const itemDate = formatDate(item[dateField]);
           return itemDate >= startDate && itemDate <= endDate;
         });
       default:
@@ -309,7 +307,7 @@ export default function AdminDashboard() {
     }
 
     return data.filter(item => {
-      const itemDate = formatFirestoreDate(item[dateField]);
+      const itemDate = formatDate(item[dateField]);
       return itemDate >= startDate;
     });
   };
@@ -477,7 +475,7 @@ export default function AdminDashboard() {
         { id: "credits", label: "Credits", icon: Coins },
         { id: "payment-methods", label: "Payment Methods", icon: Building2 },
         { id: "payments", label: "Transactions", icon: CreditCard },
-        { id: "escrow", label: "Escrow", icon: Shield },
+        { id: "escrow", label: "Disputes", icon: Shield },
       ]
     },
     {
@@ -840,19 +838,26 @@ export default function AdminDashboard() {
   });
 
   const updateCredits = useMutation({
-    mutationFn: async ({ userId, totalCredits }: { userId: string; totalCredits: number }) => {
+    mutationFn: async ({ userId, action = 'set', amount }: { userId: string; action?: 'set' | 'add' | 'remove'; amount: number }) => {
       const headers = await getAdminHeaders();
       const res = await fetch(`/api/admin/users/${userId}/credits`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ totalCredits })
+        body: JSON.stringify({ action, amount, totalCredits: amount })
       });
-      if (!res.ok) throw new Error('Failed');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update credits');
+      }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      toast({ title: "Updated", description: "User credits updated" });
+      const actionLabel = vars.action === 'add' ? 'added to' : vars.action === 'remove' ? 'deducted from' : 'set for';
+      toast({ title: "Updated", description: `Credits ${actionLabel} user successfully` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to update credits", variant: "destructive" });
     }
   });
 
@@ -881,12 +886,40 @@ export default function AdminDashboard() {
         headers,
         body: JSON.stringify({ planId })
       });
-      if (!res.ok) throw new Error('Failed');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to assign plan');
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       toast({ title: "Assigned", description: "Plan assigned to user" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to assign plan", variant: "destructive" });
+    }
+  });
+
+  const removePlan = useMutation({
+    mutationFn: async (userId: string) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/users/${userId}/plan`, {
+        method: 'DELETE',
+        headers
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to remove plan');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      toast({ title: "Plan Removed", description: "User reverted to Citizen Free tier" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to remove plan", variant: "destructive" });
     }
   });
 
@@ -1531,6 +1564,8 @@ export default function AdminDashboard() {
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [creditAmount, setCreditAmount] = useState("");
+  const [selectedUserForPlan, setSelectedUserForPlan] = useState<string | null>(null);
+  const [planToAssign, setPlanToAssign] = useState<string>("");
   const [newPlan, setNewPlan] = useState<any>({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '', billingCycle: 'monthly', features: [] });
   const [editingPlan, setEditingPlan] = useState<any>(null);
   const [editingPackage, setEditingPackage] = useState<any>(null);
@@ -1569,6 +1604,85 @@ export default function AdminDashboard() {
     fields: [] as Array<{ name: string; type: 'text' | 'file'; required: boolean; placeholder: string }>
   });
   const [editingPaymentMethod, setEditingPaymentMethod] = useState<any>(null);
+  // Bot Management states & handlers
+  const [isRegisteringTelegram, setIsRegisteringTelegram] = useState(false);
+  const [telegramStatus, setTelegramStatus] = useState<any>(null);
+  const [isCheckingTelegram, setIsCheckingTelegram] = useState(false);
+  const [isTestingWhatsApp, setIsTestingWhatsApp] = useState(false);
+  const [whatsappStatus, setWhatsappStatus] = useState<any>(null);
+
+  const handleRegisterTelegramWebhook = async () => {
+    setIsRegisteringTelegram(true);
+    try {
+      const webhookUrl = `${window.location.origin}/api/telegram/webhook`;
+      const res = await fetch('/api/telegram/setup-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: webhookUrl })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({ title: "Webhook Registered!", description: `Telegram updates will now route to ${webhookUrl}` });
+        handleCheckTelegramStatus();
+      } else {
+        toast({ title: "Registration Failed", description: data.error || "Check your bot token", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsRegisteringTelegram(false);
+    }
+  };
+
+  const handleCheckTelegramStatus = async () => {
+    setIsCheckingTelegram(true);
+    try {
+      const res = await fetch('/api/telegram/status');
+      const data = await res.json();
+      setTelegramStatus(data);
+      if (data.ok) {
+        toast({ title: "Telegram Status Updated", description: data.result?.url ? `Active webhook: ${data.result.url}` : "No active webhook" });
+      } else {
+        toast({ title: "Telegram Status", description: data.error || data.description || "Unable to fetch info", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsCheckingTelegram(false);
+    }
+  };
+
+  const handleDeleteTelegramWebhook = async () => {
+    try {
+      const res = await fetch('/api/telegram/delete-webhook', { method: 'POST' });
+      const data = await res.json();
+      if (data.success || data.ok) {
+        toast({ title: "Webhook Removed", description: "Telegram webhook has been unregistered." });
+        handleCheckTelegramStatus();
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    }
+  };
+
+  const handleTestWhatsApp = async () => {
+    setIsTestingWhatsApp(true);
+    try {
+      const res = await fetch('/api/whatsapp/status');
+      const data = await res.json();
+      setWhatsappStatus(data);
+      if (data.ok) {
+        toast({ title: "WhatsApp Connected!", description: `Verified: ${data.data?.verified_name || data.data?.display_phone_number || 'Active'}` });
+      } else {
+        toast({ title: "WhatsApp Connection Failed", description: data.error || "Please check credentials", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setIsTestingWhatsApp(false);
+    }
+  };
+
 
   const { data: trainingTerms = [] } = useQuery({
     queryKey: ['admin-training-terms'],
@@ -2820,7 +2934,7 @@ export default function AdminDashboard() {
                               <SelectItem value="openai">OpenAI GPT-4o</SelectItem>
                               <SelectItem value="anthropic">Anthropic Claude 3.5</SelectItem>
                               <SelectItem value="deepseek">DeepSeek V3 (Free/Fast)</SelectItem>
-                              <SelectItem value="groq">Groq (Llama 3/Mixtral) - Free/Fast</SelectItem>
+                              <SelectItem value="groq">Groq (Qwen 2.5 / GPT-OSS) - Free/Fast</SelectItem>
                               <SelectItem value="openrouter">OpenRouter (Multi-Provider)</SelectItem>
                               <SelectItem value="perplexity">Perplexity (Search AI)</SelectItem>
                               <SelectItem value="mistral">Mistral AI (Open Source)</SelectItem>
@@ -2862,7 +2976,7 @@ export default function AdminDashboard() {
                             id="groq_api_key" 
                             category="ai" 
                             placeholder="gsk_..." 
-                            description="Fast & Free Llama 3 / Mixtral models via Groq Cloud."
+                            description="Fast & Free open models (Qwen 2.5, GPT-OSS) via Groq Cloud."
                           />
                         </div>
                       </div>
@@ -3014,6 +3128,221 @@ export default function AdminDashboard() {
                         category="auth" 
                         placeholder="GOCSPX-..." 
                       />
+                    </div>
+                  </div>
+
+                  {/* Messaging Bots Configuration (WhatsApp & Telegram) */}
+                  <div className="pt-6 border-t border-slate-200 space-y-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-8 w-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+                        <MessageSquare className="h-4 w-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-sm">Omnichannel AI Bots (WhatsApp & Telegram)</h3>
+                        <p className="text-[10px] text-slate-500">Enable direct legal first-aid chat in messaging apps.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Telegram */}
+                      <div className="bg-white p-5 rounded-2xl border shadow-sm space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">✈️</span>
+                            <div>
+                              <h4 className="font-bold text-sm text-slate-800">Telegram Bot Integration</h4>
+                              <p className="text-[11px] text-slate-500">Free unlimited messaging via Telegram Bot API</p>
+                            </div>
+                          </div>
+                          {telegramStatus?.ok && (
+                            <Badge className="bg-green-100 text-green-700 text-[10px]">
+                              {telegramStatus?.result?.url ? "Webhook Active" : "Standby"}
+                            </Badge>
+                          )}
+                        </div>
+
+                        <ApiKeyField 
+                          label="Telegram Bot Token" 
+                          id="telegram_bot_token" 
+                          category="bots" 
+                          placeholder="123456789:AAH..." 
+                          description="Get this token by messaging @BotFather on Telegram."
+                        />
+
+                        <ApiKeyField 
+                          label="Webhook Secret Token (Optional)" 
+                          id="telegram_webhook_secret" 
+                          category="bots" 
+                          placeholder="Secret phrase..." 
+                          description="Authenticates incoming Telegram webhook requests."
+                        />
+
+                        <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-2 border">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-slate-700">Webhook URL:</span>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 text-[10px]"
+                              onClick={() => handleCopy(`${window.location.origin}/api/telegram/webhook`, 'tg_webhook')}
+                            >
+                              {copiedKey === 'tg_webhook' ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                            </Button>
+                          </div>
+                          <code className="text-[11px] bg-slate-200/80 px-2 py-1 rounded text-primary block truncate font-mono">
+                            {window.location.origin}/api/telegram/webhook
+                          </code>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <Button 
+                            size="sm" 
+                            className="bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs"
+                            onClick={handleRegisterTelegramWebhook}
+                            disabled={isRegisteringTelegram}
+                          >
+                            {isRegisteringTelegram ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCcw className="h-3 w-3 mr-1" />}
+                            Register Webhook
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="text-xs"
+                            onClick={handleCheckTelegramStatus}
+                            disabled={isCheckingTelegram}
+                          >
+                            {isCheckingTelegram ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                            Check Status
+                          </Button>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="text-xs text-red-600 hover:bg-red-50"
+                            onClick={handleDeleteTelegramWebhook}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Unregister
+                          </Button>
+                        </div>
+
+                        {telegramStatus && (
+                          <div className="p-2.5 bg-slate-900 text-slate-200 rounded-lg text-[10px] font-mono space-y-1">
+                            <p className="text-slate-400 font-bold uppercase">Telegram Diagnostics:</p>
+                            <p>URL: {telegramStatus.result?.url || 'None'}</p>
+                            <p>Pending Updates: {telegramStatus.result?.pending_update_count ?? 0}</p>
+                            {telegramStatus.result?.last_error_message && (
+                              <p className="text-red-400">Error: {telegramStatus.result.last_error_message}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* WhatsApp Cloud API */}
+                      <div className="bg-white p-5 rounded-2xl border shadow-sm space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">💬</span>
+                            <div>
+                              <h4 className="font-bold text-sm text-slate-800">Meta WhatsApp Cloud API</h4>
+                              <p className="text-[11px] text-slate-500">Official business messaging with interactive buttons</p>
+                            </div>
+                          </div>
+                          {whatsappStatus?.ok && (
+                            <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">
+                              {whatsappStatus.data?.verified_name || "Connected"}
+                            </Badge>
+                          )}
+                        </div>
+
+                        <ApiKeyField 
+                          label="WhatsApp Access Token" 
+                          id="whatsapp_access_token" 
+                          category="bots" 
+                          placeholder="EAAB..." 
+                          description="Permanent system user token from Meta Business Manager."
+                        />
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <ApiKeyField 
+                            label="Phone Number ID" 
+                            id="whatsapp_phone_number_id" 
+                            category="bots" 
+                            isSecret={false}
+                            placeholder="104829104812" 
+                            description="From Meta App > WhatsApp > API Setup."
+                          />
+                          <ApiKeyField 
+                            label="Business Account ID (WABA)" 
+                            id="whatsapp_business_account_id" 
+                            category="bots" 
+                            isSecret={false}
+                            placeholder="10982390123" 
+                            description="WhatsApp Business Account ID."
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <ApiKeyField 
+                            label="Webhook Verify Token" 
+                            id="whatsapp_verify_token" 
+                            category="bots" 
+                            isSecret={false}
+                            placeholder="sabiright_meta_verify_2026" 
+                            description="Secret phrase entered in Meta Webhook config."
+                          />
+                          <ApiKeyField 
+                            label="App Secret (for HMAC check)" 
+                            id="whatsapp_app_secret" 
+                            category="bots" 
+                            placeholder="Meta App Secret..." 
+                            description="Found in App Settings > Basic."
+                          />
+                        </div>
+
+                        <div className="p-3 bg-slate-50 rounded-xl text-xs space-y-2 border">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-slate-700">Meta Callback URL:</span>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-6 text-[10px]"
+                              onClick={() => handleCopy(`${window.location.origin}/api/whatsapp/webhook`, 'wa_webhook')}
+                            >
+                              {copiedKey === 'wa_webhook' ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                            </Button>
+                          </div>
+                          <code className="text-[11px] bg-slate-200/80 px-2 py-1 rounded text-primary block truncate font-mono">
+                            {window.location.origin}/api/whatsapp/webhook
+                          </code>
+                        </div>
+
+                        <div className="flex items-center gap-2 pt-1">
+                          <Button 
+                            size="sm" 
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs"
+                            onClick={handleTestWhatsApp}
+                            disabled={isTestingWhatsApp}
+                          >
+                            {isTestingWhatsApp ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <ShieldCheck className="h-3 w-3 mr-1" />}
+                            Test Meta Connection
+                          </Button>
+                        </div>
+
+                        {whatsappStatus && (
+                          <div className="p-2.5 bg-slate-900 text-slate-200 rounded-lg text-[10px] font-mono space-y-1">
+                            <p className="text-slate-400 font-bold uppercase">WhatsApp Diagnostics:</p>
+                            {whatsappStatus.ok ? (
+                              <>
+                                <p>Verified Name: {whatsappStatus.data?.verified_name || 'N/A'}</p>
+                                <p>Display Number: {whatsappStatus.data?.display_phone_number || 'N/A'}</p>
+                                <p>Quality Rating: {whatsappStatus.data?.quality_rating || 'GREEN'}</p>
+                              </>
+                            ) : (
+                              <p className="text-red-400">Error: {whatsappStatus.error}</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -4280,6 +4609,156 @@ export default function AdminDashboard() {
                       />
                     </div>
                   </div>
+
+                  {/* Bachs */}
+                  <div className="p-4 border rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-5 w-5 text-emerald-500" />
+                        <div>
+                          <p className="font-bold">Bachs</p>
+                          <p className="text-xs text-slate-500">Global & African Payments, Hosted Checkout (https://bachs.io)</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-500">Sandbox</span>
+                          <Switch
+                            checked={Boolean(paymentMethods.find((m: any) => m.type === 'bachs')?.metadata?.isSandbox)}
+                            onCheckedChange={async (checked) => {
+                              const method = paymentMethods.find((m: any) => m.type === 'bachs');
+                              const headers = await getAdminHeaders();
+                              if (method) {
+                                await fetch(`/api/admin/payment-methods/${method.id}`, {
+                                  method: 'PUT',
+                                  headers: { ...headers, 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ metadata: { ...(method.metadata || {}), isSandbox: checked } })
+                                });
+                              } else {
+                                await fetch('/api/admin/payment-methods', {
+                                  method: 'POST',
+                                  headers: { ...headers, 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({
+                                    name: 'Bachs',
+                                    type: 'bachs',
+                                    active: false,
+                                    metadata: { isSandbox: checked }
+                                  })
+                                });
+                              }
+                              queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                            }}
+                          />
+                        </div>
+                        <Switch 
+                          checked={paymentMethods.find((m: any) => m.type === 'bachs')?.active || false}
+                          onCheckedChange={async (checked) => {
+                            const method = paymentMethods.find((m: any) => m.type === 'bachs');
+                            const headers = await getAdminHeaders();
+                            if (method) {
+                              await fetch(`/api/admin/payment-methods/${method.id}`, {
+                                method: 'PUT',
+                                headers: { ...headers, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ active: checked })
+                              });
+                            } else {
+                              await fetch('/api/admin/payment-methods', {
+                                method: 'POST',
+                                headers: { ...headers, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  name: 'Bachs',
+                                  type: 'bachs',
+                                  active: checked
+                                })
+                              });
+                            }
+                            queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Input
+                        type="text"
+                        placeholder="Public Key / Client Key (optional)"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'bachs')?.publicKey || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'bachs');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ publicKey: e.target.value })
+                            });
+                          } else {
+                            await fetch('/api/admin/payment-methods', {
+                              method: 'POST',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ 
+                                name: 'Bachs',
+                                type: 'bachs',
+                                publicKey: e.target.value,
+                                active: false
+                              })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
+                      <Input
+                        type="password"
+                        placeholder="Secret Key (sk_live_... or sk_sandbox_...)"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'bachs')?.secretKey || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'bachs');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ secretKey: e.target.value })
+                            });
+                          } else {
+                            await fetch('/api/admin/payment-methods', {
+                              method: 'POST',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                name: 'Bachs',
+                                type: 'bachs',
+                                secretKey: e.target.value,
+                                active: false
+                              })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
+                      <Input
+                        type="password"
+                        placeholder="Webhook Signing Secret (from Bachs Dashboard)"
+                        defaultValue={paymentMethods.find((m: any) => m.type === 'bachs')?.webhookHash || ''}
+                        onBlur={async (e) => {
+                          const method = paymentMethods.find((m: any) => m.type === 'bachs');
+                          const headers = await getAdminHeaders();
+                          if (method) {
+                            await fetch(`/api/admin/payment-methods/${method.id}`, {
+                              method: 'PUT',
+                              headers: { ...headers, 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ webhookHash: e.target.value })
+                            });
+                          }
+                          queryClient.invalidateQueries({ queryKey: ['admin-payment-methods'] });
+                        }}
+                      />
+                      <p className="text-xs text-slate-500 mt-2">
+                        💡 <strong>Webhook URL:</strong> Configure this in your Bachs dashboard:<br/>
+                        <code className="bg-slate-100 px-2 py-1 rounded text-xs">
+                          {window.location.origin}/api/payments/bachs/webhook
+                        </code>
+                      </p>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -4301,28 +4780,28 @@ export default function AdminDashboard() {
                   </TabsList>
 
                   <TabsContent value="manual-pending" className="space-y-3">
-                    {payments.filter((p: any) => p.status === 'pending' && !['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod)).length === 0 ? (
+                    {payments.filter((p: any) => p.status === 'pending' && !['stripe', 'paystack', 'flutterwave', 'bachs'].includes(p.provider || p.paymentMethod)).length === 0 ? (
                       <p className="text-center py-8 text-slate-400">No pending manual payments</p>
                     ) : (
-                      payments.filter((p: any) => p.status === 'pending' && !['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod))
+                      payments.filter((p: any) => p.status === 'pending' && !['stripe', 'paystack', 'flutterwave', 'bachs'].includes(p.provider || p.paymentMethod))
                         .map((p: any) => <PaymentItem key={p.id} payment={p} isManual={true} />)
                     )}
                   </TabsContent>
 
                   <TabsContent value="manual-completed" className="space-y-3">
-                    {payments.filter((p: any) => p.status === 'completed' && !['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod)).length === 0 ? (
+                    {payments.filter((p: any) => p.status === 'completed' && !['stripe', 'paystack', 'flutterwave', 'bachs'].includes(p.provider || p.paymentMethod)).length === 0 ? (
                       <p className="text-center py-8 text-slate-400">No completed manual payments</p>
                     ) : (
-                      payments.filter((p: any) => p.status === 'completed' && !['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod))
+                      payments.filter((p: any) => p.status === 'completed' && !['stripe', 'paystack', 'flutterwave', 'bachs'].includes(p.provider || p.paymentMethod))
                         .map((p: any) => <PaymentItem key={p.id} payment={p} isManual={true} />)
                     )}
                   </TabsContent>
 
                   <TabsContent value="automatic" className="space-y-3">
-                    {payments.filter((p: any) => ['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod)).length === 0 ? (
+                    {payments.filter((p: any) => ['stripe', 'paystack', 'flutterwave', 'bachs'].includes(p.provider || p.paymentMethod)).length === 0 ? (
                       <p className="text-center py-8 text-slate-400">No automatic payments yet</p>
                     ) : (
-                      payments.filter((p: any) => ['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod))
+                      payments.filter((p: any) => ['stripe', 'paystack', 'flutterwave', 'bachs'].includes(p.provider || p.paymentMethod))
                         .map((p: any) => <PaymentItem key={p.id} payment={p} isManual={false} />)
                     )}
                   </TabsContent>
@@ -4335,7 +4814,7 @@ export default function AdminDashboard() {
                         <PaymentItem 
                           key={p.id} 
                           payment={p} 
-                          isManual={!['stripe', 'paystack', 'flutterwave'].includes(p.provider || p.paymentMethod)} 
+                          isManual={!['stripe', 'paystack', 'flutterwave', 'bachs'].includes(p.provider || p.paymentMethod)} 
                         />
                       ))
                     )}
@@ -4369,11 +4848,9 @@ export default function AdminDashboard() {
                               <Badge variant="outline" className="text-[10px] md:text-xs">
                                 Storage: {Math.round((user.chatStorageUsed || 0) / 1024)}KB / {Math.round((user.chatStorageLimit || 524288) / 1024)}KB
                               </Badge>
-                              {user.planId && (
-                                <Badge variant="secondary" className="text-[10px] md:text-xs">
-                                  Plan: {user.planId}
-                                </Badge>
-                              )}
+                              <Badge variant="secondary" className="text-[10px] md:text-xs font-semibold">
+                                Plan: {user.planName || user.planId || 'Citizen Free'}
+                              </Badge>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -4441,6 +4918,57 @@ export default function AdminDashboard() {
 
                           <div className="h-4 w-px bg-slate-200 mx-1 hidden sm:block" />
                           
+                          {/* Plan Assignment & Removal */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <select
+                              className="h-8 text-xs border rounded px-2 bg-background"
+                              value={selectedUserForPlan === user.userId ? planToAssign : (user.planId || '')}
+                              onChange={(e) => {
+                                setSelectedUserForPlan(user.userId);
+                                setPlanToAssign(e.target.value);
+                              }}
+                            >
+                              <option value="" disabled>Select Plan</option>
+                              {plans.map((p: any) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} ({p.type})
+                                </option>
+                              ))}
+                            </select>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-xs"
+                              onClick={() => {
+                                const pId = selectedUserForPlan === user.userId && planToAssign ? planToAssign : user.planId;
+                                if (pId) {
+                                  assignPlan.mutate({ userId: user.userId, planId: pId });
+                                  setSelectedUserForPlan(null);
+                                }
+                              }}
+                              disabled={assignPlan.isPending}
+                            >
+                              Assign
+                            </Button>
+                            {user.planId && user.planId !== 'plan-free' && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
+                                onClick={() => {
+                                  if (confirm(`Remove plan from ${user.displayName || user.email} and revert to Free tier?`)) {
+                                    removePlan.mutate(user.userId);
+                                  }
+                                }}
+                                disabled={removePlan.isPending}
+                              >
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+
+                          <div className="h-4 w-px bg-slate-200 mx-1 hidden sm:block" />
+
                           {/* Email Verification Actions */}
                           {user.emailVerificationStatus === 'pending' && (
                             <>
@@ -4461,12 +4989,12 @@ export default function AdminDashboard() {
                             </>
                           )}
                           
-                          {/* Credits Management */}
-                          <div className="flex items-center gap-1">
+                          {/* Credits Management: Set, Add, Deduct */}
+                          <div className="flex items-center gap-1 flex-wrap">
                             <Input
                               type="number"
-                              placeholder="Credits"
-                              className="w-24 h-8"
+                              placeholder="Amount"
+                              className="w-20 h-8 text-xs"
                               value={selectedUser === user.userId ? creditAmount : ''}
                               onChange={(e) => {
                                 setSelectedUser(user.userId);
@@ -4476,18 +5004,62 @@ export default function AdminDashboard() {
                             <Button 
                               size="sm" 
                               variant="outline"
+                              className="h-8 text-xs px-2"
+                              title="Set balance to exact number"
                               onClick={() => {
                                 if (creditAmount) {
                                   updateCredits.mutate({ 
                                     userId: user.userId, 
-                                    totalCredits: parseInt(creditAmount) 
+                                    action: 'set',
+                                    amount: parseInt(creditAmount) 
                                   });
                                   setCreditAmount('');
                                   setSelectedUser(null);
                                 }
                               }}
+                              disabled={updateCredits.isPending}
                             >
                               Set
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              className="h-8 text-xs px-2 text-green-700 hover:bg-green-50"
+                              title="Add credits to existing balance"
+                              onClick={() => {
+                                if (creditAmount) {
+                                  updateCredits.mutate({ 
+                                    userId: user.userId, 
+                                    action: 'add',
+                                    amount: parseInt(creditAmount) 
+                                  });
+                                  setCreditAmount('');
+                                  setSelectedUser(null);
+                                }
+                              }}
+                              disabled={updateCredits.isPending}
+                            >
+                              +Add
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              className="h-8 text-xs px-2 text-red-700 hover:bg-red-50"
+                              title="Deduct credits from balance"
+                              onClick={() => {
+                                if (creditAmount) {
+                                  updateCredits.mutate({ 
+                                    userId: user.userId, 
+                                    action: 'remove',
+                                    amount: parseInt(creditAmount) 
+                                  });
+                                  setCreditAmount('');
+                                  setSelectedUser(null);
+                                }
+                              }}
+                              disabled={updateCredits.isPending}
+                            >
+                              -Deduct
                             </Button>
                           </div>
 
@@ -4710,7 +5282,7 @@ export default function AdminDashboard() {
                               <p className="font-bold text-sm md:text-base">{app.businessName}</p>
                               <p className="text-xs md:text-sm text-slate-500">{app.serviceType}</p>
                               <p className="text-[10px] md:text-xs text-slate-400">
-                                Applied: {formatFirestoreDate(app.createdAt).toLocaleDateString()}
+                                Applied: {formatDate(app.createdAt).toLocaleDateString()}
                               </p>
                             </div>
                             <div className="flex items-center gap-2 flex-wrap">
@@ -5385,7 +5957,7 @@ export default function AdminDashboard() {
                   ['Payment Details'],
                   ['Date', 'User', 'Amount', 'Type', 'Status', 'Method'],
                   ...filteredPayments?.map((p: any) => [
-                    formatFirestoreDate(p.createdAt).toLocaleDateString(),
+                    formatDate(p.createdAt).toLocaleDateString(),
                     p.userId,
                     p.amount,
                     p.type,
@@ -5433,7 +6005,7 @@ export default function AdminDashboard() {
                   const paymentsData = [
                     ['Date', 'User ID', 'Amount', 'Currency', 'Type', 'Status', 'Method', 'Reference'],
                     ...filteredPayments?.map((p: any) => [
-                      formatFirestoreDate(p.createdAt).toLocaleString(),
+                      formatDate(p.createdAt).toLocaleString(),
                       p.userId,
                       p.amount,
                       p.currency || 'NGN',
@@ -5452,7 +6024,7 @@ export default function AdminDashboard() {
                       u.displayName || 'N/A',
                       u.subscriptionId ? 'Yes' : 'No',
                       u.credits || 0,
-                      formatFirestoreDate(u.createdAt).toLocaleString()
+                      formatDate(u.createdAt).toLocaleString()
                     ]) || []
                   ];
 
@@ -5518,7 +6090,7 @@ export default function AdminDashboard() {
                   doc.text('Recent Payments', 14, 20);
 
                   const paymentRows = filteredPayments?.slice(0, 100).map((p: any) => [
-                    formatFirestoreDate(p.createdAt).toLocaleDateString(),
+                    formatDate(p.createdAt).toLocaleDateString(),
                     p.userId.substring(0, 8),
                     `${p.amount} ${p.currency || 'NGN'}`,
                     p.type,
@@ -5547,7 +6119,7 @@ export default function AdminDashboard() {
               onClick={() => {
                 // Export for Power BI (CSV format optimized for Power BI)
                 const powerBIData = filteredPayments?.map((p: any) => {
-                  const d = formatFirestoreDate(p.createdAt || new Date());
+                  const d = formatDate(p.createdAt || new Date());
                   return {
                   Date: d.toISOString(),
                   Year: d.getFullYear(),
@@ -5696,7 +6268,7 @@ export default function AdminDashboard() {
                         if (timeRange === '6m') days = 180;
                         if (timeRange === '1y') days = 365;
                         if (timeRange === 'all' && filteredPayments.length > 0) {
-                          const firstDate = formatFirestoreDate(filteredPayments[filteredPayments.length - 1].createdAt);
+                          const firstDate = formatDate(filteredPayments[filteredPayments.length - 1].createdAt);
                           days = Math.ceil((new Date().getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
                         }
 
@@ -5708,7 +6280,7 @@ export default function AdminDashboard() {
                         
                         const dailyRevenue: Record<string, number> = {};
                         filteredPayments?.filter((p: any) => p.status === 'completed').forEach((p: any) => {
-                          const date = formatFirestoreDate(p.createdAt).toISOString().split('T')[0];
+                          const date = formatDate(p.createdAt).toISOString().split('T')[0];
                           dailyRevenue[date] = (dailyRevenue[date] || 0) + p.amount;
                         });
 
@@ -5820,7 +6392,7 @@ export default function AdminDashboard() {
                         const monthlyUsers: Record<string, number> = {};
                         filteredUsers?.forEach((u: any) => {
                           if (u.createdAt) {
-                            const month = formatFirestoreDate(u.createdAt).toLocaleString('en-US', { month: 'short' });
+                            const month = formatDate(u.createdAt).toLocaleString('en-US', { month: 'short' });
                             if (months.includes(month)) {
                               monthlyUsers[month] = (monthlyUsers[month] || 0) + 1;
                             }
@@ -6001,7 +6573,7 @@ export default function AdminDashboard() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Shield className="h-5 w-5" />
-                Escrow Management
+                Dispute Management
                 {disputes.filter((d: any) => d.status === 'open' || d.status === 'under_review').length > 0 && (
                   <Badge variant="destructive" className="ml-2">
                     {disputes.filter((d: any) => d.status === 'open' || d.status === 'under_review').length}
@@ -6009,7 +6581,7 @@ export default function AdminDashboard() {
                 )}
               </CardTitle>
               <p className="text-sm text-slate-500">
-                Manage escrow disputes and mediate between users and vendors.
+                Review disputes and mediate between users and professionals.
               </p>
             </CardHeader>
             <CardContent>
@@ -6034,7 +6606,7 @@ export default function AdminDashboard() {
                                 {(dispute.status || 'status').replace('_', ' ')}
                               </Badge>
                               <span className="text-xs text-slate-400">
-                                Opened: {formatFirestoreDate(dispute.createdAt).toLocaleDateString()}
+                                Opened: {formatDate(dispute.createdAt).toLocaleDateString()}
                               </span>
                             </div>
                             <h3 className="font-bold text-lg">{dispute.reason}</h3>
@@ -6823,9 +7395,9 @@ export default function AdminDashboard() {
       <Dialog open={!!resolvingDispute} onOpenChange={() => setResolvingDispute(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Resolve Escrow Dispute</DialogTitle>
+            <DialogTitle>Resolve Dispute</DialogTitle>
             <DialogDescription>
-              Decide how the escrow funds should be released. This action is final.
+              Record your decision on this dispute. This action is final.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -6923,7 +7495,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-slate-500">Joined</p>
-                  <p>{viewingUser.createdAt ? formatFirestoreDate(viewingUser.createdAt).toLocaleDateString() : 'N/A'}</p>
+                  <p>{viewingUser.createdAt ? formatDate(viewingUser.createdAt).toLocaleDateString() : 'N/A'}</p>
                 </div>
               </div>
             </div>

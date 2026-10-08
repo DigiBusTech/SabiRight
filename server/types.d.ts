@@ -1,12 +1,11 @@
 import { Request } from 'express';
-import { UserRecord } from 'firebase-admin/auth';
 
 declare global {
   namespace Express {
     interface Request {
       userId?: string;
       isAdmin?: boolean;
-      user?: UserRecord | { uid: string; email?: string | undefined; displayName?: string | undefined; };
+      user?: { uid: string; email?: string | undefined; displayName?: string | undefined; };
       booking?: any;
     }
   }
@@ -27,9 +26,14 @@ export interface UserProfile {
   emailVerificationStatus: 'pending' | 'verified' | 'rejected';
   emailVerifiedAt?: string | Date | null;
   vendorMode: boolean;
+  referralCode?: string | null;
+  referredBy?: string | null;
+  chatStorageLimit?: number;
+  chatStorageUsed?: number;
+  credits?: number;
+  planId?: string | null;
+  planName?: string | null;
   createdAt: Date;
-  chatStorageLimit: number;
-  chatStorageUsed: number;
 }
 
 export interface ProfessionalCredentials {
@@ -156,6 +160,10 @@ export interface Route {
   endLat: number;
   endLng: number;
   status: 'active' | 'cleared' | 'unknown';
+  recommendation?: string;
+  cloakedStreets?: string[];
+  lastStatus?: string;
+  lastChecked?: string;
   createdAt: Date;
 }
 
@@ -190,14 +198,17 @@ export interface Job {
   title: string;
   company: string;
   location: string;
+  city?: string;
   type: string;
-  workMode: string;
+  workMode?: string;
   salary: string;
   description: string;
-  contact: string;
-  postedBy: string;
-  source: string;
-  isAiFetched: boolean;
+  contact?: string;
+  contactEmail?: string;
+  requirements?: string[];
+  postedBy?: string;
+  source?: string;
+  isAiFetched?: boolean;
   createdAt: Date;
 }
 
@@ -252,7 +263,9 @@ export interface CreditPackage {
   name: string;
   credits: number;
   price: number;
+  bonus?: number;
   description?: string;
+  is_active?: boolean;
 }
 
 export interface PaymentMethod {
@@ -326,15 +339,18 @@ export interface ForumPost {
   userId: string;
   content: string;
   city: string;
-  author: string;
+  author?: string;
+  authorName?: string;
+  title?: string;
+  category?: string;
   upvotes: number;
   downvotes: number;
   comments: any[];
-  flagged: boolean;
-  flagCount: number;
-  flaggedBy: string[];
-  shadowedForReview: boolean;
-  upvotedBy: string[];
+  flagged?: boolean;
+  flagCount?: number;
+  flaggedBy?: string[];
+  shadowedForReview?: boolean;
+  upvotedBy?: string[];
   createdAt: Date;
   shadowedAt?: Date;
   reinstatedAt?: Date;
@@ -362,10 +378,11 @@ export interface Wallet {
 export interface SabiGuardMessage {
   id: string;
   chatId: string;
-  userId: string;
+  userId?: string;
   role: 'user' | 'ai';
   content: string;
   timestamp: Date;
+  createdAt?: Date;
 }
 
 export interface ChatSession {
@@ -382,8 +399,10 @@ export interface AuthResult {
   isAdmin?: boolean;
   error?: string;
 }
+export type IStorage = Partial<ISupabaseStorageEngine> & { [key: string]: any };
 
-export interface IFirestoreStorage {
+export interface ISupabaseStorageEngine {
+  [key: string]: any;
   // User Profile
   getUserProfile(userId: string): Promise<UserProfile | null>;
   toggleUserAdmin(userId: string, isAdmin: boolean): Promise<boolean>;
@@ -395,9 +414,11 @@ export interface IFirestoreStorage {
   processReferral(referrerId: string, referralCode: string): Promise<void>;
 
   // Credits & Plans
+  getBalance(userId: string): Promise<{ totalCredits: number; usedCredits: number; availableCredits: number; planCredits: number; renewalDate?: string | null; planId?: string; planName?: string }>;
   getUserCredits(userId: string): Promise<UserCredits | null>;
   deductCredits(userId: string, amount: number, feature: string, description: string): Promise<boolean>;
-  addCredits(userId: string, credits: number, description: string): Promise<void>;
+  addCredits(userId: string, credits: number, description: string, feature?: string): Promise<void>;
+  removeCredits(userId: string, amount: number, description: string, feature?: string): Promise<boolean>;
   refundCredits(userId: string, amount: number, feature: string): Promise<void>;
   getAllPlans(): Promise<UserPlan[]>;
   getPlansByType(type: string, userType: 'user' | 'vendor'): Promise<UserPlan[]>;
@@ -408,6 +429,7 @@ export interface IFirestoreStorage {
   updatePlan(planId: string, updates: Partial<UserPlan>): Promise<UserPlan | null>;
   deletePlan(planId: string): Promise<boolean>;
   getPlanById(planId: string): Promise<UserPlan | null>;
+  refreshAllowance(userId: string, userPlan?: UserPlan | null): Promise<void>;
   refreshDailyCredits(userId: string, dailyCredits: number): Promise<void>;
   refreshMonthlyCredits(userId: string, monthlyCredits: number): Promise<void>;
   getCreditLog(userId: string): Promise<any[]>;
@@ -418,6 +440,8 @@ export interface IFirestoreStorage {
   deleteCreditPackage(packageId: string): Promise<boolean>;
   updateSubscriptionStatus(subscriptionId: string, status: 'active' | 'cancelled' | 'pending'): Promise<void>;
   createSubscription(sub: Omit<Subscription, 'id' | 'createdAt'>): Promise<Subscription>;
+  activatePlan(userId: string, planId: string): Promise<Subscription | null>;
+  removePlan(userId: string): Promise<void>;
 
   // Admin & Settings
   getAdminSetting(key: string): Promise<AdminSetting | null>;
@@ -455,13 +479,14 @@ export interface IFirestoreStorage {
   submitVendorApplication(userId: string, application: Omit<VendorApplication, 'id' | 'createdAt' | 'status' | 'userId'>): Promise<VendorApplication>;
   getVendorApplication(userId: string): Promise<VendorApplication | null>;
   getAllVendorApplications(): Promise<VendorApplication[]>;
+  updateVendorApplication(id: string, updates: any): Promise<void>;
   approveVendorApplication(userId: string): Promise<void>;
   rejectVendorApplication(userId: string): Promise<void>;
   switchVendorMode(userId: string, mode: boolean): Promise<void>;
   getAllVendors(): Promise<UserProfile[]>;
   createVendorService(service: Omit<VendorService, 'id' | 'createdAt'>): Promise<VendorService>;
   updateVendorService(serviceId: string, updates: Partial<VendorService>): Promise<void>;
-  deleteVendorService(serviceId: string): Promise<void>;
+  deleteVendorService(serviceId: string): Promise<boolean | void>;
 
   // Routes & Alerts
   getUserRoutes(userId: string): Promise<Route[]>;
@@ -495,7 +520,8 @@ export interface IFirestoreStorage {
   getSavedEvents(userId: string): Promise<string[]>;
 
   // Jobs
-  getJobs(limit?: number): Promise<Job[]>;
+  getJobs(limitOrCity?: number | string): Promise<Job[]>;
+  getJobById(jobId: string): Promise<Job | null>;
   createJob(job: Omit<Job, 'id' | 'createdAt'>): Promise<Job>;
   updateJob(jobId: string, updates: Partial<Job>): Promise<void>;
   deleteJob(jobId: string): Promise<void>;
@@ -564,11 +590,11 @@ export interface IFirestoreStorage {
 
   // Booking system fix
   createBooking(data: any): Promise<any>;
-  createMilestone(data: { bookingId: string; title: string; description?: string; amountPercent: number; amount: string; order: number; dueDate?: string | null }): Promise<any>;
-  createEscrowAccount(data: { bookingId: string; totalAmount: string }): Promise<any>;
   updateBookingStatus(id: string, status: string): Promise<void>;
-  fundEscrow(bookingId: string, amount: number, userId: string): Promise<any>;
-  updateMilestoneStatus(id: string, status: string): Promise<void>;
+
+  // Pre-case files
+  getPreCaseFile(caseFileId: string): Promise<any | null>;
+  getPreCaseFilesByUserId(userId: string): Promise<any[]>;
 
   // Extra Methods
   createBookingMessage(data: { bookingId: string; senderId: string; message: string; attachments?: any[]; isAdminMessage: boolean }): Promise<any>;
@@ -577,6 +603,7 @@ export interface IFirestoreStorage {
   getNotificationsByUserId(userId: string, limit?: number): Promise<any[]>;
   getSabiGuardChats(userId: string): Promise<any[]>;
   createSabiGuardChat(userId: string, title: string): Promise<any>;
+  getSabiGuardChat(chatId: string): Promise<any | null>;
   deleteSabiGuardChat(chatId: string): Promise<void>;
   getUnreadNotificationCount(userId: string): Promise<number>;
   getDisputes(): Promise<any[]>;
@@ -595,11 +622,8 @@ export interface IFirestoreStorage {
   validateCoupon(code: string): Promise<any>;
   getWalletTransactions(userId: string, limit?: number): Promise<any[]>;
   getBookingDetails(id: string): Promise<any | null>;
-  getMilestoneById(id: string): Promise<any | null>;
   voteForumComment(postId: string, commentId: string, userId: string): Promise<void>;
   cleanupOldGeneratedJobs(olderThanHours?: number): Promise<number>;
-  getEscrowByBookingId(bookingId: string): Promise<any | null>;
-  releaseEscrowMilestone(escrowId: string, milestoneId: string, vendorId: string, userId: string): Promise<any>;
   getContractByBookingId(bookingId: string): Promise<any | null>;
   createContract(data: any): Promise<any>;
   signContract(bookingId: string, signerType: 'user' | 'vendor'): Promise<any>;

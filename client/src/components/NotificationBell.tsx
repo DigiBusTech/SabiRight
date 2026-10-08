@@ -201,7 +201,7 @@ export default function NotificationBell() {
                   data-testid={`notification-item-${notification.id}`}
                 >
                   <div className="flex gap-3">
-                    <div className="flex-shrink-0 mt-0.5">
+                    <div className="shrink-0 mt-0.5">
                       {typeIcons[notification.type] || typeIcons.system}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -213,7 +213,7 @@ export default function NotificationBell() {
                           {notification.title}
                         </p>
                         {!notification.isRead && (
-                          <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1.5" />
+                          <div className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1.5" />
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">

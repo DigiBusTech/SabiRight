@@ -7,6 +7,14 @@ import { AlertCircle, MapPin, RefreshCw, Plus, Trash2, Clock } from "lucide-reac
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (data.session?.access_token) h['Authorization'] = `Bearer ${data.session.access_token}`;
+  return h;
+}
 
 interface CloakedRoute {
   id: string;
@@ -55,16 +63,55 @@ export default function TrafficAlerts() {
     endLocation: ""
   });
   const [activeTab, setActiveTab] = useState<'routes' | 'map'>('routes');
+  const [startSuggestions, setStartSuggestions] = useState<{ text: string; placeId: string }[]>([]);
+  const [endSuggestions, setEndSuggestions] = useState<{ text: string; placeId: string }[]>([]);
+  const searchTimeoutRef = useRef<{ start?: any; end?: any }>({});
 
   const startInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
+
+  const handleStartLocationChange = (val: string) => {
+    setNewRoute(prev => ({ ...prev, startLocation: val }));
+    if (searchTimeoutRef.current.start) clearTimeout(searchTimeoutRef.current.start);
+    if (val.trim().length >= 2) {
+      searchTimeoutRef.current.start = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/maps/places-autocomplete?input=${encodeURIComponent(val)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setStartSuggestions(data.suggestions || []);
+          }
+        } catch {}
+      }, 300);
+    } else {
+      setStartSuggestions([]);
+    }
+  };
+
+  const handleEndLocationChange = (val: string) => {
+    setNewRoute(prev => ({ ...prev, endLocation: val }));
+    if (searchTimeoutRef.current.end) clearTimeout(searchTimeoutRef.current.end);
+    if (val.trim().length >= 2) {
+      searchTimeoutRef.current.end = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/maps/places-autocomplete?input=${encodeURIComponent(val)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setEndSuggestions(data.suggestions || []);
+          }
+        } catch {}
+      }, 300);
+    } else {
+      setEndSuggestions([]);
+    }
+  };
 
   // Fetch routes
   const { data: fetchedRoutes, refetch: refetchRoutes } = useQuery({
     queryKey: [`routes-${user?.uid}`],
     queryFn: async () => {
       if (!user?.uid) return [];
-      const res = await fetch(`/api/routes/${user.uid}`);
+      const res = await fetch(`/api/routes/${user.uid}`, { headers: await authHeaders() });
       if (!res.ok) return [];
       return res.json();
     },
@@ -105,7 +152,6 @@ export default function TrafficAlerts() {
   // Load Google Maps with API key from server
   useEffect(() => {
     const loadMapsAPI = async () => {
-      // Don't load if already loading or loaded
       if (window.google) {
         initMap();
         return;
@@ -120,34 +166,24 @@ export default function TrafficAlerts() {
         const data = res.ok ? await res.json() : { value: '' };
         const apiKey = data.value;
         
-        // Always load Google Maps API script so window.google is initialized and features function properly,
-        // using the configured API key if available, or loading without a key if not set.
+        // Use modern script without legacy places library to avoid Google's deprecation modal
         const script = document.createElement('script');
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey || ''}&libraries=places,geometry`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey || ''}&libraries=geometry`;
         script.async = true;
         script.defer = true;
         document.head.appendChild(script);
         script.onload = () => {
           initMap();
-          initAutocomplete();
         };
         script.onerror = () => {
-          console.error("Failed to load Google Maps API script");
-          toast({
-            title: "Maps Error",
-            description: "Failed to load Google Maps. Please check your internet connection and API key.",
-            variant: "destructive"
-          });
+          console.warn("Google Maps script load notice - using fallback map view");
         };
-        if (!apiKey) {
-          console.warn("No Google Maps API key found in settings; loading in developer/fallback mode");
-        }
       } catch (e) {
-        console.error('Error fetching Google Maps API key:', e);
+        console.warn('Google Maps API key notice:', e);
       }
     };
     loadMapsAPI();
-  }, []); // Only load once on mount
+  }, []);
 
   // Update map when selectedRoute changes
   useEffect(() => {
@@ -157,40 +193,6 @@ export default function TrafficAlerts() {
       initMap();
     }
   }, [selectedRoute]);
-
-  // Initialize Autocomplete
-  useEffect(() => {
-    if (isAddingRoute && window.google) {
-      initAutocomplete();
-    }
-  }, [isAddingRoute]);
-
-  const initAutocomplete = () => {
-    if (!window.google || !startInputRef.current || !endInputRef.current) return;
-
-    const options = {
-      componentRestrictions: { country: "ng" }, // Restrict to Nigeria
-      fields: ["formatted_address", "geometry", "name"],
-      strictBounds: false,
-    };
-
-    const startAutocomplete = new window.google.maps.places.Autocomplete(startInputRef.current, options);
-    const endAutocomplete = new window.google.maps.places.Autocomplete(endInputRef.current, options);
-
-    startAutocomplete.addListener("place_changed", () => {
-      const place = startAutocomplete.getPlace();
-      if (place.formatted_address) {
-        setNewRoute(prev => ({ ...prev, startLocation: place.formatted_address }));
-      }
-    });
-
-    endAutocomplete.addListener("place_changed", () => {
-      const place = endAutocomplete.getPlace();
-      if (place.formatted_address) {
-        setNewRoute(prev => ({ ...prev, endLocation: place.formatted_address }));
-      }
-    });
-  };
 
   const initMap = () => {
     if (!selectedRoute || !mapRef.current || !window.google || mapInstanceRef.current) return;
@@ -286,59 +288,68 @@ export default function TrafficAlerts() {
 
   const handleAddRoute = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.uid || !newRoute.routeName || !newRoute.startLocation || !newRoute.endLocation) {
+    if (!user?.uid || !newRoute.routeName.trim() || !newRoute.startLocation.trim() || !newRoute.endLocation.trim()) {
       toast({ title: "Error", description: "Please fill all fields", variant: "destructive" });
       return;
     }
 
-    if (!window.google) {
-      toast({ 
-        title: "Maps Not Ready", 
-        description: "Google Maps is still loading. Please try again in a moment.", 
-        variant: "destructive" 
-      });
-      return;
-    }
-
     try {
-      // Geocode locations
-      const geocoder = new window.google.maps.Geocoder();
-      
-      const startResult = await new Promise((resolve) => {
-        geocoder.geocode({ address: newRoute.startLocation }, (results: any) => {
-          resolve(results?.[0]?.geometry?.location);
-        });
-      }) as any;
+      let startLat = 5.0209;
+      let startLng = 7.8906;
+      let endLat = 5.1095;
+      let endLng = 7.8077;
 
-      const endResult = await new Promise((resolve) => {
-        geocoder.geocode({ address: newRoute.endLocation }, (results: any) => {
-          resolve(results?.[0]?.geometry?.location);
-        });
-      }) as any;
+      // Geocode locations via backend proxy
+      try {
+        const startRes = await fetch(`/api/maps/geocode?address=${encodeURIComponent(newRoute.startLocation)}`);
+        if (startRes.ok) {
+          const sData = await startRes.json();
+          if (sData.lat && sData.lng) {
+            startLat = sData.lat;
+            startLng = sData.lng;
+          }
+        }
+      } catch {}
+
+      try {
+        const endRes = await fetch(`/api/maps/geocode?address=${encodeURIComponent(newRoute.endLocation)}`);
+        if (endRes.ok) {
+          const eData = await endRes.json();
+          if (eData.lat && eData.lng) {
+            endLat = eData.lat;
+            endLng = eData.lng;
+          }
+        }
+      } catch {}
 
       const res = await fetch('/api/routes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders(),
         body: JSON.stringify({
           userId: user.uid,
           routeName: newRoute.routeName,
           startLocation: newRoute.startLocation,
           endLocation: newRoute.endLocation,
-          startLat: startResult?.lat() || 6.5244,
-          startLng: startResult?.lng() || 3.3792,
-          endLat: endResult?.lat() || 6.5244,
-          endLng: endResult?.lng() || 3.3792
+          startLat,
+          startLng,
+          endLat,
+          endLng
         })
       });
 
-      if (!res.ok) throw new Error('Failed to create route');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to create route');
+      }
 
       toast({ title: "Success", description: "Route added successfully" });
       setNewRoute({ routeName: "", startLocation: "", endLocation: "" });
+      setStartSuggestions([]);
+      setEndSuggestions([]);
       setIsAddingRoute(false);
       refetchRoutes();
-    } catch (err) {
-      toast({ title: "Error", description: "Failed to add route", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to add route", variant: "destructive" });
     }
   };
 
@@ -378,7 +389,7 @@ export default function TrafficAlerts() {
 
   const handleDeleteRoute = async (routeId: string) => {
     try {
-      const res = await fetch(`/api/routes/${routeId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/routes/${routeId}`, { method: 'DELETE', headers: await authHeaders() });
       if (res.ok) {
         setRoutes(routes.filter(r => r.id !== routeId));
         if (selectedRoute?.id === routeId) setSelectedRoute(null);
@@ -449,20 +460,58 @@ export default function TrafficAlerts() {
                     onChange={(e) => setNewRoute({...newRoute, routeName: e.target.value})}
                     className="h-9 text-sm"
                   />
-                  <Input 
-                    ref={startInputRef}
-                    placeholder="Start location (street or business)"
-                    value={newRoute.startLocation}
-                    onChange={(e) => setNewRoute({...newRoute, startLocation: e.target.value})}
-                    className="h-9 text-sm"
-                  />
-                  <Input 
-                    ref={endInputRef}
-                    placeholder="End location (street or business)"
-                    value={newRoute.endLocation}
-                    onChange={(e) => setNewRoute({...newRoute, endLocation: e.target.value})}
-                    className="h-9 text-sm"
-                  />
+                  <div className="relative">
+                    <Input 
+                      ref={startInputRef}
+                      placeholder="Start location (street or business)"
+                      value={newRoute.startLocation}
+                      onChange={(e) => handleStartLocationChange(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                    {startSuggestions.length > 0 && (
+                      <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+                        {startSuggestions.map((s, idx) => (
+                          <div 
+                            key={idx}
+                            onClick={() => {
+                              setNewRoute(prev => ({ ...prev, startLocation: s.text }));
+                              setStartSuggestions([]);
+                            }}
+                            className="p-2 text-xs hover:bg-slate-100 cursor-pointer flex items-center gap-2 border-b border-slate-100 last:border-none"
+                          >
+                            <MapPin className="h-3 w-3 text-primary shrink-0" />
+                            <span className="truncate">{s.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Input 
+                      ref={endInputRef}
+                      placeholder="End location (street or business)"
+                      value={newRoute.endLocation}
+                      onChange={(e) => handleEndLocationChange(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                    {endSuggestions.length > 0 && (
+                      <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden max-h-48 overflow-y-auto">
+                        {endSuggestions.map((s, idx) => (
+                          <div 
+                            key={idx}
+                            onClick={() => {
+                              setNewRoute(prev => ({ ...prev, endLocation: s.text }));
+                              setEndSuggestions([]);
+                            }}
+                            className="p-2 text-xs hover:bg-slate-100 cursor-pointer flex items-center gap-2 border-b border-slate-100 last:border-none"
+                          >
+                            <MapPin className="h-3 w-3 text-primary shrink-0" />
+                            <span className="truncate">{s.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <Button type="submit" size="sm" className="w-full">Create Route</Button>
                 </form>
               </CardContent>
@@ -543,11 +592,18 @@ export default function TrafficAlerts() {
           ) : selectedRoute ? (
             <>
               {/* Map */}
-              <Card className="overflow-hidden">
+              <Card className="overflow-hidden relative">
                 <div 
                   ref={mapRef}
                   className="w-full h-80 bg-slate-100"
                 />
+                {(!window.google || !mapInstanceRef.current) && (
+                  <iframe
+                    title="Route Map"
+                    className="w-full h-80 border-0"
+                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${Number(selectedRoute.startLng || 7.89) - 0.08}%2C${Number(selectedRoute.startLat || 5.02) - 0.08}%2C${Number(selectedRoute.endLng || 7.81) + 0.08}%2C${Number(selectedRoute.endLat || 5.11) + 0.08}&layer=mapnik&marker=${selectedRoute.startLat || 5.02}%2C${selectedRoute.startLng || 7.89}`}
+                  />
+                )}
               </Card>
 
               {/* Route Info and Controls */}

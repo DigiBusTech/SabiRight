@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { legalDictionary } from "@/lib/legalDictionary";
-import { auth } from "@/lib/firebase";
+import { supabase } from "@/lib/supabase";
 import { Check, X, Languages, Coins } from "lucide-react";
 
 interface SabiContributorModalProps {
@@ -40,7 +40,8 @@ export function SabiContributorModal({ isOpen, onClose }: SabiContributorModalPr
     queryKey: ["/api/crowd-translations/verification"],
     enabled: isOpen && mode === "verify",
     queryFn: async () => {
-      const token = await auth.currentUser?.getIdToken();
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
       const res = await fetch("/api/crowd-translations/verification", {
         headers: {
           "Authorization": `Bearer ${token}`
@@ -68,7 +69,8 @@ export function SabiContributorModal({ isOpen, onClose }: SabiContributorModalPr
 
   const submitTranslation = useMutation({
     mutationFn: async (data: any) => {
-      const token = await auth.currentUser?.getIdToken();
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
       const res = await fetch("/api/crowd-translations", {
         method: "POST",
         headers: {
@@ -91,7 +93,8 @@ export function SabiContributorModal({ isOpen, onClose }: SabiContributorModalPr
 
   const voteTranslation = useMutation({
     mutationFn: async ({ id, vote }: { id: string, vote: boolean }) => {
-      const token = await auth.currentUser?.getIdToken();
+      const { data: s } = await supabase.auth.getSession();
+      const token = s.session?.access_token;
       const res = await fetch(`/api/crowd-translations/${id}/vote`, {
         method: "POST",
         headers: {

@@ -1,5 +1,10 @@
 node_modules
+*/node_modules
+mobile/node_modules
 dist
+mobile/dist
+.expo
+mobile/.expo
 .DS_Store
 server/public
 vite.config.ts.*
@@ -8,11 +13,11 @@ vite.config.ts.*
 !package.json
 !package-lock.json
 !tsconfig.json
-!firestore_debug.json
 !vercel.json
+!mobile/**/*.json
+!mobile/*.json
 
-# Irrelevant folders excluded from web application
+# Excluded temporary directories
 android/
-mobile/
 attached_assets/
 .env

@@ -401,6 +401,81 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Real-World Civic Action Showcase */}
+      <section className="py-20 bg-slate-900 text-white relative overflow-hidden">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="max-w-7xl mx-auto px-6 relative z-10">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-sky-400 text-xs font-bold uppercase tracking-wider mb-4">
+              <Zap className="h-3.5 w-3.5" /> Civic Technology In Action
+            </div>
+            <h2 className="text-3xl lg:text-4xl font-black tracking-tight leading-tight mb-3">
+              Street Realities Meets Constitutional Power
+            </h2>
+            <p className="text-slate-400 text-sm lg:text-base leading-relaxed">
+              Everyday Nigerians face aggressive extortion. SabiRight places verified statutory law in the palms of citizens — works 100% offline.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 items-stretch">
+            {/* Tweaked Photo 1: Real Citizens */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="rounded-3xl overflow-hidden border border-slate-800 bg-slate-950/60 shadow-xl flex flex-col justify-between"
+            >
+              <div className="relative aspect-video overflow-hidden">
+                <img 
+                  src="/assets/hero-citizens.png" 
+                  alt="Citizens using SabiRight" 
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-linear-to-t from-slate-950 via-transparent to-transparent" />
+                <div className="absolute top-3 left-3 bg-slate-900/90 backdrop-blur-md border border-sky-400/40 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="text-[11px] font-bold text-sky-300">Street-Level Defense</span>
+                </div>
+              </div>
+              <div className="p-6">
+                <h3 className="text-xl font-black text-white mb-2">Instant Peace of Mind</h3>
+                <p className="text-slate-400 text-xs leading-relaxed">
+                  Equipping citizens with instant de-escalation protocols when approached by law enforcement or task forces.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Tweaked Photo 2: Lady Justice */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="rounded-3xl overflow-hidden border border-slate-800 bg-slate-950/60 shadow-xl flex flex-col justify-between"
+            >
+              <div className="relative aspect-video overflow-hidden">
+                <img 
+                  src="/assets/hero-justice.png" 
+                  alt="Constitution of Nigeria" 
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-linear-to-t from-slate-950 via-transparent to-transparent" />
+                <div className="absolute top-3 left-3 bg-slate-900/90 backdrop-blur-md border border-amber-400/40 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+                  <Scale className="h-3 w-3 text-amber-400" />
+                  <span className="text-[11px] font-bold text-amber-300">1999 Constitution</span>
+                </div>
+              </div>
+              <div className="p-6">
+                <h3 className="text-xl font-black text-white mb-2">Statutory Authority</h3>
+                <p className="text-slate-400 text-xs leading-relaxed">
+                  Cross-checked against 1999 Constitution, Police Act 2020, and Administration of Criminal Justice Act.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+
       {/* PWA & Design Relevance Section */}
       <section className="py-24 bg-slate-50">
         <div className="max-w-7xl mx-auto px-6">

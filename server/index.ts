@@ -1,88 +1,38 @@
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes.js";
 import { createServer } from "http";
-import admin from "firebase-admin";
-import fs from "fs";
 import path from "path";
 
-// Initialize Firebase Admin with robust fallbacks
-const serviceAccountPath = path.join(process.cwd(), 'legal-13d13-firebase-adminsdk-fbsvc-e736182a52.json');
-if (admin.apps.length === 0) {
-  let initialized = false;
-
-  // Stage 1: Local file
-  if (fs.existsSync(serviceAccountPath)) {
-    try {
-      const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: 'legal-13d13'
-      });
-      admin.firestore().settings({ ignoreUndefinedProperties: true });
-      console.log("Firebase Admin initialized with service account (Project: legal-13d13).");
-      initialized = true;
-    } catch (err) {
-      console.error("Failed to initialize Firebase Admin from local JSON file:", err);
-    }
-  }
-
-  // Stage 2: JSON string from environment (with fallback safety if JSON is malformed)
-  if (!initialized && process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    try {
-      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-      if (serviceAccount.private_key) {
-        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-      }
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        projectId: serviceAccount.project_id || 'legal-13d13'
-      });
-      admin.firestore().settings({ ignoreUndefinedProperties: true });
-      console.log("Firebase Admin initialized via FIREBASE_SERVICE_ACCOUNT_JSON env var.");
-      initialized = true;
-    } catch (err) {
-      console.error("Failed to initialize Firebase Admin from FIREBASE_SERVICE_ACCOUNT_JSON env var:", err);
-    }
-  }
-
-  // Stage 3: Individual credentials
-  if (!initialized && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
-    try {
-      let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-      if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
-        privateKey = privateKey.slice(1, -1);
-      }
-      admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId: process.env.FIREBASE_PROJECT_ID || 'legal-13d13',
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-          privateKey: privateKey.replace(/\\n/g, '\n'),
-        }),
-        projectId: process.env.FIREBASE_PROJECT_ID || 'legal-13d13'
-      });
-      admin.firestore().settings({ ignoreUndefinedProperties: true });
-      console.log("Firebase Admin initialized via FIREBASE_PRIVATE_KEY and FIREBASE_CLIENT_EMAIL env vars.");
-      initialized = true;
-    } catch (err) {
-      console.error("Failed to initialize Firebase Admin from individual env vars:", err);
-    }
-  }
-
-  if (!initialized) {
-    console.warn("Firebase service account file not found and no environment variables present. Firebase features may fail.");
-  }
-} else {
-  console.log("Firebase Admin already initialized.");
-}
-
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '12mb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
 app.use(express.urlencoded({ extended: false }));
+
+app.disable('x-powered-by');
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+// Minimal in-memory rate limiter for abuse-prone endpoints (per IP)
+const hits = new Map<string, { n: number; reset: number }>();
+const limited = /^\/api\/(auth|payments|ai|civic|bots)/;
+app.use((req, res, next) => {
+  if (!limited.test(req.path) || /webhook|callback/.test(req.path)) return next();
+  const key = `${req.ip}:${req.path.split('/')[2]}`;
+  const now = Date.now();
+  const h = hits.get(key);
+  if (!h || h.reset < now) hits.set(key, { n: 1, reset: now + 60_000 });
+  else if (++h.n > 120) return res.status(429).json({ message: 'Too many requests, slow down.' });
+  if (hits.size > 5000) for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
+  next();
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
-  let resSent = false;
 
   res.on("finish", () => {
     const duration = Date.now() - start;

@@ -11,8 +11,6 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/context/AuthContext";
-import { auth } from "@/lib/firebase";
-import { signOut } from "firebase/auth";
 import NotificationBell from "@/components/NotificationBell";
 import { motion, AnimatePresence } from "framer-motion";
 import { Navbar } from "@/components/layout/Navbar";
@@ -29,7 +27,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isSabiSquareOpen, setIsSabiSquareOpen] = useState(false);
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, signOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   const { data: settings = [] } = useQuery<any[]>({
@@ -60,7 +58,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   }
 
   const handleSignOut = async () => {
-      await signOut(auth);
+      await signOut();
       setLocation("/");
   };
 

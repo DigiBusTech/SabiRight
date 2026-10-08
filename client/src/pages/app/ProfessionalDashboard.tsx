@@ -5,7 +5,15 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Store, FileCheck, TrendingUp, AlertCircle, Plus, X, MapPin, Phone, Edit2, Trash2, Users, Calendar, DollarSign, Mail, MessageSquare, Brain, Lock, RefreshCcw, ShieldAlert } from "lucide-react";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
+} from "@/components/ui/dialog";
+import { Store, FileCheck, TrendingUp, AlertCircle, Plus, X, MapPin, Phone, Edit2, Trash2, Users, Calendar, DollarSign, Mail, MessageSquare, Brain, Lock, RefreshCcw, ShieldAlert, FileText } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -75,6 +83,7 @@ export default function VendorDashboard() {
   const [isApplying, setIsApplying] = useState(false);
   const [showAddService, setShowAddService] = useState(false);
   const [editingService, setEditingService] = useState<VendorService | null>(null);
+  const [selectedCaseBrief, setSelectedCaseBrief] = useState<any | null>(null);
   const [businessForm, setBusinessForm] = useState({
     businessName: "",
     serviceType: "",
@@ -396,7 +405,7 @@ export default function VendorDashboard() {
               <p className="text-sm text-slate-600 mb-2">{application?.serviceType || 'Verified Professional'}</p>
             </div>
             <div className="p-3 bg-green-100 border border-green-200 rounded-lg flex items-start gap-3">
-              <FileCheck className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <FileCheck className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm font-bold text-green-800">Approved!</p>
                 <p className="text-xs text-green-700">You can now list services and access professional tools</p>
@@ -432,7 +441,7 @@ export default function VendorDashboard() {
 
             {application.status === 'pending' && (
               <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+                <AlertCircle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-sm font-bold text-yellow-800">Pending Review</p>
                   <p className="text-xs text-yellow-700">Admin will review your email verification and business documents</p>
@@ -781,36 +790,81 @@ export default function VendorDashboard() {
                       No leads yet. They will appear here when customers contact you.
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      {leads.map((lead) => (
-                        <div key={lead.id} className="p-4 border rounded-lg">
+                    <div className="space-y-4">
+                      {leads.map((lead: any) => (
+                        <div key={lead.id} className="p-4 border rounded-xl bg-white dark:bg-slate-900 space-y-3 shadow-xs">
                           <div className="flex items-start justify-between">
                             <div>
-                              <p className="font-bold">{lead.customerName}</p>
-                              <p className="text-sm text-slate-600 flex items-center gap-1">
-                                <Mail className="h-3 w-3" /> {lead.customerEmail}
-                              </p>
-                              {lead.customerPhone && (
-                                <p className="text-sm text-slate-600 flex items-center gap-1">
-                                  <Phone className="h-3 w-3" /> {lead.customerPhone}
-                                </p>
-                              )}
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold text-slate-900 dark:text-white">{lead.customerName}</p>
+                                <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-500">
+                                  {lead.channel || 'web'}
+                                </Badge>
+                                {lead.caseFile && (
+                                  <Badge className="bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 text-[10px] font-bold">
+                                    📋 Pre-Case Brief ({lead.caseFile.case_ref})
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-slate-500">
+                                {lead.customerPhone && (
+                                  <span className="flex items-center gap-1 font-mono">
+                                    <Phone className="h-3 w-3 text-primary" /> {lead.customerPhone}
+                                  </span>
+                                )}
+                                {lead.customerEmail && (
+                                  <span className="flex items-center gap-1">
+                                    <Mail className="h-3 w-3" /> {lead.customerEmail}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <Badge className={`${
                               lead.status === 'new' ? 'bg-blue-100 text-blue-800' :
                               lead.status === 'contacted' ? 'bg-yellow-100 text-yellow-800' :
-                              lead.status === 'converted' ? 'bg-green-100 text-green-800' :
-                              'bg-red-100 text-red-800'
+                              'bg-green-100 text-green-800'
                             }`}>
-                              {lead.status ? lead.status.charAt(0).toUpperCase() + lead.status.slice(1) : 'Unknown'}
+                              {lead.status ? lead.status.charAt(0).toUpperCase() + lead.status.slice(1) : 'New'}
                             </Badge>
                           </div>
-                          <p className="text-sm text-slate-700 mt-2 bg-slate-50 p-2 rounded">
+
+                          <p className="text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-lg leading-relaxed">
                             {lead.message}
                           </p>
-                          <p className="text-xs text-slate-400 mt-2">
-                            {new Date(lead.createdAt).toLocaleDateString()}
-                          </p>
+
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                            <span className="text-xs text-slate-400">
+                              {new Date(lead.createdAt).toLocaleDateString()}
+                            </span>
+
+                            <div className="flex items-center gap-2">
+                              {lead.caseFile && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 text-xs font-semibold text-purple-600 border-purple-200 hover:bg-purple-50"
+                                  onClick={() => setSelectedCaseBrief(lead.caseFile)}
+                                >
+                                  <FileText className="h-3.5 w-3.5 mr-1" /> View Intake Brief
+                                </Button>
+                              )}
+                              {lead.customerPhone && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 text-xs font-semibold text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                                  onClick={() => window.open(`https://wa.me/${lead.customerPhone.replace(/[^0-9]/g, '')}`, '_blank')}
+                                >
+                                  💬 WhatsApp
+                                </Button>
+                              )}
+                              <Link href={`/app/bookings/${lead.id}`}>
+                                <Button size="sm" className="h-8 text-xs font-semibold">
+                                  Direct Chat
+                                </Button>
+                              </Link>
+                            </div>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1107,6 +1161,53 @@ export default function VendorDashboard() {
               </Card>
             </div>
           )}
+          {/* Pre-Case Brief Inspector Dialog */}
+          <Dialog open={!!selectedCaseBrief} onOpenChange={() => setSelectedCaseBrief(null)}>
+            <DialogContent className="sm:max-w-xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <div className="flex items-center justify-between">
+                  <DialogTitle className="flex items-center gap-2 text-base font-bold">
+                    <FileText className="h-5 w-5 text-primary" />
+                    Pre-Case File Brief ({selectedCaseBrief?.case_ref})
+                  </DialogTitle>
+                  <Badge className="bg-red-100 text-red-700 font-bold text-xs uppercase">
+                    {selectedCaseBrief?.urgency_level || 'Medium'} Urgency
+                  </Badge>
+                </div>
+                <DialogDescription className="text-xs text-slate-500">
+                  Auto-synthesized legal intake summary from citizen consultation.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-2 text-left">
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Issue Summary</h4>
+                  <p className="text-sm text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border whitespace-pre-wrap leading-relaxed">
+                    {selectedCaseBrief?.issue_summary}
+                  </p>
+                </div>
+
+                {selectedCaseBrief?.raw_chat_history && Array.isArray(selectedCaseBrief.raw_chat_history) && (
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Citizen Interaction Transcript</h4>
+                    <div className="max-h-52 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border space-y-2 text-xs">
+                      {selectedCaseBrief.raw_chat_history.map((chat: any, idx: number) => (
+                        <div key={idx} className={chat.role === 'user' ? 'text-slate-900 font-semibold' : 'text-slate-600'}>
+                          <span className="uppercase text-[10px] text-primary">[{chat.role}]:</span> {chat.content}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="flex-row gap-2 justify-end">
+                <Button variant="ghost" onClick={() => setSelectedCaseBrief(null)}>
+                  Close Brief
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </>
       )}
     </div>

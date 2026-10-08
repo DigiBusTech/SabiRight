@@ -253,7 +253,6 @@ export default function CivicGuard() {
           totalAmount: 0,
           description: "Referred from SabiGuard AI Assistant.",
           scheduledDate: null,
-          milestones: [],
           chatId: currentChatId
         })
       });
@@ -359,7 +358,14 @@ export default function CivicGuard() {
 
   const { data: credits, refetch: refetchCredits } = useQuery({
     queryKey: [`credits-${user?.uid}`],
-    queryFn: async () => { const res = await fetch(`/api/credits/${user?.uid}/available`); return res.json(); },
+    queryFn: async () => {
+      if (!user?.uid) return null;
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/credits/${user.uid}/available`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return res.ok ? res.json() : null;
+    },
     enabled: !!user?.uid,
   });
 

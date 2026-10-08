@@ -36,7 +36,7 @@ export function PlansSettings() {
         </div>
       </div>
 
-      <Card className="rounded-[2rem] border-none shadow-sm overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-sm overflow-hidden">
         <div className="p-8 pb-4">
           <h3 className="font-bold text-lg">Create New Plan</h3>
         </div>
@@ -96,7 +96,7 @@ export function PlansSettings() {
         </CardContent>
       </Card>
 
-      <Card className="rounded-[2rem] border-none shadow-sm overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-sm overflow-hidden">
         <div className="p-8 pb-4">
           <h3 className="font-bold text-lg">Existing Plans ({existingPlans.length})</h3>
         </div>
