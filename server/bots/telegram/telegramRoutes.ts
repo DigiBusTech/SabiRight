@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { processBotMessage } from "../botController.js";
+import { processBotMessage, resolveBotProfile } from "../botController.js";
 import { 
   sendTelegramMessage, 
   sendTelegramChatAction, 
@@ -55,7 +55,14 @@ telegramRouter.post("/webhook", async (req: Request, res: Response) => {
         try {
           await sendTelegramChatAction(chatId, 'typing');
           const { audio, mimeType } = await downloadTelegramAudio(audioAttachment.file_id, audioAttachment.mime_type);
-          const transcript = await transcribeAudio(audio, mimeType);
+          const profile = await resolveBotProfile({
+            channel: 'telegram',
+            channelUserId: `tg_${from.id}`,
+            rawSenderId: String(from.id),
+            userName: fullName,
+            text: ''
+          });
+          const transcript = await transcribeAudio(audio, mimeType, profile.language || 'English');
           messageText = [msg.caption, transcript.text].filter(Boolean).join('\n\n').trim();
         } catch (error: any) {
           console.warn('[TelegramWebhook] Audio transcription failed:', error.message || error);

@@ -437,7 +437,7 @@ export default function AdminDashboard() {
             {label}
             {configured && (
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400">
-                Active in DB
+                Configured in DB
               </span>
             )}
           </span>
@@ -794,13 +794,21 @@ export default function AdminDashboard() {
         headers,
         body: JSON.stringify({ key, value, category, isSecret })
       });
-      if (!res.ok) throw new Error('Failed to save');
-      return res.json();
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed to save setting');
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/settings/public'] });
       toast({ title: "Saved", description: "Setting updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Could not save setting",
+        description: error.message,
+        variant: "destructive"
+      });
     }
   });
 
@@ -2758,9 +2766,9 @@ export default function AdminDashboard() {
                                     onClick={() => {
                                       if (confirm("This will overwrite existing content with SabiRight templates. Continue?")) {
                                         const templates: Record<string, string> = {
-                                          privacy_policy: `<h2>Privacy Policy for SabiRight</h2><p><strong>Effective Date:</strong> ${new Date().toLocaleDateString()}</p><p>At SabiRight, we prioritize your privacy and data security in compliance with the Nigeria Data Protection Regulation (NDPR) 2019.</p><h3>1. Information We Collect</h3><ul><li><strong>Personal Information:</strong> Name, email address, phone number, and location data for service matching.</li><li><strong>Usage Data:</strong> Information on how you interact with our AI legal assistant and marketplace.</li></ul><h3>2. How We Use Your Data</h3><p>We use your data to:</p><ul><li>Connect you with verified legal and civic professionals nearby.</li><li>Improve our AI training models (anonymized data only).</li><li>Send critical civic alerts and updates.</li></ul><h3>3. Data Security</h3><p>We implement banking-grade encryption to protect your personal information. We do not sell your data to third parties.</p>`,
-                                          terms_of_service: `<h2>Terms of Service</h2><p><strong>Last Updated:</strong> ${new Date().toLocaleDateString()}</p><p>Welcome to SabiRight. By accessing our platform, you agree to these terms.</p><h3>1. Platform Use</h3><p>SabiRight is a civic engagement tool. The "Right-To-Know" AI provides information based on the 1999 Constitution and Police Act 2020 but does not constitute legal advice.</p><h3>2. User Conduct</h3><p>You agree not to misuse the platform for illegal activities or to harass professionals.</p><h3>3. Professional Services</h3><p>Contractors and lawyers on our platform are independent service providers. SabiRight is not liable for their off-platform conduct.</p>`,
-                                          cookie_policy: `<h2>Cookie Policy</h2><p>SabiRight uses cookies to enhance your experience.</p><ul><li><strong>Essential Cookies:</strong> Required for login and security.</li><li><strong>Analytics Cookies:</strong> Help us understand how you use the platform to improve features.</li></ul><p>You can manage your cookie preferences in your browser settings.</p>`
+                                          privacy_policy: `<h2>Privacy Policy Draft — Complete Before Publishing</h2><p><strong>Effective Date:</strong> ${new Date().toLocaleDateString()}</p><p>This is a drafting template, not a description of SabiRight's verified data practices. Complete every section to match actual operations and have the policy reviewed by qualified privacy counsel before publishing.</p><h3>1. Information We Collect</h3><p>[List each category of personal data actually collected, how it is collected, and whether providing it is optional or required.]</p><h3>2. Purposes and Legal Basis</h3><p>[Describe each actual purpose of processing and the applicable legal basis. Do not state that data is used for AI training unless that is an actual, disclosed practice.]</p><h3>3. Sharing, Retention, and Transfers</h3><p>[Name recipient categories, retention periods or criteria, and any cross-border transfers. Describe only current practices.]</p><h3>4. Security and Data Rights</h3><p>[Describe implemented safeguards without overstating them, explain how users can exercise applicable rights, and provide a monitored privacy contact.]</p><h3>5. Complaints and Contact</h3><p>[Add the responsible contact and applicable regulator or complaint process after legal review.]</p>`,
+                                          terms_of_service: `<h2>Terms of Service Draft — Review Before Publishing</h2><p><strong>Last Updated:</strong> ${new Date().toLocaleDateString()}</p><p>This is a drafting template and should be reviewed by qualified Nigerian counsel before publication.</p><h3>1. Platform and AI Information</h3><p>SabiRight provides digital civic information and related platform features. AI-generated information may be incomplete or inaccurate, is not legal advice, and should be checked against current authoritative sources. Consult a qualified lawyer for advice about your circumstances.</p><h3>2. User Conduct</h3><p>[Describe acceptable use, prohibited conduct, reporting, and enforcement based on current platform rules.]</p><h3>3. Third-Party and Professional Services</h3><p>[Describe how professional listings, referrals, bookings, and third-party services actually work. Do not promise verification or disclaim responsibility beyond what has been reviewed and is legally valid.]</p><h3>4. Service Limitations and Contact</h3><p>[Describe service availability, limitations, complaint handling, and contact details after legal review.]</p>`,
+                                          cookie_policy: `<h2>Cookie Policy Draft — Confirm Before Publishing</h2><p>This is a drafting template. Confirm actual cookies and similar technologies before publishing; do not list analytics or advertising cookies unless they are in use.</p><h3>1. Technologies Used</h3><p>[List the cookies and similar technologies actually used, their purposes, providers, and durations. Identify which are necessary and which require consent.]</p><h3>2. Choices and Contact</h3><p>[Explain how users can manage non-essential cookies and provide a contact for questions.]</p>`
                                         };
                                         Object.entries(templates).forEach(([key, val]) => {
                                           handleSettingChange(key, val);
@@ -3089,12 +3097,12 @@ export default function AdminDashboard() {
                           description="Hugging Face chat-completion router or a dedicated OpenAI-compatible endpoint"
                         />
                         <ApiKeyField
-                          label="External Speech-to-Text Endpoint (Optional)"
+                          label="N-ATLAS ASR Endpoint Override (Optional)"
                           id="natlas_asr_endpoint"
                           category="ai"
                           isSecret={false}
-                          placeholder="Speech recognition service URL"
-                          description="Separate audio transcription service; the text-model test above does not test this endpoint"
+                          placeholder="Leave blank to use NCAIR1 Hugging Face ASR models"
+                          description="Sovereign mode routes Yoruba, Igbo, Hausa, and Nigerian English to NCAIR1 ASR models; Pidgin uses Nigerian-accented English ASR as a best-effort fallback. Configure natlas_api_token with Hugging Face model access; an optional URL override may include a {model} placeholder."
                         />
                       </div>
 
@@ -3384,8 +3392,8 @@ export default function AdminDashboard() {
                           id="telegram_bot_url" 
                           category="bots" 
                           isSecret={false}
-                          placeholder="https://t.me/SabiRightBot or @SabiRightBot" 
-                          description="Public bot link or @username shown on landing page for users to chat with the Telegram agent."
+                          placeholder="https://t.me/YourBot or @YourBot"
+                          description="Use your actual Telegram bot username (ending in Bot) or HTTPS link. Save blank to hide Telegram links on the landing page."
                         />
 
                         <ApiKeyField 
@@ -3486,8 +3494,8 @@ export default function AdminDashboard() {
                           id="whatsapp_bot_url" 
                           category="bots" 
                           isSecret={false}
-                          placeholder="https://wa.me/2348000000000 or +234..." 
-                          description="Public wa.me link or phone number shown on landing page for users to chat with the WhatsApp agent."
+                          placeholder="+2348012345678 or 08012345678"
+                          description="Enter your real WhatsApp business number or HTTPS wa.me link. Nigerian local numbers are normalized. Save blank to hide WhatsApp links on the landing page."
                         />
 
                         <div className="grid grid-cols-2 gap-3">
@@ -7429,7 +7437,7 @@ export default function AdminDashboard() {
             <Card>
               <CardHeader>
                 <CardTitle>Upload MOAT Data</CardTitle>
-                <p className="text-sm text-slate-500">Upload laws, acts, and other data to train the AI and improve accuracy.</p>
+                <p className="text-sm text-slate-500">Manage legal reference material that may be added to AI prompts. It does not train the model or verify answers; review sources and content before use.</p>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">

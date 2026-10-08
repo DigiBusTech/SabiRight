@@ -75,7 +75,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "search_verified_legal_data",
-        description: "Search verified civic legal data (Constitution, Police Act).",
+        description: "Search admin-managed civic and legal reference entries (including Constitution and Police Act material). Entries may be incomplete or unverified; cite only details explicitly supported by the returned entry.",
         inputSchema: {
           type: "object",
           properties: {

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { supabaseStorage as storage } from "../../supabaseStorage.js";
-import { processBotMessage } from "../botController.js";
+import { processBotMessage, resolveBotProfile } from "../botController.js";
 import { sendWhatsAppMessage, markWhatsAppAsRead, checkWhatsAppStatus, downloadWhatsAppAudio } from "./whatsappService.js";
 import { transcribeAudio } from "../../aiService.js";
 import type { IncomingBotMessage } from "../types.js";
@@ -111,7 +111,15 @@ async function handleMessage(message: any, contact: any) {
 
       try {
         const { audio, mimeType } = await downloadWhatsAppAudio(audioMessage.id);
-        const transcript = await transcribeAudio(audio, mimeType);
+        const profile = await resolveBotProfile({
+          channel: "whatsapp",
+          channelUserId: `wa_${senderPhone}`,
+          rawSenderId: senderPhone,
+          userName: senderName,
+          phoneNumber: `+${senderPhone}`,
+          text: ''
+        });
+        const transcript = await transcribeAudio(audio, mimeType, profile.language || 'English');
         text = transcript.text;
       } catch (error: any) {
         console.warn('[WhatsAppWebhook] Audio transcription failed:', error.message || error);

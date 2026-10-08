@@ -79,11 +79,13 @@ async function generateBotCheckoutLink(
     });
 
     const txRef = `PAY-${payment.id}`;
-    const appUrl = process.env.APP_URL || 'http://localhost:5000';
+    const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
     const customerEmail = profile.email || `${profile.channel || 'bot'}-${userId}@sabiright.com`;
     const customerName = profile.display_name || profile.fullName || 'Citizen';
 
     let checkoutUrl = '';
+    let providerReference = txRef;
+    let providerMetadata: Record<string, string> = {};
 
     if (provider === 'flutterwave') {
       const secretKey = chosenMethod.secretKey || process.env.FLUTTERWAVE_SECRET_KEY;
@@ -149,10 +151,13 @@ async function generateBotCheckoutLink(
       });
 
       const bachsData = await bachsRes.json().catch(() => ({}));
-      if (bachsRes.ok && (bachsData?.data?.checkout_url || bachsData?.checkout_url)) {
+      const sessionId = bachsData?.data?.id || bachsData?.id;
+      if (bachsRes.ok && (bachsData?.data?.checkout_url || bachsData?.checkout_url) && sessionId) {
         checkoutUrl = bachsData.data?.checkout_url || bachsData.checkout_url;
+        providerReference = String(sessionId);
+        providerMetadata = { bachsSessionId: String(sessionId) };
       } else {
-        return { error: bachsData?.message || 'Failed to generate Bachs checkout link.' };
+        return { error: bachsData?.message || 'Bachs did not return a valid checkout URL and session ID.' };
       }
     } else if (provider === 'paystack') {
       const secretKey = chosenMethod.secretKey || process.env.PAYSTACK_SECRET_KEY;
@@ -177,10 +182,11 @@ async function generateBotCheckoutLink(
     }
 
     await storage.updatePayment(payment.id, {
-      providerRef: txRef,
+      providerRef: providerReference,
       metadata: {
         ...((payment.metadata as any) || {}),
-        checkoutUrl
+        checkoutUrl,
+        ...providerMetadata
       }
     });
 
@@ -346,12 +352,10 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   if (payload === 'ACTION_URGENT' || rawText.toLowerCase() === '/urgent') {
     return {
       text: `🚨 *URGENT EMERGENCY MODE ACTIVATED*\n\n` +
-        `Stay calm. Keep your hands visible and speak in a polite, firm voice.\n\n` +
-        `*Your Immediate Constitutional Rights:*\n` +
-        `• Under *Section 34 of the 1999 Constitution*, you have the right to dignity—no torture or abuse.\n` +
-        `• Under *Police Act 2020 (Sec 37)*, officers CANNOT search your phone without a warrant.\n` +
-        `• Under *Section 35*, you have the right to remain silent until consulting legal counsel.\n\n` +
-        `Describe what is happening right now, or tap below to connect with an advocate:`,
+        `Prioritize your immediate safety. If you can do so safely, move to a public or safer place and contact local emergency services or someone you trust.\n\n` +
+        `• Keep your voice calm and avoid sudden movements or physical confrontation.\n` +
+        `• If detained or unsure of your rights, ask to contact a lawyer or trusted person. The legal position depends on the circumstances.\n\n` +
+        `Describe what is happening, or tap below to find a lawyer:`,
       quickActions: [
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
         { id: 'lang', title: '🌐 Language', payload: 'ACTION_LANG' }
@@ -756,17 +760,18 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
         .map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content.slice(0, 400)}`)
         .join('\n');
 
-      let fallbackInstruction = `You are the "SabiRight AI Agent", a general civic and legal responder for Nigerians communicating via ${msg.channel.toUpperCase()}. Your mission is to provide INSTANT, actionable, and verified civic guidance.
+      let fallbackInstruction = `You are the "SabiRight AI Agent", a general civic information responder for Nigerians communicating via ${msg.channel.toUpperCase()}. Be clear and cautious; you are not a substitute for advice from a qualified Nigerian lawyer.
 
 STRICT OPERATING RULES:
 1. NO GREETING: Answer the citizen's enquiry directly and immediately.
-2. CIVIC GUIDE & DE-ESCALATION: For any physical encounter (police, checkpoints, landlords, debt collectors), you MUST provide a step-by-step guide to peacefully de-escalate the situation and avoid violence or arbitrary harassment.
-3. EXPLICIT CITATIONS: You MUST cite specific sections of the 1999 Constitution of Nigeria (e.g., Section 34 right to dignity, Section 35 right to liberty), Police Act 2020 (e.g., Section 37 phone search prohibition without warrant), or other relevant Nigerian statutes in every legal response.
-4. RESPONSE STYLE: Be concise and formatted for chat screens. Use short bullet points with the law cited in bold.
-5. ADVOCATE REFERRAL: If the dispute needs formal representation, inform the user they can type /lawyer anytime to connect directly with a verified Nigerian attorney.`;
+2. CIVIC GUIDE & DE-ESCALATION: For physical encounters, prioritize immediate safety and offer only general, non-confrontational steps. Do not guarantee safety or outcomes.
+3. SOURCE-BASED LEGAL INFORMATION: Cite a statute, section, quotation, or case only when relevant reference material explicitly supports it. Never guess or fabricate legal citations, statutory wording, legal rights, or outcomes. Reference material may be incomplete or unverified.
+4. UNCERTAINTY: If reliable supporting material is unavailable or unclear, say that you cannot verify the legal point; do not fill the gap from memory or present a guess as fact. Recommend checking a current authoritative source or consulting qualified Nigerian counsel.
+5. RESPONSE STYLE: Be concise and formatted for chat screens. Use short bullet points when useful; include citations only when supported by the available source.
+6. ADVOCATE REFERRAL: If the dispute needs formal representation, inform the user they can type /lawyer to search the professional directory.`;
 
       if (userLang && userLang.toLowerCase() !== 'english') {
-        fallbackInstruction += `\n6. MULTILINGUAL OUTPUT: You must conduct the entire response strictly in ${userLang}. Use natural idioms and tone appropriate for Nigerian citizens.`;
+        fallbackInstruction += `\n7. MULTILINGUAL OUTPUT: Conduct the entire response in ${userLang}, using natural phrasing while preserving uncertainty.`;
       }
 
       const fallbackPrompt = `${fallbackInstruction}
@@ -812,7 +817,7 @@ AI:`;
     console.error("[BotController] Agent Error:", error);
     await storage.refundCredits(userId, cost, 'civic_guard').catch(() => {});
     return {
-      text: `⚠️ Under Section 35 of the 1999 Constitution, you always retain the right to speak to a legal representative.\n\nWould you like to connect directly with a verified lawyer in your area? Type /lawyer to find advocates near you.`,
+      text: `⚠️ I couldn't complete that response. If you need legal help, you can type /lawyer to look for an advocate in your area.`,
       quickActions: [
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },

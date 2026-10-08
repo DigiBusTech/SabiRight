@@ -1,7 +1,10 @@
 import { supabaseStorage as storage } from "./supabaseStorage.js";
+import { selectNAtlasAsrModel } from "./natlasAsrModels.js";
 
 const NATLAS_REQUEST_TIMEOUT_MS = 25_000;
+const NATLAS_ASR_REQUEST_TIMEOUT_MS = 50_000;
 const DEFAULT_NATLAS_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
+const DEFAULT_NATLAS_ASR_ENDPOINT = 'https://router.huggingface.co/hf-inference/models';
 export const MAX_TRANSCRIPTION_AUDIO_BYTES = 8 * 1024 * 1024;
 
 export async function isNAtlasSovereignMode(): Promise<boolean> {
@@ -38,14 +41,13 @@ export async function getRelevantMoatContext(userPrompt: string): Promise<string
       .slice(0, 4)
       .map(s => s.item);
 
-    // If no direct matches, include the top 2 general/fundamental items if available
-    const chosen = relevant.length > 0 ? relevant : moatData.slice(0, 2);
+    const chosen = relevant;
     if (chosen.length === 0) return '';
 
-    let context = "\n\n[ADMINISTRATIVE STATUTORY MOAT - GROUND TRUTH LEGAL CONTEXT]\n";
-    context += "Use the following verified statutory provisions curated by administrators to answer the enquiry authoritatively:\n\n";
+    let context = "\n\n[ADMIN-MANAGED LEGAL REFERENCE MATERIAL]\n";
+    context += "These entries are administrator-managed and have not been independently verified by this application. Use only relevant entries. Do not treat them as conclusive legal authority, infer missing details, or invent statutes, section numbers, quotations, or citations. Cite a legal source only when the entry itself provides enough information to support it. If the material does not support an answer, say that you cannot verify the point and recommend checking an authoritative source or consulting qualified counsel.\n\n";
     for (const entry of chosen) {
-      context += `• **${entry.title}** (${entry.category || 'Statute'}):\n  ${entry.content}\n  Source: ${entry.source || 'Admin Curated'}\n\n`;
+      context += `• **${entry.title}** (${entry.category || 'Reference'}):\n  ${entry.content}\n  Source field: ${entry.source || 'Not specified'}\n\n`;
     }
     context += "[END ADMINISTRATIVE MOAT CONTEXT]\n\n";
     return context;
@@ -87,7 +89,7 @@ export async function generateNAtlasResponse(prompt: string): Promise<string | n
         messages: [
           {
             role: 'system',
-            content: 'You are N-ATLAS, a multilingual language model powering SabiRight. Respond in the requested language and use provided statutory context as the source of truth.'
+            content: 'You are N-ATLAS, a multilingual language model powering SabiRight. Respond in the requested language. Legal reference material may be incomplete or unverified; do not invent legal citations, statutory wording, or legal conclusions. State uncertainty when reliable support is not provided, and recommend checking current authoritative sources or consulting qualified counsel.'
           },
           { role: 'user', content: prompt }
         ],
@@ -170,9 +172,74 @@ export async function transcribeAudio(
     throw error;
   }
 
-  const asrSetting = await storage.getAdminSetting('natlas_asr_endpoint');
-  const tokenSetting = await storage.getAdminSetting('natlas_api_token')
-    || await storage.getAdminSetting('huggingface_api_key');
+  const sovereignMode = await isNAtlasSovereignMode();
+  if (sovereignMode) {
+    const modelId = selectNAtlasAsrModel(language);
+    const tokenSetting = await storage.getAdminSetting('natlas_api_token')
+      || await storage.getAdminSetting('huggingface_api_key');
+    const token = tokenSetting?.value
+      || process.env.NATLAS_API_TOKEN
+      || process.env.HUGGINGFACE_API_KEY
+      || process.env.HF_TOKEN;
+    if (!token) {
+      const error = new Error(
+        'N-ATLAS transcription requires a Hugging Face access token. Configure natlas_api_token in Admin Settings or set HF_TOKEN.'
+      );
+      Object.assign(error, { statusCode: 503 });
+      throw error;
+    }
+
+    const asrSetting = await storage.getAdminSetting('natlas_asr_endpoint');
+    const configuredEndpoint = asrSetting?.value?.trim();
+    const endpoint = configuredEndpoint
+      ? configuredEndpoint.replaceAll('{model}', modelId)
+      : `${DEFAULT_NATLAS_ASR_ENDPOINT}/${modelId.split('/').map(encodeURIComponent).join('/')}`;
+
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': contentType
+        },
+        body: audio,
+        signal: AbortSignal.timeout(NATLAS_ASR_REQUEST_TIMEOUT_MS)
+      });
+    } catch (requestError: any) {
+      console.error('[Transcribe] N-ATLAS ASR request failed:', requestError.message || requestError);
+      const error = new Error('N-ATLAS speech recognition could not be reached. Please try again.');
+      Object.assign(error, { statusCode: 502 });
+      throw error;
+    }
+
+    if (!response.ok) {
+      const detail = (await response.text()).slice(0, 300);
+      console.error(`[Transcribe] N-ATLAS ASR ${modelId} returned ${response.status}: ${detail}`);
+      const message = response.status === 401 || response.status === 403
+        ? `N-ATLAS ASR access was denied for ${modelId}. Check the Hugging Face token and accept the model's access terms.`
+        : response.status === 503
+          ? `N-ATLAS ASR model ${modelId} is loading or unavailable. Please retry shortly.`
+          : `N-ATLAS speech recognition failed (${response.status}). Please try again.`;
+      const error = new Error(message);
+      Object.assign(error, { statusCode: response.status === 401 || response.status === 403 ? 503 : 502 });
+      throw error;
+    }
+
+    const data = await response.json() as any;
+    const transcript = data?.text ?? data?.transcript ?? (Array.isArray(data) ? data[0]?.text : undefined);
+    if (typeof transcript !== 'string') {
+      const error = new Error('N-ATLAS ASR returned no transcript. Check the configured speech endpoint response format.');
+      Object.assign(error, { statusCode: 502 });
+      throw error;
+    }
+    return { text: transcript.trim(), engine: modelId };
+  }
+
+  const asrSetting = sovereignMode ? await storage.getAdminSetting('natlas_asr_endpoint') : null;
+  const tokenSetting = sovereignMode
+    ? await storage.getAdminSetting('natlas_api_token') || await storage.getAdminSetting('huggingface_api_key')
+    : null;
   const asrEndpoint = asrSetting?.value?.trim();
   const asrToken = tokenSetting?.value
     || process.env.NATLAS_API_TOKEN
@@ -180,7 +247,7 @@ export async function transcribeAudio(
     || process.env.HF_TOKEN;
   let configuredServiceFailed = false;
 
-  if (asrEndpoint && asrToken) {
+  if (sovereignMode && asrEndpoint && asrToken) {
     try {
       const response = await fetch(asrEndpoint, {
         method: 'POST',
@@ -217,8 +284,8 @@ export async function transcribeAudio(
     || process.env.GOOGLE_GENAI_API_KEY;
   if (!geminiKey) {
     const error = new Error(configuredServiceFailed
-      ? 'Configured speech-to-text failed and no fallback provider is configured'
-      : 'Voice transcription is not configured');
+      ? 'Configured speech-to-text failed and Multi-Model mode has no valid Gemini fallback.'
+      : 'Multi-Model voice transcription requires a valid Gemini API key.');
     Object.assign(error, { statusCode: configuredServiceFailed ? 502 : 503 });
     throw error;
   }
@@ -255,6 +322,7 @@ export async function transcribeAudio(
       if (response.ok) break;
       lastError = (await response.text()).slice(0, 300);
       console.warn(`[Transcribe] Gemini ${model} returned ${response.status}: ${lastError}`);
+      if (/API_KEY_INVALID|API key not valid|invalid api key/i.test(lastError)) break;
       if (response.status !== 404 && response.status !== 400) break;
     } catch (error: any) {
       lastError = error.message || String(error);
@@ -264,8 +332,11 @@ export async function transcribeAudio(
   }
 
   if (!response?.ok) {
-    const error = new Error(`Speech transcription failed${lastError ? `: ${lastError}` : ''}`);
-    Object.assign(error, { statusCode: 502 });
+    const invalidKey = /API_KEY_INVALID|API key not valid|invalid api key/i.test(lastError);
+    const error = new Error(invalidKey
+      ? 'Gemini rejected the configured API key. Check google_gemini_api_key in Admin Settings.'
+      : `Gemini speech transcription failed${lastError ? `: ${lastError}` : ''}`);
+    Object.assign(error, { statusCode: invalidKey ? 503 : 502 });
     throw error;
   }
 
@@ -289,7 +360,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
   let effectivePrompt = prompt;
   if (!skipMoatGrounding) {
     const moatContext = await getRelevantMoatContext(prompt);
-    if (moatContext && !prompt.includes('[ADMINISTRATIVE STATUTORY MOAT')) {
+    if (moatContext && !prompt.includes('[ADMIN-MANAGED LEGAL REFERENCE MATERIAL]')) {
       effectivePrompt = `${moatContext}\n${prompt}`;
     }
   }

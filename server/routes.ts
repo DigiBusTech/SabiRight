@@ -12,6 +12,10 @@ import PaystackService from "./paystackService.js";
 import { whatsappRouter } from "./bots/whatsapp/whatsappRoutes.js";
 import { telegramRouter } from "./bots/telegram/telegramRoutes.js";
 import {
+  normalizeTelegramBotUrl,
+  normalizeWhatsAppBotUrl
+} from "./botPublicLinks.js";
+import {
   generateAIResponse,
   isNAtlasSovereignMode,
   MAX_TRANSCRIPTION_AUDIO_BYTES,
@@ -48,6 +52,37 @@ async function verifyRecaptcha(token: string): Promise<boolean> {
     console.error('reCAPTCHA verification error:', error);
     return false;
   }
+}
+
+function getValidatedBotLinks(settings: Array<{ key: string; value?: unknown }>) {
+  const getLink = (
+    key: "whatsapp_bot_url" | "telegram_bot_url",
+    environmentValue: string | undefined,
+    normalize: (value: unknown) => string | null
+  ) => {
+    const storedSetting = settings.find(setting => setting.key === key);
+    const configuredValue = storedSetting ? storedSetting.value : environmentValue;
+    const normalized = normalize(configuredValue);
+
+    if (configuredValue && !normalized) {
+      console.warn(`[Settings] Invalid ${key}; hiding public link`);
+    }
+
+    return normalized;
+  };
+
+  return {
+    whatsapp_bot_url: getLink(
+      "whatsapp_bot_url",
+      process.env.WHATSAPP_BOT_URL,
+      normalizeWhatsAppBotUrl
+    ),
+    telegram_bot_url: getLink(
+      "telegram_bot_url",
+      process.env.TELEGRAM_BOT_URL,
+      normalizeTelegramBotUrl
+    )
+  };
 }
 
 // Multer setup
@@ -334,18 +369,17 @@ export async function registerRoutes(
         'whatsapp_bot_url', 'telegram_bot_url'
       ];
       
-      const publicSettings = settings.filter(s => 
-        allowedKeys.includes(s.key)
-      ).reduce((acc: any, s) => {
+      const publicSettings = settings.filter(s =>
+        allowedKeys.includes(s.key) &&
+        s.key !== "whatsapp_bot_url" &&
+        s.key !== "telegram_bot_url"
+      ).reduce((acc: Record<string, string>, s) => {
         acc[s.key] = s.value;
         return acc;
       }, {});
-      if (!publicSettings.whatsapp_bot_url) {
-        publicSettings.whatsapp_bot_url = process.env.WHATSAPP_BOT_URL || 'https://wa.me/2348000000000?text=Hello%20SabiRight';
-      }
-      if (!publicSettings.telegram_bot_url) {
-        publicSettings.telegram_bot_url = process.env.TELEGRAM_BOT_URL || 'https://t.me/SabiRightBot';
-      }
+      const botLinks = getValidatedBotLinks(settings);
+      if (botLinks.whatsapp_bot_url) publicSettings.whatsapp_bot_url = botLinks.whatsapp_bot_url;
+      if (botLinks.telegram_bot_url) publicSettings.telegram_bot_url = botLinks.telegram_bot_url;
       res.json(publicSettings);
     } catch (error) {
       next(error);
@@ -365,7 +399,28 @@ export async function registerRoutes(
         'whatsapp_bot_url', 'telegram_bot_url'
       ];
       
-      const filteredSettings = settings.filter(s => allowedKeys.includes(s.key));
+      const filteredSettings = settings.filter(s =>
+        allowedKeys.includes(s.key) &&
+        s.key !== "whatsapp_bot_url" &&
+        s.key !== "telegram_bot_url"
+      );
+      const botLinks = getValidatedBotLinks(settings);
+      if (botLinks.whatsapp_bot_url) {
+        filteredSettings.push({
+          key: "whatsapp_bot_url",
+          value: botLinks.whatsapp_bot_url,
+          category: "bots",
+          isSecret: false
+        });
+      }
+      if (botLinks.telegram_bot_url) {
+        filteredSettings.push({
+          key: "telegram_bot_url",
+          value: botLinks.telegram_bot_url,
+          category: "bots",
+          isSecret: false
+        });
+      }
       res.json(filteredSettings);
     } catch (error) {
       next(error);
@@ -1844,6 +1899,27 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
         return res.json({ success: true, unchanged: true });
       }
 
+      if (key === "whatsapp_bot_url" || key === "telegram_bot_url") {
+        if (category !== "bots" || typeof value !== "string") {
+          return res.status(400).json({ error: "Bot link settings must be strings in the bots category." });
+        }
+
+        const normalizedUrl = key === "whatsapp_bot_url"
+          ? normalizeWhatsAppBotUrl(value)
+          : normalizeTelegramBotUrl(value);
+
+        if (value.trim() && !normalizedUrl) {
+          return res.status(400).json({
+            error: key === "whatsapp_bot_url"
+              ? "Enter a valid Nigerian phone number or HTTPS WhatsApp link (wa.me or api.whatsapp.com)."
+              : "Enter a Telegram bot username ending in Bot or an HTTPS t.me/telegram.me bot link."
+          });
+        }
+
+        await storage.setAdminSetting(key, normalizedUrl || "", "bots", false);
+        return res.json({ success: true, value: normalizedUrl || "" });
+      }
+
       await storage.setAdminSetting(key, value, category, isSecret);
       res.json({ success: true });
     } catch (error) {
@@ -2741,7 +2817,7 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
         userId: lawyerId,
         type: 'case_file_submission',
         title: 'New Case File Submitted',
-        message: `A user has submitted a pre-vetted case file for your review.`,
+        message: `A user has submitted a preliminary case summary for your review.`,
         data: { caseDocId: caseDoc.id, userId, chatId }
       });
     }
@@ -3083,7 +3159,7 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
 
       if (!finalResponse) {
         const prompt = `You are the SabiRight AI Agent for Nigeria (User City: ${city || 'Nigeria'}).
-Provide clear, actionable legal guidance citing relevant Nigerian statutory sections.
+Provide cautious general civic information. For legal questions, cite statutes or sections only when supported by relevant reference material in the prompt. Never invent citations, legal wording, rights, or outcomes. If reliable support is unavailable, say that you cannot verify the legal point and recommend checking a current authoritative source or consulting qualified Nigerian counsel. This is not a substitute for legal advice.
 User message: ${message}`;
         finalResponse = await generateAIResponse(prompt) || "Hello! I am your SabiRight AI Agent. How can I help you today?";
       }
@@ -3256,18 +3332,19 @@ User message: ${message}`;
 
       // If ADK was skipped or produced empty text, execute via platform provider (Groq, etc.)
       if (!finalResponse) {
-        let fallbackInstruction = `You are the "SabiRight AI Agent", a general civic and legal responder for Nigerians. Your mission is to provide INSTANT, actionable, and verified civic guidance.
+        let fallbackInstruction = `You are the "SabiRight AI Agent", a general civic information responder for Nigerians. Provide clear, cautious information; you are not a substitute for advice from a qualified Nigerian lawyer.
 
 STRICT OPERATING RULES:
 1. NO GREETING: The app has already greeted the user. Never introduce yourself or say hello; answer the question directly.
-2. CIVIC GUIDE & DE-ESCALATION: For any physical encounter (police, landlords, etc.), you MUST provide a step-by-step guide to peacefully de-escalate the situation and avoid violence or misunderstanding.
-3. EXPLICIT CITATIONS: You MUST cite specific sections of the 1999 Constitution of Nigeria (e.g., Section 34 right to liberty), Police Act 2020, or other relevant Nigerian laws (Tenancy laws, real estate laws, etc.) in every legal response. DO NOT give advice without citing the exact law protecting the citizen.
-4. RESPONSE STYLE: Be brief and scannable. Use this layout: one short opening line, then a short list of "- " bullets (max 6, each under 25 words), with the law cited in bold like **Section 35, 1999 Constitution**. Use plain text only: no headings (#), no tables, no emojis, no repeated greeting.
-5. PROFESSIONAL REFERRAL LOGIC: If a situation requires a lawyer, real estate agent, accountant, etc., you must ASK the user first: "Would you like me to connect you with a verified professional in your area?"
-6. TRIGGERING CARDS: IF AND ONLY IF the user explicitly confirms they want a professional (e.g., "Yes, I need a lawyer"), you must reply with a concluding sentence containing the exact phrase "[SHOW_PROFESSIONALS]". This exact phrase is required to show the cards in the UI.`;
+2. CIVIC GUIDE & DE-ESCALATION: For physical encounters, prioritize immediate safety and offer only general, non-confrontational steps. Do not guarantee safety or outcomes.
+3. SOURCE-BASED LEGAL INFORMATION: Cite a statute, section, quotation, or case only when relevant reference material explicitly supports it. Never guess or fabricate legal citations, statutory wording, legal rights, or outcomes. Reference material may be incomplete or unverified.
+4. UNCERTAINTY: If reliable supporting material is unavailable or unclear, say that you cannot verify the legal point; do not fill the gap from memory or present a guess as fact. Recommend checking a current authoritative source or consulting qualified Nigerian counsel.
+5. RESPONSE STYLE: Be brief and scannable. Use one short opening line and a short list of bullets (max 6, each under 25 words). Include citations only when supported by source material. Use plain text only: no headings (#), no tables, no emojis, no repeated greeting.
+6. PROFESSIONAL REFERRAL LOGIC: If a situation requires a professional, ask the user first whether they want help finding one.
+7. TRIGGERING CARDS: Only if the user explicitly confirms, end the response with the exact phrase "[SHOW_PROFESSIONALS]" to show directory results. Do not describe a professional as verified unless the returned directory record supports that status.`;
 
         if (language && language.toLowerCase() !== 'english') {
-          fallbackInstruction += `\n7. MULTILINGUAL OUT: You must conduct the entire conversation and output all responses strictly in ${language}. Maintain complete legal and factual accuracy, but use the natural phrasing, idioms, and tone appropriate for that language so an everyday youth can easily understand it. If you need to translate greetings or specific constitutional rights, do so in natural phrasing of ${language}.`;
+          fallbackInstruction += `\n8. MULTILINGUAL OUTPUT: Conduct the entire response in ${language}, using natural phrasing while preserving uncertainty.`;
         }
 
         const fallbackPrompt = `${fallbackInstruction}
@@ -3343,7 +3420,7 @@ AI:`;
       4. The 'contact' field must be a valid URL to the job listing or a professional application email.
       5. The 'type' must be either "Full-time" or "Part-time".
       6. The 'workMode' must be either "Remote", "Onsite", or "Hybrid".
-      7. Ensure NO hallucinations. All companies and jobs must be real.
+      7. Never invent a company, vacancy, salary, source, URL, or email. Include a listing only if the provider can support it with an actual source; if current listings cannot be verified, return an empty array.
       
       Output: Return ONLY a JSON Array of objects. No markdown blocks.
       Schema: [{"title": "...", "company": "...", "location": "...", "type": "Full-time", "workMode": "Remote", "salary": "...", "contact": "...", "description": "...", "source": "..."}]
@@ -3712,7 +3789,7 @@ AI:`;
         if (fwSecretKey) {
           try {
             const userProfile = await storage.getUser(userId);
-            const appUrl = process.env.APP_URL || 'http://localhost:5000';
+            const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
             const fwResponse = await fetch('https://api.flutterwave.com/v3/payments', {
               method: 'POST',
               headers: {
@@ -4003,42 +4080,61 @@ AI:`;
     const bachsSecretKey = bachsMethod?.secretKey || process.env.BACHS_SECRET_KEY;
     if (!bachsSecretKey) return { ok: false, status: 'failed', error: 'Bachs not configured or inactive', code: 503 };
 
-    let payment: any = await storage.getPaymentByReference(sessionIdOrRef);
-    if (!payment && sessionIdOrRef.startsWith('pay-')) {
-      payment = await storage.getPayment(sessionIdOrRef);
+    let payment: any = await storage.getPayment(sessionIdOrRef);
+    if (!payment) payment = await storage.getPaymentByReference(sessionIdOrRef);
+    if (!payment && sessionIdOrRef.startsWith('PAY-')) {
+      payment = await storage.getPayment(sessionIdOrRef.slice(4));
     }
     if (!payment) return { ok: false, status: 'failed', error: 'Payment record not found', code: 404 };
     if (expectedUserId && payment.userId !== expectedUserId) return { ok: false, status: 'failed', error: 'Forbidden', code: 403 };
+    if (payment.provider !== 'bachs') return { ok: false, status: 'failed', error: 'Payment provider mismatch', code: 400 };
     if (payment.status === 'completed') return { ok: true, status: 'success' };
 
     const isSandbox = (bachsMethod?.metadata as any)?.isSandbox || bachsSecretKey.startsWith('sk_sandbox_');
     const bachsBaseUrl = isSandbox ? 'https://sandbox-api.bachs.io' : 'https://api.bachs.io';
-
-    let verifiedAmount = Number(payment.amount);
-    let providerRef = sessionIdOrRef;
+    const sessionId = payment.metadata?.bachsSessionId || payment.providerRef;
+    if (!sessionId) return { ok: false, status: 'failed', error: 'Bachs checkout session is missing', code: 400 };
 
     try {
-      const vRes = await fetch(`${bachsBaseUrl}/v1/checkout/sessions/${encodeURIComponent(sessionIdOrRef)}`, {
+      const vRes = await fetch(`${bachsBaseUrl}/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
         headers: { 'Authorization': `Bearer ${bachsSecretKey}` }
       });
-      if (vRes.ok) {
-        const vData = await vRes.json().catch(() => ({}));
-        const session = vData.data || vData;
-        if (session.payment_status === 'paid' || session.status === 'completed' || session.status === 'success') {
-          if (session.amount || session.pricing?.amount) {
-            verifiedAmount = Number(session.amount || session.pricing?.amount);
-          }
-          providerRef = session.id || sessionIdOrRef;
-        } else {
-          return { ok: false, status: 'unpaid', error: 'Bachs session payment not confirmed yet', code: 402 };
-        }
+      if (!vRes.ok) {
+        const detail = (await vRes.text()).slice(0, 300);
+        console.error(`[Bachs] Session verification returned ${vRes.status}: ${detail}`);
+        return { ok: false, status: 'failed', error: 'Unable to verify Bachs checkout session', code: 502 };
       }
-    } catch (vErr) {
-      console.warn('[Bachs] Session direct verify request error:', vErr);
-    }
 
-    const result = await storage.fulfillPayment(payment.id, providerRef, verifiedAmount);
-    return result.ok ? { ok: true, status: 'success' } : { ok: false, status: 'failed', error: result.reason, code: 400 };
+      const vData = await vRes.json().catch(() => ({}));
+      const session = vData.data || vData;
+      if (session.id && String(session.id) !== String(sessionId)) {
+        return { ok: false, status: 'failed', error: 'Bachs checkout session mismatch', code: 400 };
+      }
+      const paymentStatus = String(session.payment_status || '').toLowerCase();
+      const sessionStatus = String(session.status || '').toLowerCase();
+      if (
+        !['paid', 'successful'].includes(paymentStatus) &&
+        !['completed', 'success', 'succeeded'].includes(sessionStatus)
+      ) {
+        return { ok: false, status: 'unpaid', error: 'Bachs session payment not confirmed yet', code: 402 };
+      }
+
+      const paidAmount = Number(session.amount ?? session.pricing?.amount);
+      if (!Number.isFinite(paidAmount) || Math.round(paidAmount * 100) !== Math.round(Number(payment.amount) * 100)) {
+        return { ok: false, status: 'failed', error: 'Bachs payment amount mismatch', code: 400 };
+      }
+      const paidCurrency = session.currency || session.pricing?.currency;
+      if (typeof paidCurrency !== 'string' || paidCurrency.toUpperCase() !== String(payment.currency || 'NGN').toUpperCase()) {
+        return { ok: false, status: 'failed', error: 'Bachs payment currency mismatch', code: 400 };
+      }
+
+      const providerRef = String(session.id || sessionId);
+      const result = await storage.fulfillPayment(payment.id, providerRef, paidAmount);
+      return result.ok ? { ok: true, status: 'success' } : { ok: false, status: 'failed', error: result.reason, code: 400 };
+    } catch (vErr: any) {
+      console.error('[Bachs] Session verification failed:', vErr?.message || vErr);
+      return { ok: false, status: 'failed', error: 'Unable to verify Bachs checkout session', code: 502 };
+    }
   }
 
   // Bachs Webhook: validates HMAC-SHA256 signature when secret is configured
@@ -4091,10 +4187,11 @@ AI:`;
       const txRef = String(req.query.tx_ref || req.query.sessionId || '');
       const ref = paymentId || txRef;
 
-      if (ref) {
-        await settleBachsTransaction(ref);
-      }
-      return res.redirect(`/app/wallet?payment=success&provider=bachs`);
+      if (!ref) return res.redirect(`/app/wallet?payment=failed&error=no_reference`);
+      const result = await settleBachsTransaction(ref);
+      return res.redirect(result.ok
+        ? `/app/wallet?payment=success&provider=bachs`
+        : `/app/wallet?payment=failed&provider=bachs&error=verification_failed`);
     } catch (error: any) {
       console.error('Bachs callback error:', error);
       return res.redirect(`/app/wallet?payment=failed&error=server_error`);

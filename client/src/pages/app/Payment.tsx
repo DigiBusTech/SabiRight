@@ -170,16 +170,17 @@ export default function Payment() {
 
   // Separate automatic gateways from manual methods
   const automaticGateways = allPaymentMethods.filter((m: any) => 
-    ['paystack', 'flutterwave', 'stripe'].includes(m.type)
+    ['paystack', 'flutterwave', 'stripe', 'bachs'].includes(m.type)
   );
   const manualMethods = allPaymentMethods.filter((m: any) => 
-    m.type === 'manual' || (m.type !== 'wallet' && !['paystack', 'flutterwave', 'stripe'].includes(m.type))
+    m.type === 'manual' || (m.type !== 'wallet' && !['paystack', 'flutterwave', 'stripe', 'bachs'].includes(m.type))
   );
 
   // Get specific gateway configurations
   const paystackGateway = automaticGateways.find((g: any) => g.type === 'paystack');
   const flutterwaveGateway = automaticGateways.find((g: any) => g.type === 'flutterwave');
   const stripeGateway = automaticGateways.find((g: any) => g.type === 'stripe');
+  const bachsGateway = automaticGateways.find((g: any) => g.type === 'bachs');
   const walletMethod = allPaymentMethods.find((m: any) => m.type === 'wallet');
 
   // Initialize Stripe
@@ -570,6 +571,44 @@ export default function Payment() {
       return;
     }
 
+    if (selectedMethod === 'bachs') {
+      const paymentData = {
+        userId: user.uid,
+        amount,
+        currency: 'NGN',
+        provider: 'bachs',
+        type: paymentType,
+        email: user.email || `user-${user.uid}@sabiright.com`,
+        description: paymentType === 'credit_purchase'
+          ? `Purchase ${credits} credits`
+          : paymentType === 'subscription'
+            ? `Subscription to plan ${planId}`
+            : `Wallet top-up - NGN ${amount}`,
+        captchaToken,
+        metadata: {
+          ...(credits && { credits }),
+          ...(planId && { planId })
+        }
+      };
+
+      initiatePayment.mutate(paymentData, {
+        onSuccess: (data: any) => {
+          try {
+            const checkoutUrl = new URL(data.redirectUrl || data.authorizationUrl);
+            if (checkoutUrl.protocol !== 'https:') throw new Error('Checkout URL must use HTTPS');
+            window.location.assign(checkoutUrl.toString());
+          } catch {
+            toast({
+              title: "Payment Error",
+              description: "Bachs did not return a valid secure checkout URL. Please try again or contact support.",
+              variant: "destructive"
+            });
+          }
+        }
+      });
+      return;
+    }
+
     // Handle other payment methods (manual methods)
     // Upload files first
     const uploadPromises = Object.entries(manualFiles).map(async ([fieldName, file]) => {
@@ -803,6 +842,18 @@ export default function Payment() {
                     <div className="flex-1">
                       <p className="font-bold">Flutterwave</p>
                       <p className="text-xs text-slate-500">Pay with card or bank transfer</p>
+                    </div>
+                    <Badge>Instant</Badge>
+                  </label>
+                )}
+
+                {bachsGateway && (
+                  <label className="flex items-center gap-3 p-4 border rounded-lg cursor-pointer hover:bg-slate-50">
+                    <RadioGroupItem value="bachs" />
+                    <CreditCard className="h-5 w-5 text-blue-600" />
+                    <div className="flex-1">
+                      <p className="font-bold">Bachs</p>
+                      <p className="text-xs text-slate-500">Secure hosted checkout</p>
                     </div>
                     <Badge>Instant</Badge>
                   </label>

@@ -3,7 +3,7 @@
 <div align="center">
   <img src="client/public/favicon.png" alt="SabiRight Logo" width="96" height="96" />
   <h2>⚖️ SabiRight — Civic Intellect & Justice Infrastructure</h2>
-  <p><strong>Empowering citizens, residents, and immigrants with verified, statutory-grounded civic guidance, seamless legal first aid, and proximity-matched professional directories across Web, Native Mobile, WhatsApp, and Telegram.</strong></p>
+  <p><strong>AI-assisted civic and legal information, professional directory tools, and web, mobile, and configured messaging-channel access.</strong></p>
 
   <div>
     <img src="https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript" alt="TypeScript" />
@@ -26,7 +26,7 @@
 - [Core Engines & Business Logic](#-core-engines--business-logic)
   - [1. Civic Guidance Engine & Statutory MOAT](#1-civic-guidance-engine--statutory-moat)
   - [2. Pre-Case File & Diagnostic Intake Synthesis](#2-pre-case-file--diagnostic-intake-synthesis)
-  - [3. Verified Professional Marketplace & Proximity Matching](#3-verified-professional-marketplace--proximity-matching)
+  - [3. Professional Marketplace & Proximity Matching](#3-professional-marketplace--proximity-matching)
   - [4. Unified Cross-Channel Credit Engine](#4-unified-cross-channel-credit-engine)
   - [5. Dynamic Multi-Gateway Payment Orchestrator](#5-dynamic-multi-gateway-payment-orchestrator)
   - [6. Real-Time Consultation Rooms & Direct Bookings](#6-real-time-consultation-rooms--direct-bookings)
@@ -50,30 +50,30 @@
 
 ## 🏛 Executive Summary
 
-**SabiRight** is an enterprise-grade civic technology and legal-aid marketplace platform engineered for the Nigerian and African socioeconomic ecosystem.
+**SabiRight** is a civic technology platform for the Nigerian and African socioeconomic ecosystem.
 
-In developing regions, citizens, small business owners, and immigrants routinely encounter constitutional infringements, unlawful detentions, landlord-tenant extortion, police checkpoint abuses, and opaque regulatory hurdles. At the same time, verified lawyers, accountants, real estate advisors, and immigration practitioners waste up to 40% of their billable hours vetting unorganized, fragmented client claims.
+In developing regions, citizens, small business owners, and immigrants may face legal and civic issues that are difficult to navigate. Professionals also need clear intake information to assess prospective client matters.
 
 SabiRight bridges this divide through an integrated **Dual-Engine Model**:
-1. **Civic Intellect Engine:** Delivers immediate, de-escalating, zero-hallucination legal guidance backed by codified national statutes (such as the 1999 Constitution of Nigeria, the Police Act 2020, and tenancy laws).
-2. **Professional Proximity Directory:** Connects users directly to certified local professionals with pre-synthesized **Pre-Case Files (Intake Briefs)**, eliminating initial discovery overhead and accelerating access to justice.
+1. **Civic Information Tools:** Uses configured AI services to answer civic and legal questions. Responses may be incomplete or incorrect; verify legal references with current authoritative sources and qualified counsel.
+2. **Professional Directory:** Provides professional discovery and case-intake tools. Users should independently confirm each practitioner's credentials, availability, and suitability.
 
-All platform features are synchronized across **Web (React/Vite)**, **Native Mobile (Expo/React Native)**, **WhatsApp (Meta Cloud API / Twilio)**, and **Telegram (Bot API)** via a single unified backend.
+The web, mobile, WhatsApp, and Telegram experiences use shared backend services, but feature availability varies by channel. Users can link supported messaging identities to their primary account to share account-level data; this does not imply that every channel has identical features or a single shared conversation transcript.
 
 ---
 
 ## 🚀 Key Enterprise Features
 
-- **Omnichannel Access:** Instant parity across Web browser, iOS & Android native apps, WhatsApp, and Telegram.
-- **Administrative Statutory MOAT:** Custom statutory knowledge base curated by legal administrators and injected dynamically into AI context for absolute grounding.
+- **Omnichannel Access:** Web browser, iOS and Android apps, and configured WhatsApp/Telegram bots; availability and feature parity vary by channel.
+- **Administrative Legal References:** Administrators can manage legal reference material used by AI features. Generated responses are not guaranteed to be complete or accurate and should be independently checked.
 - **Multi-Provider AI Fallback:** Seamless routing across Google Gemini 2.0 Flash, Groq (Llama 3), OpenAI (GPT-4o), Anthropic (Claude 3.5 Sonnet), DeepSeek, OpenRouter, Perplexity, and Mistral.
 - **Automated Pre-Case File Generation:** Synthesizes multi-turn conversations into formatted 5-section legal intake documents with citation tracking and urgency scores.
 - **Dynamic Multi-Gateway Payments:** Supports Flutterwave Standard (primary), Bachs multi-currency checkout (cryptocurrency & fiat), Paystack, and Manual Bank Transfers with receipt verification.
 - **Unified Credit & Allowance System:** Daily renewal quotas, monthly plan allowances, pay-as-you-go credit packages, and full audit logging (`credit_logs`).
-- **Real-Time Consultation Chat:** Private, encrypted in-app consultation rooms for citizens and verified service providers.
-- **Emergency De-Escalation Protocols:** Step-by-step physical encounter guides (e.g., police stops, landlord lockouts) to prevent conflict escalation.
-- **Crowdsourced Civic Alerts:** Community-driven traffic, road safety, checkpoint, and civil unrest monitoring with upvoting and severity verification.
-- **Cross-Platform Identity Sync:** 6-digit channel link codes allow users on WhatsApp and Telegram to connect their chat identities to their primary web and mobile accounts.
+- **Consultation Chat:** In-app consultation rooms for citizens and service providers.
+- **De-Escalation Guidance:** Information intended to support calm responses to physical encounters; it cannot guarantee an outcome or replace professional help.
+- **Civic Alerts and Route Information:** Community and traffic information may be incomplete, delayed, or AI-estimated; treat it as unverified unless explicitly confirmed.
+- **Cross-Platform Account Linking:** An expiring alphanumeric link code connects a WhatsApp or Telegram identity to a primary account. Shared account data and capabilities vary by feature.
 
 ---
 
@@ -132,19 +132,19 @@ All platform features are synchronized across **Web (React/Vite)**, **Native Mob
 
 ### 1. Civic Guidance Engine & Statutory MOAT
 
-The AI Civic Engine answers user queries with legally accurate, verified information. Hallucinations are actively prevented through a multi-tier defense:
+The AI Civic Engine can use configured legal reference material and provider prompts to support civic and legal answers. These measures do not verify every response or prevent all hallucinations; users should check citations against current authoritative sources and consult qualified counsel.
 
 1. **Statutory MOAT Grounding (`moat_data`):**
    - Managed directly by administrators in the Super Admin Dashboard.
    - Incoming prompts are analyzed by `getRelevantMoatContext(userPrompt)` in `server/aiService.ts`.
-   - Matching statutory articles (Nigerian Constitution, Police Act, Tenancy Laws, Labour Acts) are selected and prepended as an authoritative `[ADMINISTRATIVE STATUTORY MOAT]` context block.
+   - Up to four entries matching prompt keywords are prepended as admin-managed reference material. The application does not independently verify their accuracy, and unrelated entries are not substituted when there are no matches.
 2. **Provider-Agnostic AI Adapter:**
    - Automatically prioritizes the admin's active provider (`ai_provider` setting).
    - Compatible with Google Gemini (`gemini-2.0-flash`), OpenAI (`gpt-4o`), Anthropic (`claude-3-5-sonnet`), Groq (`llama3-70b-8192`), DeepSeek, OpenRouter, Perplexity, and Mistral.
-3. **Mandatory Citation Policy:**
-   - AI responses must cite explicit legal provisions (e.g., *Section 35(1) Constitution of the Federal Republic of Nigeria 1999*, *Section 32 Police Act 2020*).
+3. **Citation Instructions:**
+   - Legal prompts direct the configured provider to cite a provision only when source material supports it, and to state uncertainty otherwise. This instruction does not verify generated answers.
 4. **De-Escalation & Urgent Mode:**
-   - When encountering hostile situations (e.g., checkpoint interrogations), the AI provides non-confrontational, actionable steps to safeguard life and liberty.
+   - When configured, the AI may offer non-confrontational suggestions for difficult situations. These suggestions cannot guarantee safety or replace emergency services or legal advice.
 
 ### 2. Pre-Case File & Diagnostic Intake Synthesis
 
@@ -174,13 +174,13 @@ When a user's inquiry requires formal representation, the system generates a sta
 ```
 
 - **Implementation:** `summarizeCaseForProfessional(chatHistory, userId)` in `server/agent/legalAgent.ts`.
-- **Resilience:** Attempts direct high-speed Gemini processing first, falling back to `generateAIResponse()` on any provider failure.
+- **Resilience:** Attempts configured processing and may fall back to `generateAIResponse()` when a provider fails.
 
-### 3. Verified Professional Marketplace & Proximity Matching
+### 3. Professional Marketplace & Proximity Matching
 
-Citizens can search and book certified practitioners:
-- **Categories:** Legal Advocates / Lawyers, Real Estate Agents, Certified Accountants, Immigration & Visa Consultants.
-- **Verification Workflow:** Professionals submit credentials, license numbers, and jurisdiction details via `vendor_applications`. Once verified by an admin, their profiles display the blue verified badge.
+Citizens can search and book practitioners listed on the platform:
+- **Categories:** Legal Advocates / Lawyers, Real Estate Agents, Accountants, Immigration & Visa Consultants.
+- **Review Workflow:** Professionals can submit credentials, license numbers, and jurisdiction details via `vendor_applications`. An administrator may approve an application; users should independently confirm credentials and availability.
 - **Proximity Filtering:** Matches practitioners based on geographical coordinates, city, and state.
 - **Direct Intake Dispatch:** The pre-case file is attached directly to the booking request, allowing professionals to review the full facts before accepting consultations.
 
@@ -237,17 +237,19 @@ The Super Admin Dashboard (`client/src/pages/admin/AdminDashboard.tsx`) provides
 Citizens can interact with SabiRight directly on messaging platforms:
 
 ### Channel Link Logic
-1. A citizen opens **Settings $\rightarrow$ Linked Channels** on the Web or Mobile app and clicks **"Generate 6-Digit Link Code"**.
-2. The user sends `/link 123456` in the WhatsApp or Telegram chat.
+1. A citizen opens **Settings → Linked Channels** on the Web app and clicks **"Generate Link Code"**.
+2. The user sends `/link <code>` in the WhatsApp or Telegram chat within 10 minutes.
 3. The bot controller links the channel profile (`wa_...` or `tg_...`) to their registered account.
 4. From that moment, credit balances, plan tiers, and active bookings are shared across all devices.
+
+The admin bot-link fields configure the public landing-page destinations only; they do not configure provider credentials or activate webhooks. WhatsApp links accept Nigerian local/international numbers or HTTPS links on supported WhatsApp hosts. Telegram links must point to a bot username on `t.me` or `telegram.me`. Leaving a public link blank hides that channel's landing-page buttons.
 
 ### In-Bot Monetization & Billing
 When a bot user runs out of credits or wishes to top up:
 - The bot detects zero balance and presents quick-action buttons.
 - The user can type `/topup` or `/packages` to view available packages.
 - Typing `/buy <packageId>` or `/subscribe <planId>` generates a secure hosted checkout link using the primary active payment gateway (Flutterwave $\rightarrow$ Bachs $\rightarrow$ Paystack).
-- Upon completing payment, the webhook credits their account immediately, and the bot resumes the conversation.
+- After a payment provider confirms a successful transaction through its webhook, the account is credited and the bot can continue.
 
 ---
 
@@ -263,7 +265,7 @@ Located in `mobile/`, the native application provides:
 - **Native Screens:**
   - `(tabs)/index.tsx`: Emergency Quick Dial, Recent Incidents, Balance Snapshot.
   - `(tabs)/civic.tsx`: Real-time legal consultation with audio/text input.
-  - `(tabs)/marketplace.tsx`: Location-based directory of verified advocates.
+  - `(tabs)/marketplace.tsx`: Location-based professional directory.
   - `(tabs)/traffic.tsx`: Incident feed with one-tap report submission.
   - `(tabs)/profile.tsx`: Channel link code management and theme preferences.
   - `bookings.tsx` & `booking/[id].tsx`: Native Consultation Rooms.
@@ -455,8 +457,9 @@ Set `EXPO_PUBLIC_EAS_PROJECT_ID` to the EAS project UUID linked to the app to en
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/profile` | Fetches authenticated user profile & roles |
-| `POST` | `/api/channel-links/code` | Generates 6-digit code for WhatsApp/Telegram linking |
-| `POST` | `/api/channel-links/verify`| Verifies 6-digit code and links channel account |
+| `POST` | `/api/channels/link-code` | Generates an 8-character alphanumeric code for WhatsApp/Telegram linking |
+| `GET` | `/api/channels/links` | Lists linked messaging identities |
+| `DELETE` | `/api/channels/links/:channel` | Unlinks a messaging identity |
 
 ### Civic Guidance & MOAT
 | Method | Endpoint | Description |
@@ -486,7 +489,7 @@ Set `EXPO_PUBLIC_EAS_PROJECT_ID` to the EAS project UUID linked to the app to en
 ### Marketplace & Consultations
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/professionals` | Lists verified practitioners with category and proximity filters |
+| `GET` | `/api/professionals` | Lists platform-approved practitioner profiles with category and proximity filters |
 | `POST` | `/api/bookings` | Creates a direct booking and attaches pre-case file |
 | `GET` | `/api/bookings/:id/messages` | Consultation room chat history |
 | `POST` | `/api/bookings/:id/messages` | Sends a message in the consultation room |
@@ -501,7 +504,7 @@ When messaging SabiRight via **WhatsApp** or **Telegram**:
 |---|---|---|
 | `/start` | None | Welcomes user, introduces SabiRight civic capabilities |
 | `/help` | None | Displays full command list and support instructions |
-| `/link` | `<code>` | Links the chat session to a web/mobile user account via 6-digit code |
+| `/link` | `<code>` | Links the messaging identity to a web/mobile account with an unexpired code |
 | `/balance` | None | Shows current credit balance, plan tier, and top-up quick actions |
 | `/topup` or `/packages`| None | Lists all available credit top-up packages with prices |
 | `/buy` | `<pkgId>` | Generates an instant hosted payment link for the selected package |

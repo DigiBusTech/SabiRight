@@ -337,7 +337,7 @@ export default function CivicGuard() {
 
     const doc = new jsPDF();
     doc.setFontSize(18);
-    doc.text("SabiRight Pre-Vetted Case File", 14, 22);
+    doc.text("SabiRight Conversation Transcript", 14, 22);
     doc.setFontSize(11);
     doc.setTextColor(100);
 
@@ -366,7 +366,7 @@ export default function CivicGuard() {
     doc.save(`SabiRight_CaseFile_${id}.pdf`);
     toast({ 
       title: "SUCCESSFUL", 
-      description: "Pre-vetted case file downloaded.", 
+      description: "Conversation transcript downloaded.",
       className: "bg-green-600 text-white border-none shadow-2xl rounded-2xl p-6 font-bold" 
     });
   };

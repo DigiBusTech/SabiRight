@@ -67,11 +67,11 @@ export const legalFaqTool = new FunctionTool({
 });
 
 /**
- * Tool for searching SabiRight\'s proprietary/verified civic legal data (MOAT).
+ * Tool for searching administrator-managed civic and legal reference entries.
  */
 export const moatDataTool = new FunctionTool({
   name: 'search_verified_legal_data',
-  description: 'Search verified civic legal data, including constitutional provisions and the Police Act. Use this for highly accurate, law-based guidance.',
+  description: 'Search administrator-managed civic and legal reference entries, including material about Nigerian statutes. Entries may be incomplete or unverified; cite only details explicitly supported by the returned entry.',
   parameters: z.object({
     query: z.string().describe('The specific legal provision or civic scenario to search for.'),
     category: z.string().optional().describe('Optional category like "Constitution" or "Police Act".'),
@@ -89,7 +89,7 @@ export const moatDataTool = new FunctionTool({
     if (results.length === 0) {
       return { 
         status: 'no_results', 
-        message: `No verified legal data found in our MOAT for "${query}". Ensure the response reflects that no regional law was found.` 
+        message: `No relevant admin-managed legal reference entry was found for "${query}". Do not infer that no law exists; tell the user the point could not be verified from the available material.`
       };
     }
 
@@ -99,7 +99,7 @@ export const moatDataTool = new FunctionTool({
         title: r.title,
         content: r.content,
         category: r.category,
-        citation: r.source || 'SabiRight Verified Data'
+        citation: r.source || 'Source not specified in the reference entry'
       }))
     };
   }

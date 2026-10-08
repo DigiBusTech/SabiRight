@@ -15,11 +15,9 @@ import {
   Send, 
   Globe2, 
   Smartphone, 
-  Lock, 
   CheckCircle2, 
   Bot, 
   Radio, 
-  Volume2,
   ExternalLink
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -28,40 +26,16 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { getYouTubeEmbedUrl } from "@/lib/utils";
 
-function formatWhatsAppUrl(rawUrl?: string): string {
-  if (!rawUrl || rawUrl.trim() === "") {
-    return "https://wa.me/2348000000000?text=Hello%20SabiRight";
-  }
-  const trimmed = rawUrl.trim();
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed;
-  }
-  const cleaned = trimmed.replace(/[^0-9]/g, "");
-  return `https://wa.me/${cleaned}?text=Hello%20SabiRight`;
-}
-
-function formatTelegramUrl(rawUrl?: string): string {
-  if (!rawUrl || rawUrl.trim() === "") {
-    return "https://t.me/SabiRightBot";
-  }
-  const trimmed = rawUrl.trim();
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed;
-  }
-  const cleaned = trimmed.replace(/^@/, "");
-  return `https://t.me/${cleaned}`;
-}
-
 export default function Home() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [activeChannelTab, setActiveChannelTab] = useState<'whatsapp' | 'telegram' | 'web'>('whatsapp');
 
-  const { data: settings = {} } = useQuery<any>({
+  const { data: settings = {}, isError: settingsFailed } = useQuery<Record<string, string | undefined>>({
     queryKey: ['/api/settings/public'],
     queryFn: async () => {
       const res = await fetch('/api/settings/public');
-      if (!res.ok) return {};
-      return res.json();
+      if (!res.ok) throw new Error('Unable to load public settings');
+      return res.json() as Promise<Record<string, string | undefined>>;
     },
     staleTime: 10000,
     refetchOnWindowFocus: false
@@ -70,39 +44,33 @@ export default function Home() {
   const getSetting = (key: string) => settings[key];
   const videoDemoUrl = getYouTubeEmbedUrl(getSetting('video_demo_url'));
 
-  const whatsAppUrl = formatWhatsAppUrl(getSetting('whatsapp_bot_url'));
-  const telegramUrl = formatTelegramUrl(getSetting('telegram_bot_url'));
+  const whatsAppUrl = getSetting('whatsapp_bot_url');
+  const telegramUrl = getSetting('telegram_bot_url');
 
   const channelDemos = {
     whatsapp: {
       title: "WhatsApp Bot Agent",
-      badge: "WhatsApp Cloud API",
-      color: "emerald",
-      userMsg: "Officer say make I unlock my phone for checkpoint. Wetin the law talk?",
-      botLang: "Nigerian Pidgin / English",
-      botResponse: "Under Section 37 of the 1999 Constitution (Right to Privacy) and Police Act 2020 Section 38, an officer CANNOT search your phone without a valid warrant issued by a court, or specific reasonable suspicion of an indictable offense. Speak respectfully: 'Officer, my phone contains private communications protected under the law.'",
+      userMsg: "What should I know if I have a legal question?",
+      botLang: "Illustrative sample",
+      botResponse: "This is a static example, not a live AI response. AI-generated legal information may be incomplete or wrong. Check any cited law and consult a qualified lawyer about your situation.",
       actionText: "Chat on WhatsApp",
       actionUrl: whatsAppUrl,
       isExternal: true
     },
     telegram: {
       title: "Telegram Bot Agent",
-      badge: "Telegram Bot API",
-      color: "sky",
-      userMsg: "/rights checkpoint extortion & illegal search",
-      botLang: "Instant Command Line",
-      botResponse: "Statutory Shield Activated: 1999 CFRN s.35 (Personal Liberty), Police Act 2020 s.49-54 (Bail is Free). If detention exceeds 24-48 hours, detention is unconstitutional. Tap [Nearby NBA Advocate] below to alert verified pro-bono lawyers within 2.5km.",
+      userMsg: "/rights",
+      botLang: "Illustrative sample",
+      botResponse: "This is a static example, not a live AI response. AI-generated legal information may be incomplete or wrong. Check any cited law and consult a qualified lawyer about your situation.",
       actionText: "Chat on Telegram",
       actionUrl: telegramUrl,
       isExternal: true
     },
     web: {
       title: "SabiRight Web Platform",
-      badge: "Sovereign N-ATLAS Core",
-      color: "blue",
-      userMsg: "Mo fẹ mọ awọn ẹtọ mi nigbati wọn ba mu mi ni ilodi si.",
-      botLang: "Yorùbá / Sovereign AI",
-      botResponse: "Labẹ abala 35 ti Ofin Orilẹ-ede 1999, o ni ẹtọ si ominira rẹ. O ni ẹtọ lati dakẹ titi ti agbẹjọro rẹ yoo fi de. Ti wọn ba mu ọ, wọn gbọdọ fi ẹsun kan ọ laarin wakati 24 tabi 48.",
+      userMsg: "How can I explore civic and legal information?",
+      botLang: "Illustrative sample",
+      botResponse: "This is a static example, not a live AI response. AI-generated legal information may be incomplete or wrong. Check any cited law and consult a qualified lawyer about your situation.",
       actionText: "Launch Web App",
       actionUrl: "/app",
       isExternal: false
@@ -129,28 +97,28 @@ export default function Home() {
               transition={{ duration: 0.6 }}
               className="lg:col-span-7 space-y-6 text-left"
             >
-              {/* Sovereign Innovation Pill */}
+              {/* Platform summary */}
               <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-emerald-500/30 text-xs font-semibold text-emerald-400 shadow-lg shadow-emerald-500/10 backdrop-blur-md">
                 <span className="flex h-2 w-2 relative">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
-                <span>🇳🇬 Sovereign N-ATLAS AI Core</span>
+                <span>🇳🇬 AI-assisted civic information</span>
                 <span className="text-slate-600">•</span>
-                <span className="text-slate-300 font-normal">Omnichannel WhatsApp & Telegram</span>
+                <span className="text-slate-300 font-normal">Web and configured chat channels</span>
               </div>
 
               {/* Punchy Hero Headline */}
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white leading-[1.08]">
-                Sovereign AI Legal Shield <br className="hidden sm:inline" />
+                Civic and Legal Information <br className="hidden sm:inline" />
                 <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-sky-400 bg-clip-text text-transparent">
-                  for Every Nigerian.
+                  with AI assistance.
                 </span>
               </h1>
 
               {/* Concise Subtitle */}
               <p className="text-base sm:text-lg text-slate-300 max-w-xl leading-relaxed font-normal">
-                Instant statutory legal first-aid in <span className="text-white font-medium">Pidgin, Yoruba, Hausa, Igbo & English</span>. Grounded in the 1999 Constitution, accessible 24/7 on WhatsApp, Telegram, or Web.
+                Explore civic and legal information on the web, or use a chat bot when its link is configured. Language support depends on the active model. AI responses can be incomplete or wrong; verify legal information with reliable sources or a qualified lawyer.
               </p>
 
               {/* Bot Launch Buttons Grid */}
@@ -164,51 +132,56 @@ export default function Home() {
                   </Button>
                 </Link>
 
-                {/* WhatsApp Bot Direct Link */}
-                <a 
-                  href={whatsAppUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="inline-flex"
-                >
-                  <Button 
-                    variant="outline" 
-                    className="h-12 px-5 rounded-xl border-emerald-500/40 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 hover:text-emerald-200 font-bold text-sm backdrop-blur-md transition-all flex items-center gap-2"
+                {whatsAppUrl && (
+                  <a
+                    href={whatsAppUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex"
                   >
-                    <MessageSquare className="h-4 w-4 text-emerald-400" />
-                    <span>Chat on WhatsApp</span>
-                    <ArrowUpRight className="h-3.5 w-3.5 text-emerald-400" />
-                  </Button>
-                </a>
+                    <Button
+                      variant="outline"
+                      className="h-12 px-5 rounded-xl border-emerald-500/40 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 hover:text-emerald-200 font-bold text-sm backdrop-blur-md transition-all flex items-center gap-2"
+                    >
+                      <MessageSquare className="h-4 w-4 text-emerald-400" />
+                      <span>Chat on WhatsApp</span>
+                      <ArrowUpRight className="h-3.5 w-3.5 text-emerald-400" />
+                    </Button>
+                  </a>
+                )}
 
-                {/* Telegram Bot Direct Link */}
-                <a 
-                  href={telegramUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="inline-flex"
-                >
-                  <Button 
-                    variant="outline" 
-                    className="h-12 px-5 rounded-xl border-sky-500/40 bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 hover:text-sky-200 font-bold text-sm backdrop-blur-md transition-all flex items-center gap-2"
+                {telegramUrl && (
+                  <a
+                    href={telegramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex"
                   >
-                    <Send className="h-4 w-4 text-sky-400" />
-                    <span>Chat on Telegram</span>
-                    <ArrowUpRight className="h-3.5 w-3.5 text-sky-400" />
-                  </Button>
-                </a>
+                    <Button
+                      variant="outline"
+                      className="h-12 px-5 rounded-xl border-sky-500/40 bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 hover:text-sky-200 font-bold text-sm backdrop-blur-md transition-all flex items-center gap-2"
+                    >
+                      <Send className="h-4 w-4 text-sky-400" />
+                      <span>Chat on Telegram</span>
+                      <ArrowUpRight className="h-3.5 w-3.5 text-sky-400" />
+                    </Button>
+                  </a>
+                )}
               </div>
 
-              {/* Trust Badges Bar */}
+              {settingsFailed && (
+                <p role="status" className="text-xs text-amber-300">
+                  Chat links are temporarily unavailable. Please use the web app.
+                </p>
+              )}
+
+              {/* Legal information disclaimer */}
               <div className="pt-4 flex flex-wrap items-center gap-6 text-xs text-slate-400 font-medium">
                 <span className="flex items-center gap-1.5 text-slate-300">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" /> 1999 CFRN & Police Act 2020
+                  <Scale className="h-4 w-4 text-emerald-400" /> Information only, not legal advice
                 </span>
                 <span className="flex items-center gap-1.5 text-slate-300">
-                  <ShieldCheck className="h-4 w-4 text-sky-400" /> NDPC Privacy Compliant
-                </span>
-                <span className="flex items-center gap-1.5 text-slate-300">
-                  <Lock className="h-4 w-4 text-amber-400" /> Zero Panic Street De-escalation
+                  <ShieldCheck className="h-4 w-4 text-sky-400" /> Verify important claims and citations
                 </span>
               </div>
             </motion.div>
@@ -226,6 +199,7 @@ export default function Home() {
                   <div className="flex items-center gap-1 w-full">
                     <button
                       onClick={() => setActiveChannelTab('whatsapp')}
+                      aria-pressed={activeChannelTab === 'whatsapp'}
                       className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                         activeChannelTab === 'whatsapp'
                           ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
@@ -238,6 +212,7 @@ export default function Home() {
 
                     <button
                       onClick={() => setActiveChannelTab('telegram')}
+                      aria-pressed={activeChannelTab === 'telegram'}
                       className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                         activeChannelTab === 'telegram'
                           ? 'bg-sky-600/20 text-sky-300 border border-sky-500/40 shadow-xs'
@@ -250,6 +225,7 @@ export default function Home() {
 
                     <button
                       onClick={() => setActiveChannelTab('web')}
+                      aria-pressed={activeChannelTab === 'web'}
                       className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                         activeChannelTab === 'web'
                           ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40 shadow-xs'
@@ -262,17 +238,17 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Simulated Conversation Feed */}
+                {/* Illustrative, non-live conversation sample */}
                 <div className="bg-slate-950/90 p-5 space-y-4 rounded-b-xl min-h-[350px] flex flex-col justify-between">
                   <div className="space-y-4">
-                    {/* Header bar of simulated chat */}
+                    {/* Header bar of illustrative sample */}
                     <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 text-[11px]">
                       <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <div className="h-2 w-2 rounded-full bg-slate-400" />
                         <span className="font-bold text-slate-300">{channelDemos[activeChannelTab].title}</span>
                       </div>
                       <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-mono">
-                        {channelDemos[activeChannelTab].botLang}
+                        {channelDemos[activeChannelTab].botLang} · not live
                       </span>
                     </div>
 
@@ -299,8 +275,8 @@ export default function Home() {
                     >
                       <div className="bg-slate-900/95 border border-emerald-500/30 text-slate-200 text-xs p-3.5 rounded-2xl rounded-tl-xs max-w-[95%] space-y-2 shadow-lg shadow-black/40">
                         <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400">
-                          <ShieldCheck className="h-3 w-3" />
-                          <span>SabiRight Sovereign Engine</span>
+                          <Bot className="h-3 w-3" />
+                          <span>Illustrative sample response</span>
                         </div>
                         <p className="text-slate-300 leading-relaxed text-[11px]">
                           {channelDemos[activeChannelTab].botResponse}
@@ -311,7 +287,7 @@ export default function Home() {
 
                   {/* Dynamic Launch CTA Inside Preview */}
                   <div className="pt-2 border-t border-slate-900">
-                    {channelDemos[activeChannelTab].isExternal ? (
+                    {channelDemos[activeChannelTab].isExternal && channelDemos[activeChannelTab].actionUrl ? (
                       <a 
                         href={channelDemos[activeChannelTab].actionUrl} 
                         target="_blank" 
@@ -329,6 +305,10 @@ export default function Home() {
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Button>
                       </a>
+                    ) : channelDemos[activeChannelTab].isExternal ? (
+                      <p role="status" className="py-3 text-center text-xs text-slate-400">
+                        This bot link is not configured yet.
+                      </p>
                     ) : (
                       <Link href="/app" className="w-full block">
                         <Button className="w-full h-10 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2">
@@ -354,7 +334,7 @@ export default function Home() {
               Omnichannel Access Layer
             </h2>
             <p className="text-lg font-bold text-white mt-1">
-              Choose your preferred channel to get immediate legal first-aid.
+              Open the web app or use a configured chat channel.
             </p>
           </div>
 
@@ -367,24 +347,30 @@ export default function Home() {
                 </div>
                 <h3 className="text-base font-bold text-white flex items-center justify-between">
                   <span>WhatsApp Bot Agent</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Official Cloud API</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    {whatsAppUrl ? "Link configured" : "Unavailable"}
+                  </span>
                 </h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Send text or voice notes directly inside WhatsApp. Get instant de-escalation scripts, constitutional citations, and emergency contacts.
+                  Use the WhatsApp bot link when one is configured. AI responses may be incomplete or wrong; verify important legal information.
                 </p>
               </div>
               <div className="pt-5">
-                <a 
-                  href={whatsAppUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="block"
-                >
-                  <Button className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5">
-                    <span>Chat on WhatsApp</span>
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </Button>
-                </a>
+                {whatsAppUrl ? (
+                  <a
+                    href={whatsAppUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block"
+                  >
+                    <Button className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5">
+                      <span>Chat on WhatsApp</span>
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </a>
+                ) : (
+                  <p className="text-center text-xs text-slate-500">WhatsApp access is not configured.</p>
+                )}
               </div>
             </div>
 
@@ -396,24 +382,30 @@ export default function Home() {
                 </div>
                 <h3 className="text-base font-bold text-white flex items-center justify-between">
                   <span>Telegram Bot Agent</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">Ultra Fast</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                    {telegramUrl ? "Link configured" : "Unavailable"}
+                  </span>
                 </h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Zero setup required. Use quick commands (<code className="text-sky-300">/rights</code>, <code className="text-sky-300">/emergency</code>) to verify police protocol and request assistance in seconds.
+                  Use the Telegram bot link when one is configured. AI responses may be incomplete or wrong; verify important legal information.
                 </p>
               </div>
               <div className="pt-5">
-                <a 
-                  href={telegramUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="block"
-                >
-                  <Button className="w-full h-10 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1.5">
-                    <span>Chat on Telegram</span>
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </Button>
-                </a>
+                {telegramUrl ? (
+                  <a
+                    href={telegramUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block"
+                  >
+                    <Button className="w-full h-10 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1.5">
+                      <span>Chat on Telegram</span>
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </a>
+                ) : (
+                  <p className="text-center text-xs text-slate-500">Telegram access is not configured.</p>
+                )}
               </div>
             </div>
 
@@ -425,10 +417,10 @@ export default function Home() {
                 </div>
                 <h3 className="text-base font-bold text-white flex items-center justify-between">
                   <span>Web App & PWA</span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Full Suite</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Web access</span>
                 </h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  Interactive legal workspace with real-time GPS lawyer proximity matching, offline constitution reader, and SabiMove route cloaking.
+                  Explore the available civic tools. Features and location-based results depend on configuration, permissions, and local availability.
                 </p>
               </div>
               <div className="pt-5">
@@ -444,22 +436,22 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Structured Bento Grid: 4 Core Software Solutions */}
+      {/* Structured overview of available tools */}
       <section className="py-24 max-w-7xl mx-auto px-6">
         <div className="text-center max-w-2xl mx-auto mb-16">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 mb-3">
-            <Sparkles className="h-3.5 w-3.5 text-emerald-400" /> Complete System Architecture
+            <Sparkles className="h-3.5 w-3.5 text-emerald-400" /> SabiRight tools
           </div>
           <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
-            Enterprise Civic Technology Built for Reality.
+            Civic tools, with clear limitations.
           </h2>
           <p className="text-slate-400 text-sm sm:text-base mt-2">
-            No endless paragraphs. Four robust engineering pillars powering justice across Nigeria.
+            Explore the available tools and check important information with qualified sources.
           </p>
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {/* Pillar 1: N-ATLAS Sovereign LLM */}
+          {/* Pillar 1: AI assistance */}
           <motion.div 
             whileHover={{ y: -4 }}
             transition={{ duration: 0.2 }}
@@ -469,17 +461,17 @@ export default function Home() {
               <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
                 <Radio className="h-5 w-5" />
               </div>
-              <h3 className="text-base font-bold text-white">Sovereign N-ATLAS LLM</h3>
+              <h3 className="text-base font-bold text-white">AI-assisted information</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Fine-tuned from <code className="text-emerald-300 font-mono">NCAIR1/N-ATLaS</code> 8B. Native speech recognition and conversational legal reasoning in Yoruba, Hausa, Igbo, Pidgin & English.
+                Available model providers may include N-ATLAS when configured. Language support and response quality depend on the active model and may vary.
               </p>
             </div>
             <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center gap-2 text-[11px] text-emerald-400 font-semibold">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Speech & Local Dialects
+              <CheckCircle2 className="h-3.5 w-3.5" /> Verify important translations
             </div>
           </motion.div>
 
-          {/* Pillar 2: Statutory MOAT Grounding */}
+          {/* Pillar 2: Legal information */}
           <motion.div 
             whileHover={{ y: -4 }}
             transition={{ duration: 0.2 }}
@@ -489,17 +481,17 @@ export default function Home() {
               <div className="h-10 w-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
                 <Scale className="h-5 w-5" />
               </div>
-              <h3 className="text-base font-bold text-white">Statutory Legal MOAT</h3>
+              <h3 className="text-base font-bold text-white">Legal information</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Every response is strictly verified against the 1999 Constitution (as amended), Police Act 2020, and ACJA 2015. Zero AI hallucinations in critical moments.
+                AI-generated responses may include legal references, but they can be incomplete or incorrect. Check citations against current authoritative sources and seek qualified advice.
               </p>
             </div>
             <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center gap-2 text-[11px] text-sky-400 font-semibold">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Exact Statute Grounding
+              <CheckCircle2 className="h-3.5 w-3.5" /> Not a substitute for a lawyer
             </div>
           </motion.div>
 
-          {/* Pillar 3: Verified Lawyer Network */}
+          {/* Pillar 3: Legal referrals */}
           <motion.div 
             whileHover={{ y: -4 }}
             transition={{ duration: 0.2 }}
@@ -509,17 +501,17 @@ export default function Home() {
               <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
                 <ShieldCheck className="h-5 w-5" />
               </div>
-              <h3 className="text-base font-bold text-white">Verified Legal Network</h3>
+              <h3 className="text-base font-bold text-white">Legal help and referrals</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Instant proximity matching with accredited Nigerian Bar Association (NBA) attorneys and paralegals when encounters require physical intervention or bail.
+                The app may offer lawyer-contact or referral features where available. Confirm each practitioner's credentials, availability, and suitability directly.
               </p>
             </div>
             <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center gap-2 text-[11px] text-amber-400 font-semibold">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Proximity Geolocation
+              <CheckCircle2 className="h-3.5 w-3.5" /> Availability varies by location
             </div>
           </motion.div>
 
-          {/* Pillar 4: SabiMove Civic Shield */}
+          {/* Pillar 4: Route information */}
           <motion.div 
             whileHover={{ y: -4 }}
             transition={{ duration: 0.2 }}
@@ -529,41 +521,33 @@ export default function Home() {
               <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
                 <MapPin className="h-5 w-5" />
               </div>
-              <h3 className="text-base font-bold text-white">SabiMove Route Shield</h3>
+              <h3 className="text-base font-bold text-white">SabiMove route information</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Real-time civic alerts, community checkpoint reporting, and cloaked safe passage routing to keep citizens out of extortion hotspots.
+                Route updates may use available traffic data and AI-generated estimates. They are not verified checkpoint reports and cannot guarantee a safe route.
               </p>
             </div>
             <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center gap-2 text-[11px] text-purple-400 font-semibold">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Live Checkpoint Alerts
+              <CheckCircle2 className="h-3.5 w-3.5" /> Estimates may be incomplete
             </div>
           </motion.div>
         </div>
       </section>
 
-      {/* High-Impact Numerical Metrics Banner */}
+      {/* Set clear expectations for AI and channel availability */}
       <section className="py-14 bg-slate-900/80 border-y border-slate-800/80">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+          <div className="grid md:grid-cols-3 gap-8 text-center">
             <div className="space-y-1">
-              <div className="text-3xl sm:text-4xl font-black text-emerald-400">&lt;500ms</div>
-              <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">De-escalation Latency</div>
-              <div className="text-[11px] text-slate-500">Real-time edge responses</div>
+              <div className="text-lg font-black text-emerald-400">AI responses can be wrong</div>
+              <div className="text-xs text-slate-400">Check citations and important guidance against reliable sources.</div>
             </div>
             <div className="space-y-1">
-              <div className="text-3xl sm:text-4xl font-black text-sky-400">5 Dialects</div>
-              <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">Multilingual Core</div>
-              <div className="text-[11px] text-slate-500">Pidgin, Yoruba, Hausa, Igbo, Eng</div>
+              <div className="text-lg font-black text-sky-400">Chat bots are configuration-dependent</div>
+              <div className="text-xs text-slate-400">WhatsApp and Telegram links appear only when configured.</div>
             </div>
             <div className="space-y-1">
-              <div className="text-3xl sm:text-4xl font-black text-purple-400">100%</div>
-              <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">Statutory Grounded</div>
-              <div className="text-[11px] text-slate-500">1999 CFRN & Police Act 2020</div>
-            </div>
-            <div className="space-y-1">
-              <div className="text-3xl sm:text-4xl font-black text-amber-400">3 Channels</div>
-              <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">Omnichannel Sync</div>
-              <div className="text-[11px] text-slate-500">WhatsApp, Telegram & Web</div>
+              <div className="text-lg font-black text-purple-400">Use care with sensitive information</div>
+              <div className="text-xs text-slate-400">Review the Privacy Policy before sharing personal or location data.</div>
             </div>
           </div>
         </div>
@@ -574,7 +558,7 @@ export default function Home() {
         <section className="py-20 max-w-5xl mx-auto px-6">
           <div className="text-center mb-10">
             <h2 className="text-2xl sm:text-3xl font-black text-white">System in Action</h2>
-            <p className="text-xs text-slate-400 mt-1">Live walkthrough of SabiRight de-escalation engine</p>
+            <p className="text-xs text-slate-400 mt-1">Product walkthrough; features depend on configuration and availability</p>
           </div>
           <div className="aspect-video w-full rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-black">
             <iframe 
@@ -592,26 +576,26 @@ export default function Home() {
       <section id="faq" className="py-20 max-w-3xl mx-auto px-6">
         <div className="text-center mb-10">
           <h2 className="text-2xl sm:text-3xl font-black text-white">Frequently Asked Questions</h2>
-          <p className="text-xs text-slate-400 mt-1">Key information about access, security, and statutory accuracy.</p>
+          <p className="text-xs text-slate-400 mt-1">Important information about AI responses and service availability.</p>
         </div>
 
         <div className="space-y-3">
           {[
             {
-              question: "How do the WhatsApp and Telegram bot agents work?",
-              answer: "You can message our verified WhatsApp or Telegram bot directly without installing any heavy app. Ask legal questions in English, Pidgin, Yoruba, Hausa, or Igbo, or send voice notes. The bot returns exact legal sections and de-escalation scripts within seconds."
+              question: "Are the channel previews live bot conversations?",
+              answer: "No. The landing-page conversation is a static illustration. WhatsApp and Telegram access is shown only when an administrator has configured a valid link; availability also depends on the provider and bot service."
             },
             {
-              question: "How does SabiRight prevent AI hallucinations?",
-              answer: "SabiRight employs strict Retrieval-Augmented statutory grounding. All legal responses are constrained against Nigeria's 1999 Constitution, the Police Act 2020, and the Administration of Criminal Justice Act (ACJA), complete with exact section citations."
+              question: "Can AI legal information be wrong?",
+              answer: "Yes. AI responses can be incomplete, outdated, or incorrect, including legal references. Verify citations with current authoritative sources and consult a qualified Nigerian lawyer for advice about your circumstances."
             },
             {
-              question: "Can I connect to a real, licensed lawyer during an incident?",
-              answer: "Yes. In both the Web App and bots, you can trigger proximity lawyer dispatch. SabiGuard matches your location with nearby verified Nigerian Bar Association (NBA) legal practitioners for immediate call, bail representation, or mediation."
+              question: "Can the app connect me to a lawyer?",
+              answer: "Lawyer-contact or referral tools may be available in the app, depending on location and service configuration. Independently confirm a practitioner's identity, credentials, availability, and suitability. The service is not an emergency response guarantee."
             },
             {
-              question: "Is user identity and location data private?",
-              answer: "Yes. SabiRight strictly adheres to the Nigeria Data Protection Commission (NDPC) guidelines. Emergency incident logs and location coordinates are protected with enterprise-grade encryption."
+              question: "How should I handle personal or location data?",
+              answer: "Review the Privacy Policy to understand how account, message, and location data are handled. Avoid sharing sensitive details unless necessary. Location-based features may require device permission."
             }
           ].map((faq, i) => (
             <div key={i} className="rounded-xl border border-slate-800/80 bg-slate-900/60 overflow-hidden transition-all">
@@ -641,10 +625,10 @@ export default function Home() {
           <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
           
           <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight mb-3">
-            Stand Protected. Anywhere in Nigeria.
+            Explore civic information and tools.
           </h2>
           <p className="text-slate-300 text-xs sm:text-sm max-w-lg mx-auto mb-8 leading-relaxed">
-            Access statutory first-aid right now on your favourite chat app or launch our web platform.
+            Start with the web app, or open a configured chat bot. AI-generated information is not a substitute for qualified legal advice.
           </p>
 
           <div className="flex flex-wrap justify-center gap-3">
@@ -653,18 +637,18 @@ export default function Home() {
                 Launch Web App
               </Button>
             </Link>
-            <a href={whatsAppUrl} target="_blank" rel="noopener noreferrer">
+            {whatsAppUrl && <a href={whatsAppUrl} target="_blank" rel="noopener noreferrer">
               <Button className="h-11 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5">
                 <MessageSquare className="h-4 w-4" />
                 <span>Chat on WhatsApp</span>
               </Button>
-            </a>
-            <a href={telegramUrl} target="_blank" rel="noopener noreferrer">
+            </a>}
+            {telegramUrl && <a href={telegramUrl} target="_blank" rel="noopener noreferrer">
               <Button className="h-11 px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1.5">
                 <Send className="h-4 w-4" />
                 <span>Chat on Telegram</span>
               </Button>
-            </a>
+            </a>}
           </div>
         </div>
       </section>
