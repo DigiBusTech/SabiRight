@@ -18,7 +18,13 @@ import { useAuth } from '../../context/AuthContext';
 import { useCredits } from '../../hooks/useCredits';
 import { useTheme } from '../../context/ThemeContext';
 import { apiFetch } from '../../lib/api';
-import { OFFLINE_LEGAL_MOAT } from '../../lib/offlineStorage';
+import { 
+  OFFLINE_LEGAL_MOAT, 
+  getGuestOfflineCreditsRemaining, 
+  consumeGuestOfflineCredit, 
+  getCachedUserCreditsOffline, 
+  recordOfflineCreditDeduction 
+} from '../../lib/offlineStorage';
 import * as Speech from 'expo-speech';
 import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
 import ChatMarkdown from '../../components/ChatMarkdown';
@@ -278,6 +284,38 @@ export default function CivicChatScreen() {
       };
       setMessages((prev: ChatMessage[]) => [...prev, assistantMsg]);
     } catch (e: any) {
+      // Offline fallback handling with strict credit policies
+      const isGuest = !user?.id;
+      if (isGuest) {
+        const remaining = await getGuestOfflineCreditsRemaining();
+        if (remaining <= 0) {
+          setMessages((prev: ChatMessage[]) => [
+            ...prev,
+            {
+              id: `fb-${Date.now()}`,
+              role: 'assistant',
+              content: '⚠️ You have used all 10 free offline credits for this guest session.\n\nPlease connect to the internet and create an account or sign in to continue using SabiRight, or restart your session.'
+            }
+          ]);
+          return;
+        }
+        await consumeGuestOfflineCredit();
+      } else {
+        const cachedBal = await getCachedUserCreditsOffline(user.id);
+        if (cachedBal !== null && cachedBal <= 0) {
+          setMessages((prev: ChatMessage[]) => [
+            ...prev,
+            {
+              id: `fb-${Date.now()}`,
+              role: 'assistant',
+              content: '⚠️ You have exhausted your available plan credits.\n\nPlease connect online to upgrade your plan or top up your credits.'
+            }
+          ]);
+          return;
+        }
+        await recordOfflineCreditDeduction(user.id, 1);
+      }
+
       const queryLower = text.toLowerCase();
       const matched = OFFLINE_LEGAL_MOAT.find(card => 
         queryLower.includes('phone') && card.section.includes('37') ||
@@ -286,10 +324,14 @@ export default function CivicChatScreen() {
         queryLower.includes('police')
       ) || OFFLINE_LEGAL_MOAT[0];
 
+      const footerNote = isGuest
+        ? `\n\n*(Offline Mode • Free guest session • Chats not saved)*`
+        : `\n\n*(Offline Mode • 1 credit deducted • Will sync when online)*`;
+
       const fallbackMsg: ChatMessage = {
         id: `fb-${Date.now()}`,
         role: 'assistant',
-        content: `⚠️ [Offline Statutory Cache]\n\n*${matched.title} (${matched.statute} - ${matched.section})*\n\n${matched.summary}\n\n💬 What to say:\n"${matched.whatToSay}"`
+        content: `⚠️ [Offline Statutory Guidance]\n\n*${matched.title} (${matched.statute} - ${matched.section})*\n\n${matched.summary}\n\n💬 What to say:\n"${matched.whatToSay}"${footerNote}`
       };
       setMessages((prev: ChatMessage[]) => [...prev, fallbackMsg]);
     } finally {

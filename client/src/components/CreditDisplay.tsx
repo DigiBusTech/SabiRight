@@ -104,7 +104,7 @@ export function CreditDisplay({ compact = false, onClick, className }: CreditDis
             <Zap className={`h-5 w-5 ${isLow ? 'text-red-600' : 'text-blue-600'}`} />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-600 uppercase">Daily Credits</p>
+            <p className="text-xs font-bold text-slate-600 uppercase">Plan Credits</p>
             <p className="text-lg font-bold text-slate-900">
               {available} Available
             </p>
@@ -126,7 +126,7 @@ export function CreditDisplay({ compact = false, onClick, className }: CreditDis
       </div>
 
       <p className="text-xs text-slate-600 mb-3">
-        {percentageUsed}% of daily credits used • Resets in 24 hours
+        {percentageUsed}% of plan allowance used • Top up or upgrade anytime
       </p>
 
       {isLow && (

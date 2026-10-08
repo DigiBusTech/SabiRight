@@ -561,6 +561,24 @@ export async function registerRoutes(
     }
   });
 
+  // Offline sync endpoint for mobile app: applies accumulated offline deductions when back online
+  app.post("/api/credits/sync-offline", userAuth, async (req, res, next) => {
+    try {
+      const userId = (req as any).userId;
+      const { deductions } = req.body;
+      const amount = Math.max(0, parseInt(deductions, 10) || 0);
+      if (amount <= 0) {
+        const bal = await storage.getAvailableCredits(userId);
+        return res.json({ success: true, balance: bal, deducted: 0 });
+      }
+      await storage.deductCredits(userId, amount, 'offline_sync', 'Offline mobile usage sync');
+      const bal = await storage.getAvailableCredits(userId);
+      res.json({ success: true, balance: bal, deducted: amount });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Cloaked Routes
   app.get("/api/routes/:userId", userAuth, async (req, res, next) => {
     try {
@@ -2079,7 +2097,7 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
   // Admin: Create plan
   app.post("/api/admin/plans", adminAuth, async (req, res, next) => {
     try {
-      const { name, type, userType, price, credits, features, description, billingCycle } = req.body;
+      const { name, type, userType, price, credits, features, description, billingCycle, storageMb, storage_mb } = req.body;
       
       if (!name || !type) {
         return res.status(400).json({ error: 'Name and type are required' });
@@ -2091,6 +2109,7 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
         userType: userType || 'user',
         price: price || 0,
         credits: credits || 10,
+        storageMb: storageMb !== undefined ? Number(storageMb) : (storage_mb !== undefined ? Number(storage_mb) : undefined),
         features: features || [],
         description: description || '',
         billingCycle: billingCycle || 'monthly'

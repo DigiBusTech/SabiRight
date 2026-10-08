@@ -1566,7 +1566,7 @@ export default function AdminDashboard() {
   const [creditAmount, setCreditAmount] = useState("");
   const [selectedUserForPlan, setSelectedUserForPlan] = useState<string | null>(null);
   const [planToAssign, setPlanToAssign] = useState<string>("");
-  const [newPlan, setNewPlan] = useState<any>({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '', billingCycle: 'monthly', features: [] });
+  const [newPlan, setNewPlan] = useState<any>({ name: '', type: 'basic', userType: 'user', price: 0, credits: 10, description: '', billingCycle: 'monthly', features: [], storageMb: 5 });
   const [editingPlan, setEditingPlan] = useState<any>(null);
   const [editingPackage, setEditingPackage] = useState<any>(null);
   const [resolvingDispute, setResolvingDispute] = useState<any>(null);
@@ -3644,6 +3644,18 @@ export default function AdminDashboard() {
                       />
                       <p className="text-[10px] text-slate-500">Short summary of plan features</p>
                     </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Chat Storage Limit (MB)</Label>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        placeholder="5"
+                        value={newPlan.storageMb}
+                        onChange={(e) => setNewPlan({ ...newPlan, storageMb: parseFloat(e.target.value) || 1 })}
+                      />
+                      <p className="text-[10px] text-slate-500">Chat history capacity allocated in Megabytes (MB)</p>
+                    </div>
                   </div>
 
                   {/* Select Plan Features */}
@@ -3698,7 +3710,7 @@ export default function AdminDashboard() {
                         <div key={plan.id} className="p-4 border rounded-lg">
                           {editingPlan?.id === plan.id ? (
                             <div className="space-y-3">
-                              <div className="grid md:grid-cols-4 gap-3">
+                              <div className="grid md:grid-cols-5 gap-3">
                                 <Input
                                   value={editingPlan.name}
                                   onChange={(e) => setEditingPlan({ ...editingPlan, name: e.target.value })}
@@ -3715,6 +3727,14 @@ export default function AdminDashboard() {
                                   value={editingPlan.credits}
                                   onChange={(e) => setEditingPlan({ ...editingPlan, credits: parseInt(e.target.value) || 0 })}
                                   placeholder="Credits"
+                                />
+                                <Input
+                                  type="number"
+                                  step="0.5"
+                                  value={editingPlan.storageMb !== undefined ? editingPlan.storageMb : (editingPlan.storage_mb ?? (editingPlan.type === 'enterprise' ? 50 : editingPlan.type === 'pro' ? 5 : 1))}
+                                  onChange={(e) => setEditingPlan({ ...editingPlan, storageMb: parseFloat(e.target.value) || 1 })}
+                                  placeholder="Storage (MB)"
+                                  title="Chat Storage Limit in MB"
                                 />
                                 <select
                                   className="h-10 px-3 border rounded-md text-sm bg-white"
@@ -3759,6 +3779,7 @@ export default function AdminDashboard() {
                                     name: editingPlan.name,
                                     price: editingPlan.price,
                                     credits: editingPlan.credits,
+                                    storageMb: editingPlan.storageMb !== undefined ? editingPlan.storageMb : (editingPlan.storage_mb ?? (editingPlan.type === 'enterprise' ? 50 : editingPlan.type === 'pro' ? 5 : 1)),
                                     type: editingPlan.type,
                                     userType: editingPlan.userType,
                                     description: editingPlan.description,
@@ -3778,7 +3799,7 @@ export default function AdminDashboard() {
                               <div>
                                 <p className="font-bold">{plan.name}</p>
                                 <p className="text-sm text-slate-500">
-                                  {plan.type} - {plan.userType} | NGN {plan.price || 0} / {plan.billingCycle || 'monthly'} | {plan.credits || 0} credits
+                                  {plan.type} - {plan.userType} | NGN {plan.price || 0} / {plan.billingCycle || 'monthly'} | {plan.credits || 0} credits | {plan.storageMb ?? (plan.storage_mb || (plan.type === 'enterprise' ? 50 : plan.type === 'pro' ? 5 : 1))} MB Storage
                                 </p>
                               </div>
                               <div className="flex gap-2">

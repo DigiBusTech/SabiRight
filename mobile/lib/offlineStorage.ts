@@ -105,3 +105,120 @@ export async function syncRemoteMoatData(apiBaseUrl = 'http://localhost:5000'): 
   return getOfflineLegalCards();
 }
 
+// ============================================================================
+// OFFLINE CREDITS & ASYNC DEDUCTION SYNC ENGINE
+// ============================================================================
+
+export const OFFLINE_GUEST_SESSION_MAX_CREDITS = 10;
+const KEY_GUEST_OFFLINE_CREDITS = 'sabiright_guest_offline_credits_used';
+const KEY_CACHED_USER_CREDITS_PREFIX = 'sabiright_user_cached_credits_';
+const KEY_PENDING_DEDUCTIONS_PREFIX = 'sabiright_pending_offline_deductions_';
+
+/**
+ * Returns how many free session credits the unauthenticated/guest user has remaining (out of 10).
+ */
+export async function getGuestOfflineCreditsRemaining(): Promise<number> {
+  try {
+    const val = await AsyncStorage.getItem(KEY_GUEST_OFFLINE_CREDITS);
+    const used = val ? parseInt(val, 10) : 0;
+    return Math.max(0, OFFLINE_GUEST_SESSION_MAX_CREDITS - used);
+  } catch {
+    return OFFLINE_GUEST_SESSION_MAX_CREDITS;
+  }
+}
+
+/**
+ * Consumes 1 credit from the guest session budget. Returns the new remaining balance.
+ */
+export async function consumeGuestOfflineCredit(): Promise<number> {
+  try {
+    const val = await AsyncStorage.getItem(KEY_GUEST_OFFLINE_CREDITS);
+    const used = (val ? parseInt(val, 10) : 0) + 1;
+    await AsyncStorage.setItem(KEY_GUEST_OFFLINE_CREDITS, String(used));
+    return Math.max(0, OFFLINE_GUEST_SESSION_MAX_CREDITS - used);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Resets the guest session credit budget (e.g., when a user logs out to start a new session).
+ */
+export async function resetGuestOfflineSession(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(KEY_GUEST_OFFLINE_CREDITS);
+  } catch {}
+}
+
+/**
+ * Caches the logged-in user's available credit balance locally for offline use.
+ */
+export async function cacheUserCreditsOffline(userId: string, credits: number): Promise<void> {
+  try {
+    await AsyncStorage.setItem(`${KEY_CACHED_USER_CREDITS_PREFIX}${userId}`, String(credits));
+  } catch {}
+}
+
+/**
+ * Retrieves the logged-in user's cached available credit balance.
+ */
+export async function getCachedUserCreditsOffline(userId: string): Promise<number | null> {
+  try {
+    const val = await AsyncStorage.getItem(`${KEY_CACHED_USER_CREDITS_PREFIX}${userId}`);
+    return val !== null ? parseInt(val, 10) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decrements local cached credits and records a pending offline deduction for the logged-in user.
+ */
+export async function recordOfflineCreditDeduction(userId: string, amount = 1): Promise<number> {
+  try {
+    const currentCached = await getCachedUserCreditsOffline(userId);
+    const newBal = Math.max(0, (currentCached ?? 10) - amount);
+    await cacheUserCreditsOffline(userId, newBal);
+
+    const pendingVal = await AsyncStorage.getItem(`${KEY_PENDING_DEDUCTIONS_PREFIX}${userId}`);
+    const pendingCount = (pendingVal ? parseInt(pendingVal, 10) : 0) + amount;
+    await AsyncStorage.setItem(`${KEY_PENDING_DEDUCTIONS_PREFIX}${userId}`, String(pendingCount));
+
+    return newBal;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Syncs any pending offline deductions to the server when connection is restored.
+ */
+export async function syncOfflineDeductionsToServer(apiBaseUrl: string, token: string, userId: string): Promise<boolean> {
+  try {
+    const pendingVal = await AsyncStorage.getItem(`${KEY_PENDING_DEDUCTIONS_PREFIX}${userId}`);
+    const pendingCount = pendingVal ? parseInt(pendingVal, 10) : 0;
+    if (pendingCount <= 0) return true;
+
+    const res = await fetch(`${apiBaseUrl}/api/credits/sync-offline`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ deductions: pendingCount })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      await AsyncStorage.removeItem(`${KEY_PENDING_DEDUCTIONS_PREFIX}${userId}`);
+      if (data.balance !== undefined) {
+        await cacheUserCreditsOffline(userId, Number(data.balance));
+      }
+      return true;
+    }
+  } catch (err) {
+    console.warn('[OfflineStorage] Pending offline deductions sync deferred:', err);
+  }
+  return false;
+}
+

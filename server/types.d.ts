@@ -146,6 +146,7 @@ export interface UserPlan {
   description?: string;
   monthlyCredits?: number;
   dailyCredits?: number;
+  storageMb?: number;
   createdAt: Date;
 }
 

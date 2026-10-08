@@ -379,45 +379,34 @@ export const supabaseStorage: IStorage = {
     if (!row) return;
 
     const now = Date.now();
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const lastDaily = row.last_free_refresh ? new Date(row.last_free_refresh).toISOString().slice(0, 10) : null;
     const renewalTime = row.renewal_date ? new Date(row.renewal_date).getTime() : 0;
 
+    // Daily refreshes removed by policy: all plans use fixed monthly/yearly allowances.
+    // If credits run out before renewal, the user must upgrade or purchase credit packages.
     const isPeriodRolledOver = !row.renewal_date || renewalTime <= now;
-    const isDailyDue = !!plan.dailyCredits && lastDaily !== todayStr;
-
-    if (!isPeriodRolledOver && !isDailyDue) {
+    if (!isPeriodRolledOver) {
       return;
     }
 
     const days = plan.billingCycle === 'yearly' ? 365 : 30;
     const nextRenewal = new Date(now + days * 86400000).toISOString();
+    const allowance = plan.monthlyCredits || plan.credits || 0;
 
-    if (isPeriodRolledOver) {
-      const allowance = plan.monthlyCredits || plan.credits || 0;
-      await this.applyPlanAllowance(userId, allowance, {
-        renewal_date: nextRenewal,
-        last_free_refresh: new Date().toISOString()
-      });
-      if (allowance > 0) {
-        await this.logCredit(userId, allowance, 'plan_refresh', `Plan allowance refreshed: ${plan.name}`);
-      }
-    } else if (isDailyDue) {
-      const dailyAllowance = plan.dailyCredits || 0;
-      await this.applyPlanAllowance(userId, dailyAllowance, {
-        last_free_refresh: new Date().toISOString()
-      });
-      if (dailyAllowance > 0) {
-        await this.logCredit(userId, dailyAllowance, 'daily_bonus', `Daily credits refreshed: ${plan.name}`);
-      }
+    await this.applyPlanAllowance(userId, allowance, {
+      renewal_date: nextRenewal,
+      last_free_refresh: new Date().toISOString()
+    });
+    if (allowance > 0) {
+      await this.logCredit(userId, allowance, 'plan_refresh', `Plan allowance refreshed: ${plan.name}`);
     }
   },
 
-  async refreshDailyCredits(userId: string, dailyCredits: number): Promise<void> {
+  async refreshDailyCredits(userId: string, dailyCredits?: number): Promise<void> {
+    // Daily refills disabled by policy; all plans use monthly allowance rollover
     await this.refreshAllowance(userId);
   },
 
-  async refreshMonthlyCredits(userId: string, monthlyCredits: number): Promise<void> {
+  async refreshMonthlyCredits(userId: string, monthlyCredits?: number): Promise<void> {
     await this.refreshAllowance(userId);
   },
   async getCreditLog(userId: string): Promise<any[]> {
@@ -437,6 +426,9 @@ export const supabaseStorage: IStorage = {
       credits: p.credits,
       monthlyCredits: p.monthly_credits,
       billingCycle: p.billing_cycle,
+      storageMb: p.storage_mb !== undefined && p.storage_mb !== null 
+        ? Number(p.storage_mb) 
+        : (p.type === 'enterprise' ? 50 : p.type === 'pro' ? 5 : p.type === 'basic' ? 1 : 0.5),
       features: Array.isArray(p.features) ? p.features : [],
       description: p.description
     } as UserPlan));
@@ -511,6 +503,7 @@ export const supabaseStorage: IStorage = {
       credits: plan.credits,
       monthly_credits: plan.monthlyCredits || plan.credits,
       billing_cycle: plan.billingCycle || 'monthly',
+      storage_mb: plan.storageMb ?? (plan.type === 'enterprise' ? 50 : plan.type === 'pro' ? 5 : plan.type === 'basic' ? 1 : 0.5),
       features: plan.features || [],
       description: plan.description || ''
     });
@@ -522,7 +515,14 @@ export const supabaseStorage: IStorage = {
     if (updates.name !== undefined) payload.name = updates.name;
     if (updates.price !== undefined) payload.price = updates.price;
     if (updates.credits !== undefined) payload.credits = updates.credits;
+    if (updates.monthlyCredits !== undefined) payload.monthly_credits = updates.monthlyCredits;
+    if (updates.billingCycle !== undefined) payload.billing_cycle = updates.billingCycle;
+    if (updates.storageMb !== undefined) payload.storage_mb = updates.storageMb;
+    if ((updates as any).storage_mb !== undefined) payload.storage_mb = (updates as any).storage_mb;
+    if (updates.type !== undefined) payload.type = updates.type;
+    if (updates.userType !== undefined) payload.user_type = updates.userType;
     if (updates.features !== undefined) payload.features = updates.features;
+    if (updates.description !== undefined) payload.description = updates.description;
     await supabase.from('plans').update(payload).eq('id', planId);
     return await this.getPlanById(planId);
   },
@@ -566,11 +566,9 @@ export const supabaseStorage: IStorage = {
       last_free_refresh: new Date().toISOString()
     });
 
-    // Update storage limit based on plan
-    let chatStorageLimit = 524288; // Default 512KB
-    if (plan.type === 'enterprise') chatStorageLimit = 50 * 1024 * 1024; // 50MB
-    else if (plan.type === 'pro') chatStorageLimit = 5 * 1024 * 1024; // 5MB
-    else if (plan.type === 'basic') chatStorageLimit = 1 * 1024 * 1024; // 1MB
+    // Update storage limit dynamically based on plan's storageMb configuration
+    const storageMb = plan.storageMb ?? (plan.type === 'enterprise' ? 50 : plan.type === 'pro' ? 5 : plan.type === 'basic' ? 1 : 0.5);
+    const chatStorageLimit = Math.max(524288, Math.round(Number(storageMb) * 1024 * 1024));
     await this.updateUserProfile(userId, { chatStorageLimit });
 
     await this.logCredit(userId, allowance, 'plan_assigned', `Assigned plan ${plan.name}`);
@@ -592,8 +590,10 @@ export const supabaseStorage: IStorage = {
       last_free_refresh: new Date().toISOString()
     });
 
-    // Revert storage limit to default Free limit
-    await this.updateUserProfile(userId, { chatStorageLimit: 524288 });
+    // Revert storage limit to default Free plan limit dynamically
+    const freeStorageMb = freePlan?.storageMb ?? 0.5;
+    const chatStorageLimit = Math.max(524288, Math.round(Number(freeStorageMb) * 1024 * 1024));
+    await this.updateUserProfile(userId, { chatStorageLimit });
     await this.logCredit(userId, allowance, 'plan_removed', `Reverted to ${freePlan?.name || 'Citizen Free'} plan`);
   },
 

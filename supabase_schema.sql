@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS plans (
     credits INT NOT NULL DEFAULT 10,
     monthly_credits INT NOT NULL DEFAULT 0,
     billing_cycle TEXT DEFAULT 'monthly',
+    storage_mb NUMERIC DEFAULT 1,
     features JSONB NOT NULL DEFAULT '[]'::jsonb,
     description TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -312,16 +313,17 @@ CREATE TABLE IF NOT EXISTS impact_metrics (
 );
 
 -- SEED INITIAL CORE DATA
-INSERT INTO plans (id, name, type, user_type, price, credits, monthly_credits, billing_cycle, description, features)
+INSERT INTO plans (id, name, type, user_type, price, credits, monthly_credits, billing_cycle, storage_mb, description, features)
 VALUES 
-('plan-free', 'Citizen Free', 'free', 'user', 0, 10, 10, 'monthly', 'Perfect for everyday civic awareness', '["10 Free Daily Credits", "Basic AI Legal Guidance", "Community Forum Access", "Real-time Traffic Alerts", "Public Marketplace View"]'::jsonb),
-('plan-pro', 'Sabi Pro', 'pro', 'user', 2500, 500, 500, 'monthly', 'Enhanced features for frequent users', '["500 Monthly Credits", "Priority AI Support", "Advanced Route Optimization", "Verified Pro Matching", "Job Board Early Access", "Ad-free Experience"]'::jsonb),
-('plan-vendor', 'Vendor Elite', 'pro', 'vendor', 10000, 1000, 1000, 'monthly', 'For professionals offering services', '["Unlimited Marketplace Listings", "Verified Professional Badge", "Featured Service Placement", "Client Lead Analytics", "Custom Business Profile", "Direct Messaging Access"]'::jsonb),
-('plan-vendor-enterprise', 'Vendor Enterprise', 'enterprise', 'vendor', 25000, 10000, 10000, 'yearly', 'Best value for large vendors and legal firms', '["Unlimited Marketplace Listings", "Dedicated Account Support", "Advanced Analytics & Reporting", "Priority Lead Matching", "Custom Business Growth Plan", "Enterprise Workflow Automation"]'::jsonb)
+('plan-free', 'Citizen Free', 'free', 'user', 0, 10, 10, 'monthly', 0.5, 'Perfect for everyday civic awareness', '["10 Free Monthly Credits", "512KB Chat Storage", "Basic AI Legal Guidance", "Community Forum Access", "Real-time Traffic Alerts", "Public Marketplace View"]'::jsonb),
+('plan-pro', 'Sabi Pro', 'pro', 'user', 2500, 500, 500, 'monthly', 5, 'Enhanced features for frequent users', '["500 Monthly Credits", "5MB Chat Storage", "Priority AI Support", "Advanced Route Optimization", "Verified Pro Matching", "Job Board Early Access", "Ad-free Experience"]'::jsonb),
+('plan-vendor', 'Vendor Elite', 'pro', 'vendor', 10000, 1000, 1000, 'monthly', 10, 'For professionals offering services', '["1,000 Monthly Credits", "10MB Chat Storage", "Unlimited Marketplace Listings", "Verified Professional Badge", "Featured Service Placement", "Client Lead Analytics", "Custom Business Profile", "Direct Messaging Access"]'::jsonb),
+('plan-vendor-enterprise', 'Vendor Enterprise', 'enterprise', 'vendor', 25000, 10000, 10000, 'yearly', 50, 'Best value for large vendors and legal firms', '["10,000 Annual Credits", "50MB Chat Storage", "Unlimited Marketplace Listings", "Dedicated Account Support", "Advanced Analytics & Reporting", "Priority Lead Matching", "Custom Business Growth Plan", "Enterprise Workflow Automation"]'::jsonb)
 ON CONFLICT (id) DO UPDATE SET 
     name = EXCLUDED.name,
     price = EXCLUDED.price,
     credits = EXCLUDED.credits,
+    storage_mb = EXCLUDED.storage_mb,
     features = EXCLUDED.features;
 
 INSERT INTO admin_settings (key, value, category)
