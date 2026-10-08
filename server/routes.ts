@@ -1775,7 +1775,8 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
       const settings = await storage.getAdminSettings(category as string | undefined);
       const filteredSettings = settings.map((s: any) => ({
         ...s,
-        value: s.isSecret ? '••••••••' : s.value
+        value: s.isSecret ? '' : s.value,
+        hasValue: !!s.value && String(s.value).length > 0
       }));
       res.json(filteredSettings);
     } catch (error) {
@@ -1787,7 +1788,16 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
     try {
       const { key } = req.params;
       const setting = await storage.getAdminSetting(key);
-      res.json(setting || {});
+      if (!setting) return res.json({});
+      if (setting.isSecret) {
+        res.json({
+          ...setting,
+          value: '',
+          hasValue: !!setting.value && String(setting.value).length > 0
+        });
+      } else {
+        res.json(setting);
+      }
     } catch (error) {
       next(error);
     }
@@ -1801,8 +1811,8 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
         return res.status(400).json({ error: 'Key and category required' });
       }
 
-      // Never overwrite a stored secret with the display mask
-      if (typeof value === 'string' && /^•+$/.test(value.trim())) {
+      // If isSecret and value is empty/mask/undefined, don't overwrite
+      if (isSecret && (value === undefined || value === null || value === '' || /^•+$/.test(String(value).trim()))) {
         return res.json({ success: true, unchanged: true });
       }
 
@@ -5811,12 +5821,13 @@ AI:`;
       const settings = await storage.getSmtpSettings();
       
       if (!settings) {
-        return res.json({ configured: false });
+        return res.json({ configured: false, hasPassword: false });
       }
       
       res.json({
         ...settings,
-        password: '••••••••',
+        password: '',
+        hasPassword: !!settings.password && String(settings.password).length > 0,
         configured: true
       });
     } catch (error) {
@@ -5828,16 +5839,16 @@ AI:`;
   app.post("/api/admin/notifications/smtp", adminAuth, async (req, res, next) => {
     try {
       const { host, port, username, password, fromEmail, fromName, encryption, isActive } = req.body;
+      const existingSettings = await storage.getSmtpSettings();
       
-      if (!host || !port || !username || !password || !fromEmail || !fromName) {
+      if (!host || !port || !username || (!password && !existingSettings?.password) || !fromEmail || !fromName) {
         return res.status(400).json({ 
           error: 'host, port, username, password, fromEmail, and fromName are required' 
         });
       }
       
       let finalPassword = password;
-      if (password === '••••••••') {
-        const existingSettings = await storage.getSmtpSettings();
+      if (!password || /^•+$/.test(String(password).trim())) {
         if (existingSettings) {
           finalPassword = existingSettings.password;
         }
@@ -5856,7 +5867,9 @@ AI:`;
       
       res.json({
         ...settings,
-        password: '••••••••'
+        password: '',
+        hasPassword: !!finalPassword,
+        configured: true
       });
     } catch (error) {
       next(error);
@@ -5871,12 +5884,13 @@ AI:`;
       const settings = await storage.getPushSettings();
       
       if (!settings) {
-        return res.json({ configured: false });
+        return res.json({ configured: false, hasPrivateKey: false });
       }
       
       res.json({
         ...settings,
-        privateKey: '••••••••',
+        privateKey: '',
+        hasPrivateKey: !!settings.privateKey && String(settings.privateKey).length > 0,
         configured: true
       });
     } catch (error) {
@@ -5888,16 +5902,16 @@ AI:`;
   app.post("/api/admin/notifications/push", adminAuth, async (req, res, next) => {
     try {
       const { publicKey, privateKey, subject, isActive } = req.body;
+      const existingSettings = await storage.getPushSettings();
       
-      if (!publicKey || !privateKey || !subject) {
+      if (!publicKey || (!privateKey && !existingSettings?.privateKey) || !subject) {
         return res.status(400).json({ 
           error: 'publicKey, privateKey, and subject are required' 
         });
       }
       
       let finalPrivateKey = privateKey;
-      if (privateKey === '••••••••') {
-        const existingSettings = await storage.getPushSettings();
+      if (!privateKey || /^•+$/.test(String(privateKey).trim())) {
         if (existingSettings) {
           finalPrivateKey = existingSettings.privateKey;
         }
@@ -5912,7 +5926,9 @@ AI:`;
       
       res.json({
         ...settings,
-        privateKey: '••••••••'
+        privateKey: '',
+        hasPrivateKey: !!finalPrivateKey,
+        configured: true
       });
     } catch (error) {
       next(error);

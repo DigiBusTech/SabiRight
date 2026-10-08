@@ -1745,8 +1745,20 @@ export const supabaseStorage: IStorage = {
     await this.setAdminSetting('smtp_config', incoming, 'smtp', true);
     return incoming;
   },
-  async getPushSettings(): Promise<any> { return null; },
-  async updatePushSettings(s: any): Promise<any> { return s; },
+  async getPushSettings(): Promise<any> {
+    const s = await this.getAdminSetting('vapid_push_config');
+    if (!s?.value) return null;
+    try { return JSON.parse(s.value); } catch { return null; }
+  },
+  async updatePushSettings(s: any): Promise<any> {
+    const existing = await this.getPushSettings();
+    const incoming = { ...s };
+    if (!incoming.privateKey || /^•+$/.test(String(incoming.privateKey)) || !incoming.privateKey.trim()) {
+      if (existing?.privateKey) incoming.privateKey = existing.privateKey;
+    }
+    await this.setAdminSetting('vapid_push_config', incoming, 'push', true);
+    return incoming;
+  },
   async subscribeToPush(d: any): Promise<any> { return {}; },
   async unsubscribeFromPush(u: string, e: string): Promise<boolean> { return true; },
   async getPushSubscriptions(u: string): Promise<any[]> { return []; },

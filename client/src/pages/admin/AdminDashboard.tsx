@@ -324,6 +324,11 @@ export default function AdminDashboard() {
     return settings.find((s: any) => s.key === key)?.value || "";
   };
 
+  const hasSettingValue = (key: string) => {
+    const item = settings.find((s: any) => s.key === key);
+    return !!item?.hasValue || (!!item?.value && String(item.value).length > 0);
+  };
+
   const handleSettingChange = (key: string, value: string) => {
     setLocalSettings(prev => ({ ...prev, [key]: value }));
   };
@@ -358,8 +363,20 @@ export default function AdminDashboard() {
   };
 
   const handleSaveSetting = (key: string, category: string, isSecret: boolean = false) => {
-     const value = localSettings[key] ?? getSetting(key);
- 
+     const hasExisting = hasSettingValue(key);
+     const localVal = localSettings[key];
+     const value = localVal !== undefined ? localVal : (isSecret ? "" : getSetting(key));
+
+     // If secret and no new value typed, inform admin
+     if (isSecret && (!value || value.trim() === '')) {
+       if (hasExisting) {
+         toast({ title: "Already Configured", description: "This credential is set in database. Enter a new key only if updating." });
+       } else {
+         toast({ title: "Required", description: "Please enter a value before saving.", variant: "destructive" });
+       }
+       return;
+     }
+
      // Validation for SEO keywords
      if (key === 'seo_keywords' && value) {
        if (!value.includes(',')) {
@@ -370,8 +387,16 @@ export default function AdminDashboard() {
          });
        }
      }
- 
-     saveSetting.mutate({ key, value, category, isSecret });
+
+     saveSetting.mutate({ key, value, category, isSecret }, {
+       onSuccess: () => {
+         setLocalSettings(prev => {
+           const next = { ...prev };
+           delete next[key];
+           return next;
+         });
+       }
+     });
    };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, key: string) => {
@@ -397,13 +422,23 @@ export default function AdminDashboard() {
   };
 
   const ApiKeyField = ({ label, id, category, placeholder, isSecret = true, description }: any) => {
-    const value = localSettings[id] ?? getSetting(id);
+    const configured = hasSettingValue(id);
+    const localVal = localSettings[id];
+    const value = localVal !== undefined ? localVal : (isSecret ? "" : getSetting(id));
     const isCopied = copiedKey === id;
+    const effectivePlaceholder = placeholder || (configured ? "•••••••• (Configured — enter new key to change)" : "Enter key...");
 
     return (
       <div className="space-y-2">
-        <Label className="flex items-center justify-between text-xs font-semibold text-slate-700">
-          {label}
+        <Label className="flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-300">
+          <span className="flex items-center gap-1.5">
+            {label}
+            {configured && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400">
+                Active in DB
+              </span>
+            )}
+          </span>
           <div className="flex items-center gap-1">
             {isSecret && (
               <Button 
@@ -411,19 +446,23 @@ export default function AdminDashboard() {
                 size="icon" 
                 className="h-6 w-6 text-slate-400 hover:text-primary" 
                 onClick={() => setShowSecrets(!showSecrets)}
+                title={showSecrets ? "Hide" : "Show"}
               >
                 {showSecrets ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
               </Button>
             )}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="h-6 w-6 text-slate-400 hover:text-primary" 
-              onClick={() => handleCopy(value, id)}
-              disabled={!value}
-            >
-              {isCopied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-            </Button>
+            {!isSecret && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 text-slate-400 hover:text-primary" 
+                onClick={() => handleCopy(value, id)}
+                disabled={!value}
+                title="Copy"
+              >
+                {isCopied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+              </Button>
+            )}
           </div>
         </Label>
         <div className="flex gap-2">
@@ -431,17 +470,20 @@ export default function AdminDashboard() {
             <Input
               id={id}
               type={isSecret && !showSecrets ? "password" : "text"}
-              placeholder={placeholder}
+              placeholder={effectivePlaceholder}
               value={value}
               onChange={(e) => handleSettingChange(id, e.target.value)}
               className="h-9 text-sm pr-10"
             />
-            {value && (
+            {(localVal || configured) && (
               <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                <div className={cn(
-                  "h-2 w-2 rounded-full",
-                  value.length > 10 ? "bg-green-500" : "bg-amber-500"
-                )} />
+                <div 
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    localVal !== undefined && localVal.length > 0 ? "bg-amber-500" : "bg-green-500"
+                  )} 
+                  title={localVal !== undefined && localVal.length > 0 ? "Unsaved changes" : "Configured & active"}
+                />
               </div>
             )}
           </div>
@@ -449,11 +491,12 @@ export default function AdminDashboard() {
             size="sm" 
             className="h-9 px-3"
             onClick={() => handleSaveSetting(id, category, isSecret)}
+            disabled={saveSetting.isPending || (isSecret && (!localVal || localVal.trim() === ''))}
           >
             <Save className="h-4 w-4" />
           </Button>
         </div>
-        {description && <p className="text-[10px] text-slate-500">{description}</p>}
+        {description && <p className="text-xs text-slate-500">{description}</p>}
       </div>
     );
   };
@@ -5688,12 +5731,19 @@ export default function AdminDashboard() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="smtp-password">Password</Label>
+                      <Label htmlFor="smtp-password" className="flex items-center justify-between">
+                        <span>Password</span>
+                        {smtpData?.hasPassword && (
+                          <span className="text-[10px] font-medium text-green-700 bg-green-50 dark:bg-green-900/30 px-1.5 py-0.5 rounded">
+                            Configured in DB
+                          </span>
+                        )}
+                      </Label>
                       <Input
                         id="smtp-password"
                         data-testid="input-smtp-password"
                         type="password"
-                        placeholder="••••••••"
+                        placeholder={smtpData?.hasPassword ? "•••••••• (Configured — enter new to change)" : "Enter SMTP password"}
                         value={smtpSettings.password}
                         onChange={(e) => setSmtpSettings({ ...smtpSettings, password: e.target.value })}
                       />
@@ -5809,11 +5859,18 @@ export default function AdminDashboard() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="push-private-key">VAPID Private Key</Label>
+                      <Label htmlFor="push-private-key" className="flex items-center justify-between">
+                        <span>VAPID Private Key</span>
+                        {pushData?.hasPrivateKey && (
+                          <span className="text-[10px] font-medium text-green-700 bg-green-50 dark:bg-green-900/30 px-1.5 py-0.5 rounded">
+                            Configured in DB
+                          </span>
+                        )}
+                      </Label>
                       <Input
                         id="push-private-key"
                         type="password"
-                        placeholder="••••••••"
+                        placeholder={pushData?.hasPrivateKey ? "•••••••• (Configured — enter new to change)" : "Enter VAPID private key"}
                         value={pushSettings.privateKey}
                         onChange={(e) => setPushSettings({ ...pushSettings, privateKey: e.target.value })}
                       />
