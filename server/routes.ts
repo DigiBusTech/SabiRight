@@ -1823,6 +1823,21 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
     }
   });
 
+  // Admin test endpoint for N-ATLAS (Sovereign LLM)
+  app.post("/api/admin/ai/natlas/test", adminAuth, async (req, res, next) => {
+    try {
+      const { generateNAtlasResponse } = await import("./aiService.js");
+      const testPrompt = "Translate and explain in brief Nigerian Pidgin: What are the fundamental rights of a citizen during a police checkpoint?";
+      const testResponse = await generateNAtlasResponse(testPrompt);
+      if (!testResponse) {
+        return res.status(502).json({ ok: false, error: "Empty response from N-ATLAS" });
+      }
+      res.json({ ok: true, model: "N-ATLAS (NCAIR1/N-ATLaS)", sampleOutput: testResponse.slice(0, 400) });
+    } catch (error: any) {
+      res.status(500).json({ ok: false, error: error.message || String(error) });
+    }
+  });
+
   // Admin User Management - protected routes
   app.get("/api/admin/users", adminAuth, async (req, res, next) => {
     try {
@@ -3052,13 +3067,45 @@ User message: ${message}`;
     }
   });
 
-  // Speech-to-text via Gemini (free tier). Body: { audioBase64, mimeType, language }
+  // Speech-to-text via N-ATLAS ASR (Sovereign Voice) with Gemini fallback. Body: { audioBase64, mimeType, language }
   app.post("/api/ai/transcribe", userAuth, async (req, res) => {
     try {
       const { audioBase64, mimeType, language } = req.body || {};
       if (!audioBase64 || typeof audioBase64 !== 'string') {
         return res.status(400).json({ error: 'audioBase64 required' });
       }
+
+      // Check if N-ATLAS ASR endpoint is configured
+      const natlasAsrSetting = await storage.getAdminSetting('natlas_asr_endpoint');
+      const natlasTokenSetting = await storage.getAdminSetting('natlas_api_token')
+        || await storage.getAdminSetting('huggingface_api_key');
+      const asrEndpoint = natlasAsrSetting?.value?.trim();
+      const asrToken = natlasTokenSetting?.value || process.env.NATLAS_API_TOKEN || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+
+      if (asrEndpoint && asrToken) {
+        try {
+          const audioBuffer = Buffer.from(audioBase64, 'base64');
+          const asrResp = await fetch(asrEndpoint, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${asrToken}`,
+              'Content-Type': mimeType || 'audio/mp4'
+            },
+            body: audioBuffer
+          });
+          if (asrResp.ok) {
+            const asrData: any = await asrResp.json();
+            const text = asrData?.text || asrData?.transcript || (Array.isArray(asrData) ? asrData[0]?.text : '');
+            if (text && text.trim()) {
+              return res.json({ text: text.trim(), engine: 'N-ATLAS ASR' });
+            }
+          }
+        } catch (natlasAsrErr: any) {
+          console.warn('[Transcribe] N-ATLAS ASR notice:', natlasAsrErr.message);
+        }
+      }
+
+      // Gemini fallback for Speech-to-Text
       const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
       const apiKey = geminiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
       if (!apiKey) return res.status(503).json({ error: 'Voice transcription is not configured' });
@@ -3067,7 +3114,7 @@ User message: ${message}`;
       const payload = JSON.stringify({
         contents: [{
           parts: [
-            { text: `Transcribe this audio exactly as spoken. Nigerian accents and Pidgin are common.${lang} Return only the transcript text, nothing else. If there is no speech, return an empty string.` },
+            { text: `Transcribe this audio exactly as spoken. Nigerian accents, Nigerian Pidgin, Yoruba, Hausa, and Igbo are common.${lang} Return only the transcript text, nothing else. If there is no speech, return an empty string.` },
             { inline_data: { mime_type: String(mimeType || 'audio/mp4'), data: audioBase64 } },
           ],
         }],
@@ -3086,9 +3133,10 @@ User message: ${message}`;
       }
       if (!resp || !resp.ok) {
         return res.status(502).json({ error: 'Transcription failed', detail: lastErr });
-      }      const data: any = await resp.json();
+      }
+      const data: any = await resp.json();
       const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-      res.json({ text });
+      res.json({ text, engine: 'Gemini Flash Multilingual' });
     } catch (err: any) {
       console.error('[Transcribe] Error:', err.message);
       res.status(500).json({ error: 'Transcription failed' });

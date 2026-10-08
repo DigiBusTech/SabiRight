@@ -632,7 +632,8 @@ export const supabaseStorage: IStorage = {
 
   // Admin & Settings
   async getAdminSetting(key: string): Promise<AdminSetting | null> {
-    const { data } = await supabase.from('admin_settings').select('*').eq('key', key).maybeSingle();
+    const { data, error } = await supabase.from('admin_settings').select('*').eq('key', key).maybeSingle();
+    if (error) throw new Error(`Failed to read setting "${key}": ${error.message}`);
     if (!data) return null;
     return { key: data.key, value: data.value, category: data.category, isSecret: !!data.is_secret };
   },
@@ -640,7 +641,8 @@ export const supabaseStorage: IStorage = {
   async getAdminSettings(category?: string): Promise<AdminSetting[]> {
     let q = supabase.from('admin_settings').select('*');
     if (category) q = q.eq('category', category);
-    const { data } = await q;
+    const { data, error } = await q;
+    if (error) throw new Error(`Failed to read admin settings: ${error.message}`);
     return (data || []).map((d: any) => ({
       key: d.key,
       value: d.value,
@@ -1733,7 +1735,11 @@ export const supabaseStorage: IStorage = {
   async getSmtpSettings(): Promise<any> {
     const s = await this.getAdminSetting('smtp_config');
     if (!s?.value) return null;
-    try { return JSON.parse(s.value); } catch { return null; }
+    try {
+      return JSON.parse(s.value);
+    } catch (error) {
+      throw new Error(`Stored SMTP settings are invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
   },
   async updateSmtpSettings(s: any): Promise<any> {
     const existing = await this.getSmtpSettings();
@@ -1748,7 +1754,11 @@ export const supabaseStorage: IStorage = {
   async getPushSettings(): Promise<any> {
     const s = await this.getAdminSetting('vapid_push_config');
     if (!s?.value) return null;
-    try { return JSON.parse(s.value); } catch { return null; }
+    try {
+      return JSON.parse(s.value);
+    } catch (error) {
+      throw new Error(`Stored push settings are invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
   },
   async updatePushSettings(s: any): Promise<any> {
     const existing = await this.getPushSettings();
@@ -1965,4 +1975,3 @@ export async function getSupabaseUserFlags(userId: string): Promise<{ isAdmin: b
 
 export const getUserFlags = getSupabaseUserFlags;
 export const storage = supabaseStorage;
-

@@ -300,7 +300,8 @@ ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS instructions TEXT DEFAULT '
 ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS fields JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE plans ADD COLUMN IF NOT EXISTS storage_mb NUMERIC DEFAULT 1;
 
-    key TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS admin_settings (
+    "key" TEXT PRIMARY KEY,
     value TEXT,
     category TEXT DEFAULT 'general',
     is_secret BOOLEAN DEFAULT FALSE,
@@ -623,3 +624,27 @@ CREATE TABLE IF NOT EXISTS routes (
 );
 CREATE INDEX IF NOT EXISTS routes_user_idx ON routes(user_id);
 ALTER TABLE routes ENABLE ROW LEVEL SECURITY; -- server uses service role; no public policies
+
+-- Persist route alerts in Supabase; this table is server-only under RLS.
+CREATE TABLE IF NOT EXISTS alerts (
+  id TEXT PRIMARY KEY,
+  route_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  alert_type TEXT NOT NULL,
+  message TEXT NOT NULL,
+  severity TEXT DEFAULT 'info',
+  acknowledged BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS alerts_route_id_idx ON alerts(route_id);
+CREATE INDEX IF NOT EXISTS alerts_user_id_idx ON alerts(user_id);
+ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
+
+-- 12. NATIONAL AI INNOVATION CHALLENGE (N-ATLAS Sovereign LLM Seed Configuration)
+INSERT INTO admin_settings ("key", value, category, is_secret)
+VALUES 
+    ('ai_mode', 'natlas_sovereign', 'ai', false),
+    ('natlas_model_id', 'NCAIR1/N-ATLaS', 'ai', false),
+    ('natlas_api_endpoint', 'https://api-inference.huggingface.co/models/NCAIR1/N-ATLaS', 'ai', false),
+    ('natlas_prompt_vernacular_support', 'true', 'ai', false)
+ON CONFLICT ("key") DO NOTHING;

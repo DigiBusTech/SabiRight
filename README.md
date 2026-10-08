@@ -277,20 +277,21 @@ The database runs on **Supabase PostgreSQL** with Row Level Security (RLS) enabl
 
 | Table | Purpose | Key Columns |
 |---|---|---|
-| `profiles` | User accounts & roles | `id, email, full_name, role, is_admin, is_vendor, created_at` |
-| `credits` | User credit balances | `user_id, total_credits, used_credits, plan_credits, daily_credits, last_reset_date` |
-| `credit_logs` | Audit trail of all credit movements | `id, user_id, amount, balance_after, action, reason, created_at` |
-| `plans` | Subscription plan definitions | `id, name, price, credits, billing_cycle, features, is_active` |
-| `subscriptions` | Active user subscriptions | `id, user_id, plan_id, status, current_period_end, cancel_at_period_end` |
+| `profiles` | User accounts and channel identities | `id, auth_id, channel, channel_id, email, is_admin, is_vendor` |
+| `credits` | Credit balance and billing-cycle allowance | `user_id, total_credits, used_credits, plan_credits, renewal_date` |
+| `credit_logs` | Audit trail of credit movements | `id, user_id, amount, description, feature, created_at` |
+| `plans` | Subscription plan definitions and chat quotas | `id, name, user_type, price, credits, monthly_credits, billing_cycle, storage_mb` |
+| `subscriptions` | User plan subscriptions | `id, user_id, plan_id, status, start_date, end_date` |
+| `admin_settings` | Admin-managed provider, SMTP, push, and site settings | `key, value, category, is_secret, updated_at` |
 | `payment_methods` | Configured payment gateways | `id, name, type, active, public_key, secret_key, webhook_hash, metadata, instructions, fields` |
 | `payments` | Transaction ledger | `id, user_id, amount, currency, provider, status, provider_ref, metadata` |
-| `moat_data` | Administrative statutory knowledge base | `id, title, category, content, statute_reference, jurisdiction, is_active` |
-| `pre_case_files` | AI-generated case intake documents | `id, user_id, case_reference, summary, urgency_level, facts, statutes, goals` |
-| `direct_bookings` | Appointments between citizens and pros | `id, user_id, vendor_id, pre_case_file_id, status, scheduled_at, fee` |
+| `moat_data` | Statutory/legal grounding knowledge | `id, title, content, category, source, metadata` |
+| `pre_case_files` | AI-generated case intake documents | `id, case_ref, user_id, issue_summary, urgency_level, facts, desired_outcome` |
+| `direct_bookings` | Appointments between citizens and pros | `id, user_id, vendor_id, service_id, case_file_id, status, agreed_fee` |
 | `direct_booking_messages` | Consultation room chat history | `id, booking_id, sender_id, message, attachments, created_at` |
-| `traffic_alerts` | Crowdsourced civil & road alerts | `id, user_id, alert_type, message, severity, location, upvotes, verified` |
-| `channel_links` | WhatsApp/Telegram identity mappings | `id, user_id, channel, channel_user_id, phone_number, linked_at` |
-| `channel_link_codes` | Ephemeral 6-digit linking codes | `id, user_id, code, expires_at` |
+| `routes` / `alerts` | Saved commute routes and route alerts | `routes: id, user_id, route_name`; `alerts: id, route_id, user_id, alert_type, acknowledged` |
+| `channel_links` | WhatsApp/Telegram identity mappings | `channel, channel_user_id, user_id, linked_at` |
+| `channel_link_codes` | Ephemeral account-linking codes | `code, user_id, expires_at, used_at` |
 
 ---
 
@@ -344,6 +345,7 @@ sabiright/
 │
 ├── scripts/                     # Operational scripts & utilities
 ├── supabase_schema.sql          # Complete Supabase PostgreSQL schema & RLS
+├── supabase/migrations/         # Incremental, rerunnable schema migrations
 ├── package.json                 # Root dependencies and build scripts
 └── README.md                    # Enterprise platform documentation
 ```
@@ -405,9 +407,11 @@ EXPO_PUBLIC_API_URL=http://YOUR_LOCAL_IP:5000
    npm install
    ```
 
-2. **Initialize Database Schema:**
+2. **Initialize or update the database schema:**
    - Open your Supabase SQL Editor.
-   - Paste and run the entire contents of `supabase_schema.sql`.
+   - For a **new project**, run the entire `supabase_schema.sql` baseline once.
+   - For an **existing project**, run the newest unapplied SQL file in `supabase/migrations/` instead of rerunning the baseline. Apply migrations in filename order and track which ones have been run.
+   - The current repair migration is `supabase/migrations/20261008114000_repair_feature_schema.sql`; it creates missing settings/route-alert tables and adds the plan/payment columns used by the server.
 
 3. **Start the development server:**
    ```bash

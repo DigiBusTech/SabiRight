@@ -47,9 +47,95 @@ export async function getRelevantMoatContext(userPrompt: string): Promise<string
 }
 
 /**
+ * Calls Nigeria's Sovereign LLM: N-ATLAS (NCAIR1/N-ATLaS fine-tuned on Llama-3 8B)
+ * Supports Yoruba, Hausa, Igbo, Nigerian English, and Pidgin.
+ * Can connect to HuggingFace Serverless Inference, Dedicated HuggingFace Endpoint, or custom vLLM/OpenAI-compatible URL.
+ */
+export async function generateNAtlasResponse(prompt: string): Promise<string | null> {
+  const tokenSetting = await storage.getAdminSetting('natlas_api_token') 
+    || await storage.getAdminSetting('huggingface_api_key');
+  const token = tokenSetting?.value || process.env.NATLAS_API_TOKEN || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+
+  const endpointSetting = await storage.getAdminSetting('natlas_api_endpoint');
+  const endpoint = endpointSetting?.value?.trim() || 'https://api-inference.huggingface.co/models/NCAIR1/N-ATLaS';
+
+  const modelIdSetting = await storage.getAdminSetting('natlas_model_id');
+  const modelId = modelIdSetting?.value?.trim() || 'NCAIR1/N-ATLaS';
+
+  if (!token) {
+    throw new Error('N-ATLAS API token not configured. Please set natlas_api_token in Admin Settings or provide HuggingFace token.');
+  }
+
+  // Handle OpenAI-compatible endpoints (such as vLLM or Hugging Face Dedicated Endpoints running TGI/vLLM)
+  if (endpoint.includes('/v1/chat/completions') || endpoint.includes('/chat/completions')) {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        model: modelId,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are N-ATLAS, Nigeria\'s Sovereign Multilingual LLM, powering SabiRight. You communicate accurately in English, Nigerian Pidgin, Yoruba, Hausa, and Igbo with deep comprehension of Nigerian laws and civic reality.'
+          },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.6,
+        max_tokens: 1024
+      })
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`N-ATLAS custom endpoint error (${res.status}): ${errText}`);
+    }
+    const data = await res.json() as any;
+    return data?.choices?.[0]?.message?.content || null;
+  }
+
+  // HuggingFace standard model inference endpoint
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      inputs: prompt,
+      parameters: {
+        max_new_tokens: 1024,
+        return_full_text: false,
+        temperature: 0.6,
+        top_p: 0.9
+      },
+      options: {
+        wait_for_model: true
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`N-ATLAS HF error (${response.status}): ${errorBody}`);
+  }
+
+  const data = await response.json() as any;
+  if (Array.isArray(data) && data[0]?.generated_text) {
+    return data[0].generated_text;
+  }
+  if (data?.generated_text) {
+    return data.generated_text;
+  }
+  return typeof data === 'string' ? data : JSON.stringify(data);
+}
+
+/**
  * Unified multi-provider AI text generation service for SabiRight.
- * Routes to the administrator-configured provider (Google Gemini, Groq, OpenAI, Anthropic, DeepSeek, OpenRouter, Perplexity, Mistral)
- * with automatic fallback to Groq when primary keys or quotas fail.
+ * Supports:
+ * - Mode 1: Sovereign N-ATLAS (NAIC Challenge Mode - primary N-ATLAS with automatic resilience fallbacks)
+ * - Mode 2: Multi-Model Enterprise Grid (Standard production mode with admin provider selection)
  */
 export async function generateAIResponse(prompt: string, skipMoatGrounding = false): Promise<string | null> {
   let effectivePrompt = prompt;
@@ -60,10 +146,29 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     }
   }
 
+  // Check if system is set to Sovereign N-ATLAS Mode (NITDA NAIC Challenge)
+  const aiModeSetting = await storage.getAdminSetting('ai_mode');
+  const aiMode = (aiModeSetting?.value || 'natlas_sovereign').toLowerCase();
+
+  if (aiMode === 'natlas_sovereign') {
+    try {
+      console.log('[aiService] 🇳🇬 Sovereign Mode Active: Routing prompt to N-ATLAS (NCAIR1/N-ATLaS)...');
+      const natlasResponse = await generateNAtlasResponse(effectivePrompt);
+      if (natlasResponse && natlasResponse.trim()) {
+        return natlasResponse;
+      }
+    } catch (natlasErr: any) {
+      console.warn(`[aiService] ⚠️ N-ATLAS notice (${natlasErr.message}). Automatically invoking resilient fallback...`);
+    }
+    // If N-ATLAS encountered cold-start or error, proceed seamlessly to fallback provider below
+  }
+
   const primaryAISetting = await storage.getAdminSetting('ai_provider');
   const provider = (primaryAISetting?.value || 'google').toLowerCase();
 
-  if (provider === 'openai') {
+  if (provider === 'natlas') {
+    return await generateNAtlasResponse(effectivePrompt);
+  } else if (provider === 'openai') {
     const apiKeySetting = await storage.getAdminSetting('openai_api_key');
     const apiKey = apiKeySetting?.value || process.env.OPENAI_API_KEY;
 

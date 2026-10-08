@@ -259,6 +259,8 @@ export default function AdminDashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [localSettings, setLocalSettings] = useState<Record<string, string>>({});
+  const [isTestingNAtlas, setIsTestingNAtlas] = useState(false);
+  const [natlasTestResult, setNatlasTestResult] = useState<any>(null);
   const [setupKey, setSetupKey] = useState("");
   const [isSettingUp, setIsSettingUp] = useState(false);
   const [isAddingTrainingTerm, setIsAddingTrainingTerm] = useState(false);
@@ -1726,6 +1728,33 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleTestNAtlas = async () => {
+    setIsTestingNAtlas(true);
+    setNatlasTestResult(null);
+    try {
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/ai/natlas/test', { method: 'POST', headers });
+      const data = await res.json();
+      setNatlasTestResult(data);
+      if (data.ok) {
+        toast({
+          title: "🇳🇬 N-ATLAS Verified!",
+          description: "Model connected successfully and generated legal output."
+        });
+      } else {
+        toast({
+          title: "N-ATLAS Connection Notice",
+          description: data.error || "Please check endpoint or token",
+          variant: "destructive"
+        });
+      }
+    } catch (e: any) {
+      toast({ title: "Test Failed", description: e.message, variant: "destructive" });
+    } finally {
+      setIsTestingNAtlas(false);
+    }
+  };
+
 
   const { data: trainingTerms = [] } = useQuery({
     queryKey: ['admin-training-terms'],
@@ -2954,6 +2983,142 @@ export default function AdminDashboard() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-6 space-y-8 bg-slate-50/30">
+                  {/* Dual-Mode AI Architecture Banner (NITDA NAIC Sovereign Model vs Multi-Model Grid) */}
+                  <div className="p-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/80 rounded-2xl shadow-sm space-y-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div className="h-10 w-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white text-xl font-bold shadow-sm">
+                          🇳🇬
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-base text-slate-800">
+                              National AI Challenge Mode: Sovereign N-ATLAS
+                            </h3>
+                            <Badge className="bg-emerald-600 text-white text-[10px] uppercase font-bold tracking-wider">
+                              NITDA / NCAIR Challenge
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            Dual-mode AI core. Toggle ON to prioritize Nigeria’s sovereign multilingual model (<strong>NCAIR1/N-ATLaS</strong>) with automatic resilient fallbacks, or toggle OFF to run the standard multi-model provider grid.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 bg-white/90 p-2.5 px-4 rounded-xl border border-emerald-200 shadow-xs">
+                        <div className="text-right">
+                          <Label htmlFor="ai-mode-toggle" className="text-xs font-bold block cursor-pointer">
+                            {(localSettings['ai_mode'] ?? getSetting('ai_mode') ?? 'natlas_sovereign') === 'natlas_sovereign' 
+                              ? 'Mode 1: Sovereign N-ATLAS' 
+                              : 'Mode 2: Multi-Model Grid'}
+                          </Label>
+                          <span className="text-[10px] text-slate-500">
+                            {(localSettings['ai_mode'] ?? getSetting('ai_mode') ?? 'natlas_sovereign') === 'natlas_sovereign' 
+                              ? 'N-ATLAS Priority + Groq/Gemini Fallback' 
+                              : 'Admin Provider Selection Active'}
+                          </span>
+                        </div>
+                        <Switch
+                          id="ai-mode-toggle"
+                          checked={(localSettings['ai_mode'] ?? getSetting('ai_mode') ?? 'natlas_sovereign') === 'natlas_sovereign'}
+                          onCheckedChange={(checked) => {
+                            const newMode = checked ? 'natlas_sovereign' : 'multimodel';
+                            handleSettingChange('ai_mode', newMode);
+                            handleSaveSetting('ai_mode', 'ai');
+                            toast({
+                              title: checked ? "🇳🇬 Sovereign N-ATLAS Activated" : "🌐 Multi-Model Grid Activated",
+                              description: checked 
+                                ? "SabiRight is now prioritizing N-ATLAS (NCAIR1/N-ATLaS) for legal chats and ASR." 
+                                : "SabiRight is now running standard multi-provider grid."
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* N-ATLAS Configuration Card */}
+                    <div className="bg-white p-4 rounded-xl border border-emerald-100/80 shadow-xs space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-emerald-800">
+                            N-ATLAS Sovereign Credentials &amp; Endpoints
+                          </span>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
+                            Llama-3 8B Multilingual (Yoruba, Hausa, Igbo, Pidgin)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                            onClick={handleTestNAtlas}
+                            disabled={isTestingNAtlas}
+                          >
+                            {isTestingNAtlas ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <ShieldCheck className="h-3 w-3 mr-1" />}
+                            Test N-ATLAS Output
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <ApiKeyField
+                          label="N-ATLAS Model ID / Repo"
+                          id="natlas_model_id"
+                          category="ai"
+                          isSecret={false}
+                          placeholder="NCAIR1/N-ATLaS"
+                          description="Default: NCAIR1/N-ATLaS on HuggingFace Hub"
+                        />
+                        <ApiKeyField
+                          label="N-ATLAS API Token (HF Token)"
+                          id="natlas_api_token"
+                          category="ai"
+                          placeholder="hf_..."
+                          description="HuggingFace user access token with read permissions"
+                        />
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <ApiKeyField
+                          label="Inference Endpoint URL (Optional)"
+                          id="natlas_api_endpoint"
+                          category="ai"
+                          isSecret={false}
+                          placeholder="https://api-inference.huggingface.co/models/NCAIR1/N-ATLaS"
+                          description="Serverless inference or dedicated endpoint (vLLM / TGI)"
+                        />
+                        <ApiKeyField
+                          label="N-ATLAS ASR Voice Endpoint (Optional)"
+                          id="natlas_asr_endpoint"
+                          category="ai"
+                          isSecret={false}
+                          placeholder="https://api-inference.huggingface.co/models/..."
+                          description="Speech-to-Text endpoint for local Nigerian accents and languages"
+                        />
+                      </div>
+
+                      {natlasTestResult && (
+                        <div className="p-3 bg-slate-900 text-slate-200 rounded-lg text-xs font-mono space-y-1">
+                          <div className="flex items-center justify-between text-slate-400 font-bold uppercase text-[10px]">
+                            <span>N-ATLAS Test Diagnostics:</span>
+                            <span className={natlasTestResult.ok ? "text-emerald-400" : "text-rose-400"}>
+                              {natlasTestResult.ok ? "SUCCESS" : "ERROR"}
+                            </span>
+                          </div>
+                          {natlasTestResult.ok ? (
+                            <div>
+                              <p className="text-emerald-300 font-semibold">Model: {natlasTestResult.model}</p>
+                              <p className="text-slate-300 mt-1 whitespace-pre-wrap">{natlasTestResult.sampleOutput}</p>
+                            </div>
+                          ) : (
+                            <p className="text-rose-400">Error: {natlasTestResult.error}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="grid md:grid-cols-2 gap-8">
                     <div className="space-y-6">
                       <div className="p-4 bg-white rounded-xl border shadow-sm space-y-4">
@@ -2961,7 +3126,7 @@ export default function AdminDashboard() {
                           <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
                             <Settings className="h-4 w-4 text-blue-600" />
                           </div>
-                          <h3 className="font-bold text-sm">Provider Selection</h3>
+                          <h3 className="font-bold text-sm">Provider Selection (Mode 2 Fallback/Manual)</h3>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-xs">Primary AI Model</Label>
@@ -2973,6 +3138,7 @@ export default function AdminDashboard() {
                               <SelectValue placeholder="Select provider" />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value="natlas">🇳🇬 N-ATLAS (Sovereign LLM)</SelectItem>
                               <SelectItem value="google">Google Gemini Pro (Default)</SelectItem>
                               <SelectItem value="openai">OpenAI GPT-4o</SelectItem>
                               <SelectItem value="anthropic">Anthropic Claude 3.5</SelectItem>
@@ -2981,9 +3147,10 @@ export default function AdminDashboard() {
                               <SelectItem value="openrouter">OpenRouter (Multi-Provider)</SelectItem>
                               <SelectItem value="perplexity">Perplexity (Search AI)</SelectItem>
                               <SelectItem value="mistral">Mistral AI (Open Source)</SelectItem>
+                              <SelectItem value="huggingface">HuggingFace Inference API</SelectItem>
                             </SelectContent>
                           </Select>
-                          <p className="text-[10px] text-slate-500">The default model used for intelligent suggestions and automated tasks.</p>
+                          <p className="text-[10px] text-slate-500">The default model used when operating in Multi-Model Grid mode or as backup.</p>
                         </div>
                         <Button className="w-full h-9" size="sm" onClick={() => handleSaveSetting('ai_provider', 'ai')}>
                           Update Provider
