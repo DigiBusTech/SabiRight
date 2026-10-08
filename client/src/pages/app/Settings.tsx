@@ -160,7 +160,7 @@ export default function Settings() {
   };
 
   const referralLink = profile?.referralCode 
-    ? `${window.location.origin}/auth/register?ref=${profile.referralCode}` 
+    ? `${window.location.origin}/auth/login?mode=register&ref=${profile.referralCode}`
     : "";
 
   const handleGenerateReferralCode = async () => {

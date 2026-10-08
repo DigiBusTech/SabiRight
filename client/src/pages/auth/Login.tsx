@@ -61,6 +61,9 @@ export default function Login() {
   useEffect(() => {
     // Capture referral code from URL
     const params = new URLSearchParams(window.location.search);
+    if (params.get('mode')?.toLowerCase() === 'register') {
+      setIsLogin(false);
+    }
     const ref = params.get('ref');
     if (ref) {
       setReferralCode(ref);

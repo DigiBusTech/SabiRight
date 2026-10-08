@@ -133,31 +133,35 @@ async function generateBotCheckoutLink(
       const isSandbox = ((chosenMethod as any).metadata as any)?.isSandbox || secretKey.startsWith('sk_sandbox_');
       const baseUrl = isSandbox ? 'https://sandbox-api.bachs.io' : 'https://api.bachs.io';
 
-      const bachsRes = await fetch(`${baseUrl}/v1/checkout/sessions`, {
+      const bachsRes = await fetch(`${baseUrl}/v1/checkout-sessions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${secretKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          pricing: { amount, currency: 'NGN' },
-          amount,
-          currency: 'NGN',
+          pricing: { amount: Number(amount).toFixed(2), currency: 'NGN' },
           customer: { email: customerEmail, name: customerName },
           success_url: `${appUrl}/api/payments/bachs/callback?payment_id=${payment.id}&tx_ref=${txRef}`,
           cancel_url: `${appUrl}/app/wallet?payment=cancelled`,
+          reference: txRef,
           metadata: { paymentId: payment.id, userId, type, reference: txRef, ...metadata }
         })
       });
 
       const bachsData = await bachsRes.json().catch(() => ({}));
-      const sessionId = bachsData?.data?.id || bachsData?.id;
-      if (bachsRes.ok && (bachsData?.data?.checkout_url || bachsData?.checkout_url) && sessionId) {
-        checkoutUrl = bachsData.data?.checkout_url || bachsData.checkout_url;
+      const checkoutUrlResponse = bachsData?.checkout_url || bachsData?.data?.checkout_url;
+      const sessionId = bachsData?.checkout_id || bachsData?.data?.checkout_id || bachsData?.data?.id || bachsData?.id;
+      if (bachsRes.ok && checkoutUrlResponse && sessionId) {
+        checkoutUrl = checkoutUrlResponse;
         providerReference = String(sessionId);
         providerMetadata = { bachsSessionId: String(sessionId) };
       } else {
-        return { error: bachsData?.message || 'Bachs did not return a valid checkout URL and session ID.' };
+        const providerError = typeof bachsData?.error === 'string'
+          ? bachsData.error
+          : bachsData?.error?.message;
+        console.error(`[Bachs] Bot checkout creation failed (${bachsRes.status}):`, bachsData);
+        return { error: bachsData?.message || providerError || 'Bachs did not return a valid checkout URL and session ID.' };
       }
     } else if (provider === 'paystack') {
       const secretKey = chosenMethod.secretKey || process.env.PAYSTACK_SECRET_KEY;
@@ -225,22 +229,47 @@ async function saveHistory(userId: string, history: ChatTurn[]): Promise<void> {
 
 const LINK_COMMAND = /^\/?link\s+([A-Za-z0-9]{6,10})$/i;
 
+function getAccountLinkInstructions(isLinked: boolean): string {
+  if (isLinked) {
+    return '✅ Your Telegram chat is connected to your SabiRight account. Your account credits and chat history are shared here.';
+  }
+
+  const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
+  return [
+    '🔗 Connect this Telegram chat to SabiRight',
+    `New to SabiRight? Create an account here: ${appUrl}/auth/login?mode=register`,
+    `Already have an account? Sign in here: ${appUrl}/auth/login, then open ${appUrl}/app/settings.`,
+    'In Settings, generate a WhatsApp / Telegram link code, then send this bot: link CODE (replace CODE with your one-time code).',
+    'You can keep using this bot without linking; linking shares your web-account credits and history.'
+  ].join('\n\n');
+}
+
 async function handleLinkCommand(msg: IncomingBotMessage, code: string): Promise<BotResponse> {
   const fail = { text: '\u26A0\uFE0F That code is invalid or has expired. Open SabiRight > Profile > Link WhatsApp/Telegram to get a new one.' };
-  const { data: row } = await supabase
+  const { data: row, error: lookupError } = await supabase
     .from('channel_link_codes')
-    .select('*')
+    .select('code, user_id, expires_at, used_at')
     .eq('code', code.toUpperCase())
     .maybeSingle();
+  if (lookupError) {
+    console.error('[BotController] link-code lookup failed:', lookupError);
+    return { text: '⚠️ I could not check that link code right now. Please try again in a moment.' };
+  }
   if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) return fail;
 
   // Mark the code used first (conditional) so it can never be redeemed twice.
-  const { data: claimed } = await supabase
+  const claimedAt = new Date().toISOString();
+  const { data: claimed, error: claimError } = await supabase
     .from('channel_link_codes')
-    .update({ used_at: new Date().toISOString() })
+    .update({ used_at: claimedAt })
     .eq('code', row.code)
     .is('used_at', null)
+    .gt('expires_at', claimedAt)
     .select('code');
+  if (claimError) {
+    console.error('[BotController] link-code claim failed:', claimError);
+    return { text: '⚠️ I could not verify that link code right now. Please try again in a moment.' };
+  }
   if (!claimed || claimed.length === 0) return fail;
 
   const { error } = await supabase.from('channel_links').upsert({
@@ -251,6 +280,12 @@ async function handleLinkCommand(msg: IncomingBotMessage, code: string): Promise
   });
   if (error) {
     console.error('[BotController] link failed:', error);
+    const { error: rollbackError } = await supabase
+      .from('channel_link_codes')
+      .update({ used_at: null })
+      .eq('code', row.code)
+      .eq('used_at', claimedAt);
+    if (rollbackError) console.error('[BotController] link-code rollback failed:', rollbackError);
     return { text: '\u26A0\uFE0F Could not link your account right now. Please try again.' };
   }
   userChatBuffers.delete(row.user_id);
@@ -342,6 +377,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   const userLang = profile.language || 'English';
   const rawText = (msg.text || '').trim();
   const payload = msg.actionPayload;
+  const isLinked = profile.id !== msg.channelUserId;
 
   const history = await loadHistory(userId);
   if (rawText) {
@@ -359,6 +395,15 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
       quickActions: [
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
         { id: 'lang', title: '🌐 Language', payload: 'ACTION_LANG' }
+      ]
+    };
+  }
+  if (payload === 'ACTION_LINK' || /^\/?link$/i.test(rawText)) {
+    return {
+      text: getAccountLinkInstructions(isLinked),
+      quickActions: [
+        { id: 'start', title: '🏠 Main Menu', payload: 'ACTION_START' },
+        { id: 'balance', title: '💳 Check Credits', payload: 'ACTION_BALANCE' }
       ]
     };
   }
@@ -639,6 +684,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     return {
       text: `⚖️ *Welcome to SabiRight Civic Assistant*\n\n` +
         `Hello ${profile.display_name || msg.userName || 'Citizen'}! I am your AI Civic and Legal First-Aid guide for Nigeria.\n\n` +
+        `${getAccountLinkInstructions(isLinked)}\n\n` +
         `*What I can do for you:*\n` +
         `• Instant rights guidance during police stops (Police Act 2020)\n` +
         `• Clarify fundamental rights (1999 Constitution Chapter IV)\n` +
@@ -650,7 +696,8 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
         { id: 'topup', title: '💳 Buy Credits', payload: 'ACTION_TOPUP' },
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
-        { id: 'lang', title: '🌐 Language', payload: 'ACTION_LANG' }
+        { id: 'lang', title: '🌐 Language', payload: 'ACTION_LANG' },
+        { id: 'link', title: '🔗 Connect Account', payload: 'ACTION_LINK' }
       ]
     };
   }

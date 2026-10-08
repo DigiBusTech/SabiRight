@@ -3852,17 +3852,16 @@ AI:`;
 
         const bachsPayload = {
           pricing: {
-            amount: amount,
-            currency: currency || 'NGN'
+            amount: Number(amount).toFixed(2),
+            currency: String(currency || 'NGN').toUpperCase()
           },
-          amount: amount,
-          currency: currency || 'NGN',
           customer: {
             email: email || userProfile?.email || `user-${userId}@sabiright.com`,
             name: userProfile?.displayName || 'Citizen'
           },
           success_url: `${appUrl}/api/payments/bachs/callback?payment_id=${payment.id}&tx_ref=${txRef}`,
           cancel_url: `${appUrl}/app/wallet?payment=cancelled`,
+          reference: txRef,
           metadata: {
             paymentId: payment.id,
             userId,
@@ -3872,7 +3871,7 @@ AI:`;
           }
         };
 
-        const bachsRes = await fetch(`${bachsBaseUrl}/v1/checkout/sessions`, {
+        const bachsRes = await fetch(`${bachsBaseUrl}/v1/checkout-sessions`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${bachsSecretKey}`,
@@ -3882,14 +3881,20 @@ AI:`;
         });
 
         const bachsData = await bachsRes.json().catch(() => ({}));
-        if (!bachsRes.ok || !(bachsData?.data?.checkout_url || bachsData?.checkout_url)) {
-          console.error('[Bachs] checkout session creation failed:', bachsData);
-          return res.status(502).json({ error: bachsData?.message || 'Failed to create Bachs checkout session' });
+        const checkoutUrl = bachsData?.checkout_url || bachsData?.data?.checkout_url;
+        const sessionId = bachsData?.checkout_id || bachsData?.data?.checkout_id || bachsData?.data?.id || bachsData?.id;
+        if (!bachsRes.ok || !checkoutUrl || !sessionId) {
+          console.error(`[Bachs] checkout session creation failed (${bachsRes.status}):`, bachsData);
+          const providerError = typeof bachsData?.error === 'string'
+            ? bachsData.error
+            : bachsData?.error?.message;
+          return res.status(502).json({
+            error: bachsData?.message || providerError || 'Failed to create Bachs checkout session'
+          });
         }
 
-        authorizationUrl = bachsData.data?.checkout_url || bachsData.checkout_url;
+        authorizationUrl = checkoutUrl;
         redirectUrl = authorizationUrl;
-        const sessionId = bachsData.data?.id || bachsData.id || txRef;
 
         await storage.updatePayment(payment.id, {
           providerRef: sessionId,
@@ -4096,7 +4101,7 @@ AI:`;
     if (!sessionId) return { ok: false, status: 'failed', error: 'Bachs checkout session is missing', code: 400 };
 
     try {
-      const vRes = await fetch(`${bachsBaseUrl}/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, {
+      const vRes = await fetch(`${bachsBaseUrl}/v1/checkout-sessions/${encodeURIComponent(sessionId)}`, {
         headers: { 'Authorization': `Bearer ${bachsSecretKey}` }
       });
       if (!vRes.ok) {
@@ -4107,13 +4112,14 @@ AI:`;
 
       const vData = await vRes.json().catch(() => ({}));
       const session = vData.data || vData;
-      if (session.id && String(session.id) !== String(sessionId)) {
+      const verifiedSessionId = session.checkout_id || session.id;
+      if (verifiedSessionId && String(verifiedSessionId) !== String(sessionId)) {
         return { ok: false, status: 'failed', error: 'Bachs checkout session mismatch', code: 400 };
       }
       const paymentStatus = String(session.payment_status || '').toLowerCase();
       const sessionStatus = String(session.status || '').toLowerCase();
       if (
-        !['paid', 'successful'].includes(paymentStatus) &&
+        !['paid', 'successful', 'succeeded'].includes(paymentStatus) &&
         !['completed', 'success', 'succeeded'].includes(sessionStatus)
       ) {
         return { ok: false, status: 'unpaid', error: 'Bachs session payment not confirmed yet', code: 402 };
@@ -4128,7 +4134,7 @@ AI:`;
         return { ok: false, status: 'failed', error: 'Bachs payment currency mismatch', code: 400 };
       }
 
-      const providerRef = String(session.id || sessionId);
+      const providerRef = String(verifiedSessionId || sessionId);
       const result = await storage.fulfillPayment(payment.id, providerRef, paidAmount);
       return result.ok ? { ok: true, status: 'success' } : { ok: false, status: 'failed', error: result.reason, code: 400 };
     } catch (vErr: any) {
@@ -4160,14 +4166,19 @@ AI:`;
       const eventType = event?.event || event?.type;
       const eventData = event?.data || event;
 
+      const eventStatus = String(eventData?.status || '').toLowerCase();
       if (
         eventType === 'collection.succeeded' ||
         eventType === 'checkout.session.completed' ||
         eventType === 'payment.successful' ||
-        eventData?.status === 'successful' ||
-        eventData?.payment_status === 'paid'
+        ['successful', 'succeeded', 'paid'].includes(eventStatus) ||
+        ['successful', 'succeeded', 'paid'].includes(String(eventData?.payment_status || '').toLowerCase())
       ) {
-        const ref = eventData?.metadata?.paymentId || eventData?.metadata?.reference || eventData?.id || eventData?.reference;
+        const ref = eventData?.metadata?.paymentId ||
+          eventData?.metadata?.reference ||
+          eventData?.checkout_id ||
+          eventData?.reference ||
+          eventData?.id;
         if (ref) {
           await settleBachsTransaction(String(ref));
         }
