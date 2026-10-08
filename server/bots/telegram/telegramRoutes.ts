@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { supabase } from "../../supabaseStorage.js";
 import { processBotMessage, resolveBotProfile } from "../botController.js";
 import { 
   sendTelegramMessage, 
@@ -123,11 +124,56 @@ telegramRouter.post("/webhook", async (req: Request, res: Response) => {
     // Send typing action to Telegram
     await sendTelegramChatAction(chatId, 'typing');
 
-    // Process through unified SabiRight AI agent controller
-    const response = await processBotMessage(incoming);
+    // 1. Persist inbound message to outbox
+    const inboundId = `in_tg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    try {
+      await supabase.from('inbound_bot_messages').insert({
+        id: inboundId,
+        channel: 'telegram',
+        channel_user_id: incoming.channelUserId,
+        raw_sender_id: incoming.rawSenderId,
+        user_name: incoming.userName,
+        text: incoming.text || '',
+        action_payload: incoming.actionPayload || null,
+        location: incoming.location || null,
+        received_at: new Date().toISOString()
+      });
+    } catch (dbErr) {
+      console.warn('[TelegramWebhook] Outbox persistence notice:', dbErr);
+    }
 
-    // Send formatted response with inline keyboards back to Telegram user
-    await sendTelegramMessage(chatId, response);
+    try {
+      // 2. Process through unified SabiRight AI agent controller
+      const response = await processBotMessage(incoming);
+
+      // 3. Send formatted response back to Telegram user
+      const sendResult = await sendTelegramMessage(chatId, response);
+
+      // 4. Update outbox status
+      try {
+        await supabase.from('inbound_bot_messages').update({
+          processed_at: new Date().toISOString(),
+          delivered_at: sendResult?.ok ? new Date().toISOString() : null,
+          error: sendResult?.ok ? null : (sendResult?.description || 'Send failed')
+        }).eq('id', inboundId);
+      } catch {}
+    } catch (procErr: any) {
+      console.error("[TelegramWebhook] Message processing error:", procErr);
+      try {
+        await supabase.from('inbound_bot_messages').update({
+          error: procErr?.message || String(procErr)
+        }).eq('id', inboundId);
+      } catch {}
+
+      // Send chat-safe error message so the user is never left in silence
+      await sendTelegramMessage(chatId, {
+        text: "⚠️ I encountered an issue while generating your response. Please try sending your question again, or type /urgent if you are in an emergency.",
+        quickActions: [
+          { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
+          { id: 'start', title: '🏠 Main Menu', payload: 'ACTION_START' }
+        ]
+      }).catch(() => {});
+    }
   } catch (err) {
     console.error("[TelegramWebhook] Error handling update:", err);
   }

@@ -227,6 +227,64 @@ async function saveHistory(userId: string, history: ChatTurn[]): Promise<void> {
   }
 }
 
+function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const R = 6371; // Earth's radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c * 10) / 10;
+}
+
+interface RankedProfessional {
+  pro: any;
+  distanceKm?: number;
+}
+
+async function searchNearbyProfessionals(
+  role: string = 'lawyer',
+  userLocation?: { latitude: number; longitude: number },
+  userCity?: string | null
+): Promise<RankedProfessional[]> {
+  const allVerified = await storage.getProfessionals({ role, verified: true, status: 'active' });
+  // Fall back to any verified if none active yet
+  const pool = allVerified.length > 0 ? allVerified : await storage.getProfessionals({ role, verified: true });
+
+  const ranked: RankedProfessional[] = pool.map(pro => {
+    const pLat = pro.location?.latitude;
+    const pLon = pro.location?.longitude;
+    let dist: number | undefined;
+    if (userLocation && typeof pLat === 'number' && typeof pLon === 'number') {
+      dist = haversineDistance(userLocation.latitude, userLocation.longitude, pLat, pLon);
+    }
+    return { pro, distanceKm: dist };
+  });
+
+  ranked.sort((a, b) => {
+    if (a.distanceKm !== undefined && b.distanceKm !== undefined) {
+      return a.distanceKm - b.distanceKm;
+    }
+    if (a.distanceKm !== undefined) return -1;
+    if (b.distanceKm !== undefined) return 1;
+
+    // Secondary city match
+    if (userCity) {
+      const aCity = (a.pro.location?.city || '').toLowerCase();
+      const bCity = (b.pro.location?.city || '').toLowerCase();
+      const target = userCity.toLowerCase();
+      if (aCity.includes(target) && !bCity.includes(target)) return -1;
+      if (!aCity.includes(target) && bCity.includes(target)) return 1;
+    }
+
+    return (b.pro.rating || 0) - (a.pro.rating || 0);
+  });
+
+  return ranked;
+}
+
 const LINK_COMMAND = /^\/?link\s+([A-Za-z0-9]{6,10})$/i;
 
 function getAccountLinkInstructions(isLinked: boolean): string {
@@ -272,6 +330,8 @@ async function handleLinkCommand(msg: IncomingBotMessage, code: string): Promise
   }
   if (!claimed || claimed.length === 0) return fail;
 
+  const previousGuestUserId = msg.channelUserId;
+
   const { error } = await supabase.from('channel_links').upsert({
     channel: msg.channel,
     channel_user_id: msg.channelUserId,
@@ -288,14 +348,65 @@ async function handleLinkCommand(msg: IncomingBotMessage, code: string): Promise
     if (rollbackError) console.error('[BotController] link-code rollback failed:', rollbackError);
     return { text: '\u26A0\uFE0F Could not link your account right now. Please try again.' };
   }
+
+  // Migrate guest records (pre-case files and bookings) to the newly linked real account
+  try {
+    await supabase.from('pre_case_files').update({ user_id: row.user_id }).eq('user_id', previousGuestUserId);
+    await supabase.from('direct_bookings').update({ user_id: row.user_id }).eq('user_id', previousGuestUserId);
+  } catch (migErr) {
+    console.warn('[BotController] Guest record migration warning:', migErr);
+  }
+
   userChatBuffers.delete(row.user_id);
   userChatBuffers.delete(msg.channelUserId);
-  return { text: '\u2705 Account linked. Your credits, chats and case files now sync with your SabiRight account.' };
+  return { text: '\u2705 Account linked successfully! Your credits, chats, and case files now sync with your SabiRight account.' };
+}
+
+async function handleUnlinkCommand(msg: IncomingBotMessage): Promise<BotResponse> {
+  const { data: link } = await supabase
+    .from('channel_links')
+    .select('user_id')
+    .eq('channel', msg.channel)
+    .eq('channel_user_id', msg.channelUserId)
+    .maybeSingle();
+
+  if (!link) {
+    return {
+      text: 'ℹ️ This chat is not linked to any web account. You are operating as a guest.',
+      quickActions: [
+        { id: 'link', title: '🔗 Link Account', payload: 'ACTION_LINK' },
+        { id: 'start', title: '🏠 Main Menu', payload: 'ACTION_START' }
+      ]
+    };
+  }
+
+  const { error } = await supabase
+    .from('channel_links')
+    .delete()
+    .eq('channel', msg.channel)
+    .eq('channel_user_id', msg.channelUserId);
+
+  if (error) {
+    console.error('[BotController] Unlink error:', error);
+    return { text: '⚠️ Could not disconnect your account right now. Please try again.' };
+  }
+
+  userChatBuffers.delete(link.user_id);
+  userChatBuffers.delete(msg.channelUserId);
+
+  return {
+    text: '✅ Your chat has been unlinked from your SabiRight account. You are now operating as a guest.',
+    quickActions: [
+      { id: 'link', title: '🔗 Reconnect Account', payload: 'ACTION_LINK' },
+      { id: 'start', title: '🏠 Main Menu', payload: 'ACTION_START' }
+    ]
+  };
 }
 
 export async function resolveBotProfile(msg: IncomingBotMessage): Promise<any> {
   const { channel, channelUserId, userName, phoneNumber } = msg;
 
+  // 1. Check explicit channel links table (user authenticated and linked via link code)
   const { data: link } = await supabase
     .from('channel_links')
     .select('user_id')
@@ -306,6 +417,8 @@ export async function resolveBotProfile(msg: IncomingBotMessage): Promise<any> {
     const { data: linked } = await supabase.from('profiles').select('*').eq('id', link.user_id).maybeSingle();
     if (linked) return linked;
   }
+
+  // 2. Check existing guest profile by channel_id
   const { data: existingByChannel } = await supabase
     .from('profiles')
     .select('*')
@@ -314,42 +427,38 @@ export async function resolveBotProfile(msg: IncomingBotMessage): Promise<any> {
 
   if (existingByChannel) return existingByChannel;
 
-  if (phoneNumber) {
-    const cleanPhone = phoneNumber.replace(/[^0-9+]/g, '');
-    const { data: existingByPhone } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('phone_number', cleanPhone)
-      .maybeSingle();
-
-    if (existingByPhone) {
-      await supabase
-        .from('profiles')
-        .update({ channel_id: channelUserId, updated_at: new Date().toISOString() })
-        .eq('id', existingByPhone.id);
-      return existingByPhone;
-    }
-  }
-
+  // 3. Create a new guest profile with is_guest = true, unverified email status, and no presumed city
   const newProfile = {
     id: channelUserId,
     channel,
     channel_id: channelUserId,
     display_name: userName || `${channel.toUpperCase()} Citizen`,
     phone_number: phoneNumber || null,
-    city: 'Lagos',
-    state: 'Lagos',
+    city: null,
+    state: null,
     language: 'English',
     is_admin: false,
     is_vendor: false,
-    email_verified: true,
-    email_verification_status: 'verified',
+    is_guest: true,
+    email_verified: false,
+    email_verification_status: 'pending',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
 
-  await supabase.from('profiles').insert(newProfile);
-  await storage.activatePlan(channelUserId, 'free');
+  const { error: insertErr } = await supabase.from('profiles').insert(newProfile);
+  if (insertErr) {
+    console.error('[BotController] Guest profile creation failed:', insertErr);
+    // If insert errored due to a race condition, try reading existing again
+    const { data: retryProfile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('channel_id', channelUserId)
+      .maybeSingle();
+    if (retryProfile) return retryProfile;
+  }
+
+  await storage.activatePlan(channelUserId, 'free').catch(() => {});
 
   return newProfile;
 }
@@ -407,10 +516,84 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
       ]
     };
   }
-  if (payload === 'ACTION_LAWYER' || rawText.toLowerCase() === '/lawyer') {
-    const professionals = await storage.getProfessionals({ role: 'lawyer', verified: true });
-    const nearby = professionals.slice(0, 3);
-    const matchedPro = professionals.find(p => p.location?.city?.toLowerCase() === profile.city?.toLowerCase()) || professionals[0];
+  // Professional Search & Category Discovery
+  if (payload === 'ACTION_DIRECTORY' || rawText.toLowerCase() === '/directory' || rawText.toLowerCase() === '/professionals') {
+    return {
+      text: `📂 *Verified Professional Directory*\n\n` +
+        `Choose a category to find verified practitioners near you:`,
+      quickActions: [
+        { id: 'cat_lawyer', title: '👨‍⚖️ Lawyers', payload: 'PROS_ROLE_lawyer' },
+        { id: 'cat_cac', title: '🏢 CAC Agents', payload: 'PROS_ROLE_cac_agent' },
+        { id: 'cat_tax', title: '📊 Tax Agents', payload: 'PROS_ROLE_tax_agent' },
+        { id: 'cat_acc', title: '💼 Accountants', payload: 'PROS_ROLE_accountant' },
+        { id: 'menu', title: '🏠 Main Menu', payload: 'ACTION_START' }
+      ]
+    };
+  }
+
+  if (payload === 'ACTION_LAWYER' || rawText.toLowerCase() === '/lawyer' || payload?.startsWith('PROS_ROLE_')) {
+    const role = payload?.startsWith('PROS_ROLE_') ? payload.replace('PROS_ROLE_', '') : 'lawyer';
+    const ranked = await searchNearbyProfessionals(role, msg.location, profile.city);
+    const topThree = ranked.slice(0, 3);
+
+    if (topThree.length === 0) {
+      const locationText = profile.city ? ` in ${profile.city}` : '';
+      return {
+        text: `🔍 *No Verified ${role.replace('_', ' ').toUpperCase()}s Found${locationText}*\n\n` +
+          `There are currently no verified ${role.replace('_', ' ')}s listed in this area.\n\n` +
+          `• You can share your GPS location using the chat attachment button to search by distance.\n` +
+          `• Or open the full directory on the SabiRight web app.`,
+        quickActions: [
+          { id: 'all_pros', title: '📂 Other Categories', payload: 'ACTION_DIRECTORY' },
+          { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
+          { id: 'menu', title: '🏠 Main Menu', payload: 'ACTION_START' }
+        ]
+      };
+    }
+
+    const proListText = topThree.map((item, idx) => {
+      const p = item.pro;
+      const cleanPhone = (p.phoneNumber || '').replace(/[^0-9]/g, '');
+      const waLink = cleanPhone ? ` | [Chat on WhatsApp](https://wa.me/${cleanPhone})` : '';
+      const distInfo = item.distanceKm !== undefined ? ` (~${item.distanceKm} km away)` : '';
+      const loc = p.location?.city || p.location?.state || 'Nigeria';
+      return `*${idx + 1}. ${p.displayName || 'Verified Practitioner'}*\n` +
+        `📍 Location: ${loc}${distInfo}\n` +
+        `📞 Contact: ${p.phoneNumber || 'Available upon booking'}${waLink}\n` +
+        `⭐ Rating: ${p.rating || 5.0}/5.0\n` +
+        `👉 _To connect, tap below: Connect with #${idx + 1}_`;
+    }).join('\n\n');
+
+    const connectActions = topThree.map((item, idx) => ({
+      id: `book_${item.pro.id}`,
+      title: `🤝 Connect #${idx + 1}`,
+      payload: `BOOK_PRO_${item.pro.id}`
+    }));
+
+    return {
+      text: `⚖️ *Verified ${role.replace('_', ' ').toUpperCase()} Directory*\n\n` +
+        `Here are the verified practitioners found for you:\n\n` +
+        `${proListText}\n\n` +
+        `_Your case brief will ONLY be shared with a practitioner after you tap to connect._`,
+      quickActions: [
+        ...connectActions,
+        { id: 'categories', title: '📂 Categories', payload: 'ACTION_DIRECTORY' },
+        { id: 'menu', title: '🏠 Main Menu', payload: 'ACTION_START' }
+      ]
+    };
+  }
+
+  // Explicit Consent-Based Lead Creation
+  if (payload?.startsWith('BOOK_PRO_')) {
+    const targetProId = payload.replace('BOOK_PRO_', '');
+    const matchedPro = await storage.getProfessionalById(targetProId);
+
+    if (!matchedPro) {
+      return {
+        text: '⚠️ Could not find that professional. Please search the directory again.',
+        quickActions: [{ id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' }]
+      };
+    }
 
     let caseSummary = "Citizen enquiry via bot.";
     try {
@@ -433,52 +616,42 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
       created_at: new Date().toISOString()
     });
 
-    if (matchedPro) {
-      // Create Direct Lead on matched advocate's dashboard
-      await supabase.from('direct_bookings').insert({
-        id: `bk-${Date.now()}`,
-        user_id: userId,
-        vendor_id: matchedPro.userId || matchedPro.id,
-        case_file_id: caseFileId,
-        title: `Civic Lead (${msg.channel.toUpperCase()}) - ${caseRef}`,
-        description: caseSummary.slice(0, 500),
-        contact_phone: msg.phoneNumber || profile.phone_number || '',
-        channel: msg.channel,
-        status: 'pending',
-        created_at: new Date().toISOString()
-      });
+    // Create Direct Lead now that user gave explicit consent
+    const bookingId = `bk-${Date.now()}`;
+    await supabase.from('direct_bookings').insert({
+      id: bookingId,
+      user_id: userId,
+      vendor_id: matchedPro.userId || matchedPro.id,
+      case_file_id: caseFileId,
+      title: `Civic Lead (${msg.channel.toUpperCase()}) - ${caseRef}`,
+      description: caseSummary.slice(0, 500),
+      contact_phone: msg.phoneNumber || profile.phone_number || '',
+      channel: msg.channel,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    });
 
-      // Send in-app notification to the matched advocate
-      await storage.sendNotification({
-        userId: matchedPro.userId || matchedPro.id,
-        type: 'new_case_lead',
-        title: `🚨 New Case File Received (${caseRef})`,
-        message: `A client from ${msg.channel.toUpperCase()} requires legal representation in ${profile.city || 'your area'}. Pre-case brief generated.`,
-        data: { caseRef, caseFileId }
-      });
-    }
+    // Notify the professional
+    await storage.sendNotification({
+      userId: matchedPro.userId || matchedPro.id,
+      type: 'new_case_lead',
+      title: `🚨 New Case Lead (${caseRef})`,
+      message: `A client from ${msg.channel.toUpperCase()} selected you for legal representation. Pre-case brief generated.`,
+      data: { caseRef, caseFileId, bookingId }
+    });
 
-    let proListText = "";
-    if (nearby.length > 0) {
-      proListText = nearby.map((pro, idx) => {
-        const cleanPhone = (pro.phoneNumber || '').replace(/[^0-9]/g, '');
-        const waLink = cleanPhone ? ` | [Chat on WhatsApp](https://wa.me/${cleanPhone})` : '';
-        return `*${idx + 1}. ${pro.displayName || 'Legal Practitioner'}*\n` +
-          `📍 Location: ${pro.location?.city || profile.city || 'Lagos'}\n` +
-          `📞 Contact: ${pro.phoneNumber || 'Available upon booking'}${waLink}\n` +
-          `⭐ Rating: ${pro.rating || 5.0}/5.0`;
-      }).join('\n\n');
-    } else {
-      proListText = `We have logged your Pre-Case Brief (${caseRef}) and routed it to verified advocates in ${profile.city || 'Nigeria'}.`;
-    }
+    const cleanPhone = (matchedPro.phoneNumber || '').replace(/[^0-9]/g, '');
+    const waLink = cleanPhone ? `\n💬 *WhatsApp Direct:* https://wa.me/${cleanPhone}` : '';
 
     return {
-      text: `📋 *Pre-Case File Generated: ${caseRef}*\n\n` +
-        `We have summarized your dispute into a legal discovery file and dispatched it to verified advocates. Here are your matched practitioners:\n\n` +
-        `${proListText}\n\n` +
-        `_Note: SabiRight handles no payments. You agree on consultation terms directly with the professional._`,
+      text: `✅ *Pre-Case File Dispatched! (Ref: ${caseRef})*\n\n` +
+        `Your case summary has been sent directly to *${matchedPro.displayName || 'Advocate'}*.\n\n` +
+        `• *Phone:* ${matchedPro.phoneNumber || 'Listed upon contact'}${waLink}\n` +
+        `• *Booking ID:* ${bookingId}\n\n` +
+        `You can check the status of your bookings anytime with */bookings*.\n\n` +
+        `_Note: SabiRight charges zero fees. You agree on consultation terms directly with your advocate._`,
       quickActions: [
-        { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
+        { id: 'bookings', title: '📋 My Bookings', payload: 'ACTION_BOOKINGS' },
         { id: 'menu', title: '🏠 Main Menu', payload: 'ACTION_START' }
       ]
     };
@@ -659,45 +832,134 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     };
   }
 
+  // Bookings & Case Status Check
+  if (rawText.toLowerCase() === '/bookings' || payload === 'ACTION_BOOKINGS') {
+    const userBookings = await storage.getBookingsByUserId(userId);
+    if (!userBookings || userBookings.length === 0) {
+      return {
+        text: `📋 *My Case Leads & Bookings*\n\n` +
+          `You have no active case leads or professional bookings.\n\n` +
+          `• To connect with a verified advocate, type */lawyer* or use the menu.`,
+        quickActions: [
+          { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
+          { id: 'menu', title: '🏠 Main Menu', payload: 'ACTION_START' }
+        ]
+      };
+    }
+
+    const listText = userBookings.slice(0, 5).map((b: any, idx: number) => {
+      const statusIcon = b.status === 'confirmed' ? '✅' : b.status === 'completed' ? '🏁' : '⏳';
+      const created = b.createdAt ? new Date(b.createdAt).toLocaleDateString() : 'Recent';
+      return `*${idx + 1}. ${b.title || 'Legal Consultation'}*\n` +
+        `• Ref ID: \`${b.id}\`\n` +
+        `• Status: ${statusIcon} ${String(b.status).toUpperCase()}\n` +
+        `• Date: ${created}\n` +
+        `👉 View details: \`/booking ${b.id}\``;
+    }).join('\n\n');
+
+    return {
+      text: `📋 *Your Case Leads & Bookings (${userBookings.length})*\n\n` +
+        `${listText}\n\n` +
+        `_To inspect a specific booking, send /booking followed by the Ref ID._`,
+      quickActions: [
+        { id: 'lawyer', title: '👨‍⚖️ New Booking', payload: 'ACTION_LAWYER' },
+        { id: 'balance', title: '💳 Balance', payload: 'ACTION_BALANCE' },
+        { id: 'menu', title: '🏠 Main Menu', payload: 'ACTION_START' }
+      ]
+    };
+  }
+
+  // Single Booking Detail Lookup
+  if (rawText.toLowerCase().startsWith('/booking ') || payload?.startsWith('VIEW_BOOKING_')) {
+    const bookingId = payload ? payload.replace('VIEW_BOOKING_', '') : rawText.replace(/^\/booking\s+/i, '').trim();
+    const booking = await storage.getBookingById(bookingId);
+
+    if (!booking || (booking.userId !== userId && booking.vendorId !== userId)) {
+      return {
+        text: `⚠️ Booking \`${bookingId}\` was not found under your account.`,
+        quickActions: [
+          { id: 'bookings', title: '📋 My Bookings', payload: 'ACTION_BOOKINGS' },
+          { id: 'menu', title: '🏠 Main Menu', payload: 'ACTION_START' }
+        ]
+      };
+    }
+
+    const messages = await storage.getBookingMessages(bookingId, 3).catch(() => []);
+    const msgsPreview = messages.length > 0
+      ? `\n*Recent Updates:*\n` + messages.map((m: any) => `• _${m.message}_`).join('\n')
+      : '';
+
+    return {
+      text: `📄 *Booking Details: ${booking.title || 'Legal Consultation'}*\n\n` +
+        `• *ID:* \`${booking.id}\`\n` +
+        `• *Status:* ${String(booking.status).toUpperCase()}\n` +
+        `• *Channel:* ${String(booking.channel || 'web').toUpperCase()}\n` +
+        (booking.agreedFee ? `• *Agreed Fee:* ₦${booking.agreedFee}\n` : '') +
+        (booking.description ? `• *Case Summary:* ${booking.description.slice(0, 300)}\n` : '') +
+        msgsPreview +
+        `\n\n_Log in on web/mobile to send direct secure messages on this case._`,
+      quickActions: [
+        { id: 'bookings', title: '📋 All Bookings', payload: 'ACTION_BOOKINGS' },
+        { id: 'menu', title: '🏠 Main Menu', payload: 'ACTION_START' }
+      ]
+    };
+  }
+
+  // Unlink Command
+  if (rawText.toLowerCase() === '/unlink' || payload === 'ACTION_UNLINK') {
+    return handleUnlinkCommand(msg);
+  }
+
   if (rawText.toLowerCase() === '/help' || payload === 'ACTION_HELP') {
     return {
       text: `⚖️ *SabiRight Civic Assistant Commands*\n\n` +
-        `• */start* - Welcome & quick options\n` +
-        `• */balance* - Check your available credits and active plan\n` +
+        `• */start* - Welcome & onboarding choices\n` +
+        `• */balance* - Check your credits & active plan\n` +
         `• */topup* - Buy extra credits via direct payment link\n` +
         `• */plans* - View & subscribe to monthly membership plans\n` +
         `• */urgent* - Emergency constitutional advice during stops/checkpoints\n` +
-        `• */lawyer* - Connect directly with verified Nigerian legal advocates\n` +
+        `• */lawyer* - Find verified nearby legal advocates\n` +
+        `• */directory* - Browse professional directory categories\n` +
+        `• */bookings* - View your active case leads & booking statuses\n` +
         `• */language* - Change response language (English, Pidgin, Hausa, Yoruba, Igbo)\n` +
-        `• *link <CODE>* - Link this chat to your web/mobile account\n\n` +
-        `Or simply type your question naturally!`,
+        `• *link <CODE>* - Link this chat to your web/mobile account\n` +
+        `• */unlink* - Disconnect linked web account and return to guest mode\n\n` +
+        `Or simply type your legal question naturally!`,
       quickActions: [
-        { id: 'topup', title: '💳 Buy Credits', payload: 'ACTION_TOPUP' },
-        { id: 'balance', title: '💳 Balance', payload: 'ACTION_BALANCE' },
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
-        { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' }
+        { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
+        { id: 'bookings', title: '📋 Bookings', payload: 'ACTION_BOOKINGS' },
+        { id: 'balance', title: '💳 Balance', payload: 'ACTION_BALANCE' }
       ]
     };
   }
 
   if (rawText.toLowerCase() === '/start' || rawText.toLowerCase() === 'hi' || rawText.toLowerCase() === 'hello' || payload === 'ACTION_START') {
+    const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
+    const accountStatusText = isLinked
+      ? `✅ *Account Status:* Connected to SabiRight account (${profile.email || profile.display_name || 'Citizen'})`
+      : `👤 *Account Status:* Operating as Guest\n` +
+        `• To connect an existing web account, enter: \`link CODE\`\n` +
+        `• To create a full account, register at: ${appUrl}/auth/login?mode=register\n` +
+        `• Or continue directly as a guest with free introductory access below.`;
+
     return {
       text: `⚖️ *Welcome to SabiRight Civic Assistant*\n\n` +
         `Hello ${profile.display_name || msg.userName || 'Citizen'}! I am your AI Civic and Legal First-Aid guide for Nigeria.\n\n` +
-        `${getAccountLinkInstructions(isLinked)}\n\n` +
+        `${accountStatusText}\n\n` +
         `*What I can do for you:*\n` +
         `• Instant rights guidance during police stops (Police Act 2020)\n` +
         `• Clarify fundamental rights (1999 Constitution Chapter IV)\n` +
         `• Tenancy, land, and debt dispute guidance\n` +
         `• Connecting you directly with verified Nigerian lawyers\n\n` +
-        `Ask your question below or select a quick option:`,
+        `Ask your question below or select an option:`,
       quickActions: [
-        { id: 'balance', title: '💳 Check Credits', payload: 'ACTION_BALANCE' },
-        { id: 'topup', title: '💳 Buy Credits', payload: 'ACTION_TOPUP' },
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
+        { id: 'bookings', title: '📋 My Bookings', payload: 'ACTION_BOOKINGS' },
+        { id: 'balance', title: '💳 Credits', payload: 'ACTION_BALANCE' },
         { id: 'lang', title: '🌐 Language', payload: 'ACTION_LANG' },
-        { id: 'link', title: '🔗 Connect Account', payload: 'ACTION_LINK' }
+        { id: 'link', title: isLinked ? '🔗 Account Info' : '🔗 Link Account', payload: 'ACTION_LINK' }
       ]
     };
   }

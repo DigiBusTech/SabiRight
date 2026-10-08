@@ -737,25 +737,34 @@ export const supabaseStorage: IStorage = {
     if (filters?.role) q = q.eq('role', filters.role);
     if (filters?.verified !== undefined) q = q.eq('verified', filters.verified);
     const { data } = await q;
-    return (data || []).map((p: any) => ({
-      id: p.id,
-      userId: p.user_id,
-      displayName: p.display_name,
-      email: p.email,
-      phoneNumber: p.phone_number,
-      role: p.role,
-      specializations: Array.isArray(p.specializations) ? p.specializations : [],
-      status: p.status,
-      verified: !!p.verified,
-      credentials: p.credentials || {},
-      location: p.location || {},
-      wallet: { NGN: 0, USD: 0, credits: 0, updatedAt: new Date() },
-      rating: Number(p.rating || 5),
-      reviewCount: p.review_count || 0,
-      publicProfile: p.public_profile || {},
-      createdAt: new Date(p.created_at),
-      updatedAt: new Date(p.updated_at)
-    }));
+    return (data || []).map((p: any) => {
+      const loc = p.location || {};
+      const lat = p.latitude ?? loc.latitude;
+      const lon = p.longitude ?? loc.longitude;
+      return {
+        id: p.id,
+        userId: p.user_id,
+        displayName: p.display_name,
+        email: p.email,
+        phoneNumber: p.phone_number,
+        role: p.role,
+        specializations: Array.isArray(p.specializations) ? p.specializations : [],
+        status: p.status,
+        verified: !!p.verified,
+        credentials: p.credentials || {},
+        location: {
+          ...loc,
+          latitude: lat,
+          longitude: lon
+        },
+        wallet: { NGN: 0, USD: 0, credits: 0, updatedAt: new Date() },
+        rating: Number(p.rating || 5),
+        reviewCount: p.review_count || 0,
+        publicProfile: p.public_profile || {},
+        createdAt: new Date(p.created_at),
+        updatedAt: new Date(p.updated_at)
+      };
+    });
   },
 
   async getProfessionalById(professionalId: string): Promise<Professional | null> {

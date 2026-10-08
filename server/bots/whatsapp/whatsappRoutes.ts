@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { supabaseStorage as storage } from "../../supabaseStorage.js";
+import { supabase, supabaseStorage as storage } from "../../supabaseStorage.js";
 import { processBotMessage, resolveBotProfile } from "../botController.js";
 import { sendWhatsAppMessage, markWhatsAppAsRead, checkWhatsAppStatus, downloadWhatsAppAudio } from "./whatsappService.js";
 import { transcribeAudio } from "../../aiService.js";
@@ -157,8 +157,57 @@ async function handleMessage(message: any, contact: any) {
       } : undefined
     };
 
-    const response = await processBotMessage(incoming);
-    await sendWhatsAppMessage(senderPhone, response);
+    // 1. Persist inbound message to outbox
+    const inboundId = `in_wa_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    try {
+      await supabase.from('inbound_bot_messages').insert({
+        id: inboundId,
+        channel: 'whatsapp',
+        channel_user_id: incoming.channelUserId,
+        raw_sender_id: incoming.rawSenderId,
+        user_name: incoming.userName,
+        phone_number: incoming.phoneNumber,
+        text: incoming.text || '',
+        action_payload: incoming.actionPayload || null,
+        location: incoming.location || null,
+        received_at: new Date().toISOString()
+      });
+    } catch (dbErr) {
+      console.warn('[WhatsAppWebhook] Outbox persistence notice:', dbErr);
+    }
+
+    try {
+      // 2. Process through unified SabiRight AI agent controller
+      const response = await processBotMessage(incoming);
+
+      // 3. Send response back to WhatsApp recipient
+      const sendResult = await sendWhatsAppMessage(senderPhone, response);
+
+      // 4. Update outbox record
+      try {
+        await supabase.from('inbound_bot_messages').update({
+          processed_at: new Date().toISOString(),
+          delivered_at: sendResult && !sendResult.error ? new Date().toISOString() : null,
+          error: sendResult?.error ? JSON.stringify(sendResult.error) : null
+        }).eq('id', inboundId);
+      } catch {}
+    } catch (procErr: any) {
+      console.error("[WhatsAppWebhook] Message processing error:", procErr);
+      try {
+        await supabase.from('inbound_bot_messages').update({
+          error: procErr?.message || String(procErr)
+        }).eq('id', inboundId);
+      } catch {}
+
+      // Send chat-safe error message to avoid silence on WhatsApp
+      await sendWhatsAppMessage(senderPhone, {
+        text: "⚠️ I encountered an issue while generating your response. Please try sending your question again, or type /urgent if you are in an emergency.",
+        quickActions: [
+          { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
+          { id: 'start', title: '🏠 Main Menu', payload: 'ACTION_START' }
+        ]
+      }).catch(() => {});
+    }
   } catch (err) {
     console.error("[WhatsAppWebhook] Message handling failed:", err);
   }
