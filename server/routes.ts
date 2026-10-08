@@ -11,7 +11,12 @@ import { Runner, InMemorySessionService, toStructuredEvents, EventType } from "@
 import PaystackService from "./paystackService.js";
 import { whatsappRouter } from "./bots/whatsapp/whatsappRoutes.js";
 import { telegramRouter } from "./bots/telegram/telegramRoutes.js";
-import { generateAIResponse } from "./aiService.js";
+import {
+  generateAIResponse,
+  isNAtlasSovereignMode,
+  MAX_TRANSCRIPTION_AUDIO_BYTES,
+  transcribeAudio
+} from "./aiService.js";
 
 const sessionService = new InMemorySessionService();
 import multer from 'multer';
@@ -317,7 +322,8 @@ export async function registerRoutes(
         'hero_title', 'hero_subtitle', 'video_demo_url', 'seo_title', 
         'privacy_policy', 'terms_of_service', 'cookie_policy',
         'frontend_page_content', 'frontend_page_content_about', 'frontend_page_content_contact', 'frontend_page_content_footer',
-        'credit_reward_referral', 'referral_reward_credits', 'active_languages'
+        'credit_reward_referral', 'referral_reward_credits', 'active_languages',
+        'whatsapp_bot_url', 'telegram_bot_url'
       ];
       
       const publicSettings = settings.filter(s => 
@@ -326,6 +332,12 @@ export async function registerRoutes(
         acc[s.key] = s.value;
         return acc;
       }, {});
+      if (!publicSettings.whatsapp_bot_url) {
+        publicSettings.whatsapp_bot_url = process.env.WHATSAPP_BOT_URL || 'https://wa.me/2348000000000?text=Hello%20SabiRight';
+      }
+      if (!publicSettings.telegram_bot_url) {
+        publicSettings.telegram_bot_url = process.env.TELEGRAM_BOT_URL || 'https://t.me/SabiRightBot';
+      }
       res.json(publicSettings);
     } catch (error) {
       next(error);
@@ -341,7 +353,8 @@ export async function registerRoutes(
         'hero_title', 'hero_subtitle', 'video_demo_url', 'seo_title', 
         'privacy_policy', 'terms_of_service', 'cookie_policy',
         'frontend_page_content', 'frontend_page_content_about', 'frontend_page_content_contact', 'frontend_page_content_footer',
-        'credit_reward_referral', 'referral_reward_credits', 'active_languages'
+        'credit_reward_referral', 'referral_reward_credits', 'active_languages',
+        'whatsapp_bot_url', 'telegram_bot_url'
       ];
       
       const filteredSettings = settings.filter(s => allowedKeys.includes(s.key));
@@ -3008,7 +3021,7 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
       const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
       const geminiKey = geminiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
 
-      if (geminiKey) {
+      if (geminiKey && !(await isNAtlasSovereignMode())) {
         try {
           const agent = await getLegalAgent();
           const runner = new Runner({
@@ -3067,81 +3080,34 @@ User message: ${message}`;
     }
   });
 
-  // Speech-to-text via N-ATLAS ASR (Sovereign Voice) with Gemini fallback. Body: { audioBase64, mimeType, language }
+  // Authenticated transcription endpoint shared by web and mobile clients.
   app.post("/api/ai/transcribe", userAuth, async (req, res) => {
     try {
       const { audioBase64, mimeType, language } = req.body || {};
-      if (!audioBase64 || typeof audioBase64 !== 'string') {
+      if (typeof audioBase64 !== 'string' || !audioBase64.trim()) {
         return res.status(400).json({ error: 'audioBase64 required' });
       }
 
-      // Check if N-ATLAS ASR endpoint is configured
-      const natlasAsrSetting = await storage.getAdminSetting('natlas_asr_endpoint');
-      const natlasTokenSetting = await storage.getAdminSetting('natlas_api_token')
-        || await storage.getAdminSetting('huggingface_api_key');
-      const asrEndpoint = natlasAsrSetting?.value?.trim();
-      const asrToken = natlasTokenSetting?.value || process.env.NATLAS_API_TOKEN || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
-
-      if (asrEndpoint && asrToken) {
-        try {
-          const audioBuffer = Buffer.from(audioBase64, 'base64');
-          const asrResp = await fetch(asrEndpoint, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${asrToken}`,
-              'Content-Type': mimeType || 'audio/mp4'
-            },
-            body: audioBuffer
-          });
-          if (asrResp.ok) {
-            const asrData: any = await asrResp.json();
-            const text = asrData?.text || asrData?.transcript || (Array.isArray(asrData) ? asrData[0]?.text : '');
-            if (text && text.trim()) {
-              return res.json({ text: text.trim(), engine: 'N-ATLAS ASR' });
-            }
-          }
-        } catch (natlasAsrErr: any) {
-          console.warn('[Transcribe] N-ATLAS ASR notice:', natlasAsrErr.message);
-        }
+      const encodedAudio = audioBase64.replace(/^data:audio\/[^;]+;base64,/, '').trim();
+      const maxEncodedLength = Math.ceil(MAX_TRANSCRIPTION_AUDIO_BYTES / 3) * 4;
+      if (encodedAudio.length > maxEncodedLength) {
+        return res.status(413).json({ error: 'Audio exceeds the 8 MB transcription limit' });
+      }
+      if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encodedAudio)) {
+        return res.status(400).json({ error: 'audioBase64 must contain valid base64 audio data' });
       }
 
-      // Gemini fallback for Speech-to-Text
-      const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
-      const apiKey = geminiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
-      if (!apiKey) return res.status(503).json({ error: 'Voice transcription is not configured' });
-
-      const lang = language && String(language).toLowerCase() !== 'english' ? ` The speaker may use ${language}.` : '';
-      const payload = JSON.stringify({
-        contents: [{
-          parts: [
-            { text: `Transcribe this audio exactly as spoken. Nigerian accents, Nigerian Pidgin, Yoruba, Hausa, and Igbo are common.${lang} Return only the transcript text, nothing else. If there is no speech, return an empty string.` },
-            { inline_data: { mime_type: String(mimeType || 'audio/mp4'), data: audioBase64 } },
-          ],
-        }],
-      });
-      let resp: any = null;
-      let lastErr = '';
-      for (const model of ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']) {
-        resp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload }
-        );
-        if (resp.ok) break;
-        lastErr = (await resp.text()).slice(0, 300);
-        console.warn('[Transcribe] Gemini', model, resp.status, lastErr);
-        if (resp.status !== 404 && resp.status !== 400) break;
-      }
-      if (!resp || !resp.ok) {
-        return res.status(502).json({ error: 'Transcription failed', detail: lastErr });
-      }
-      const data: any = await resp.json();
-      const text = (data?.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-      res.json({ text, engine: 'Gemini Flash Multilingual' });
-    } catch (err: any) {
-      console.error('[Transcribe] Error:', err.message);
-      res.status(500).json({ error: 'Transcription failed' });
+      const audio = Buffer.from(encodedAudio, 'base64');
+      if (!audio.length) return res.status(400).json({ error: 'Audio data is empty or invalid' });
+      const result = await transcribeAudio(audio, typeof mimeType === 'string' ? mimeType : 'audio/mp4', language);
+      return res.json(result);
+    } catch (err) {
+      const error = err as Error & { statusCode?: number };
+      console.error('[Transcribe] Error:', error.message || error);
+      return res.status(error.statusCode || 502).json({ error: error.message || 'Transcription failed' });
     }
   });
+
   // AI Civic Chat API (SabiRight Citizen Education) - Unified to use Autonomous Agent
   app.post("/api/ai/civic/chat", optionalUserAuth, async (req, res, next) => {
     let cost = 1;
@@ -3217,8 +3183,12 @@ User message: ${message}`;
 
       let finalResponse = "";
 
-      // Only attempt Google ADK if Google Gemini is specifically configured and key exists
-      if ((activeProvider === 'google' || activeProvider === 'gemini') && geminiKey) {
+      // In sovereign mode, all user-facing chat must go through the unified provider router.
+      if (
+        !(await isNAtlasSovereignMode()) &&
+        (activeProvider === 'google' || activeProvider === 'gemini') &&
+        geminiKey
+      ) {
         try {
           const agent = await getLegalAgent(language || "English");
           const runner = new Runner({

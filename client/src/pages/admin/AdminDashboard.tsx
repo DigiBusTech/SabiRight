@@ -1738,8 +1738,8 @@ export default function AdminDashboard() {
       setNatlasTestResult(data);
       if (data.ok) {
         toast({
-          title: "🇳🇬 N-ATLAS Verified!",
-          description: "Model connected successfully and generated legal output."
+          title: "🇳🇬 N-ATLAS Text Test Passed",
+          description: "The configured text-generation endpoint returned a response."
         });
       } else {
         toast({
@@ -3044,7 +3044,7 @@ export default function AdminDashboard() {
                             N-ATLAS Sovereign Credentials &amp; Endpoints
                           </span>
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
-                            Llama-3 8B Multilingual (Yoruba, Hausa, Igbo, Pidgin)
+                            Llama-3 8B Multilingual (English, Yoruba, Hausa, Igbo)
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -3056,7 +3056,7 @@ export default function AdminDashboard() {
                             disabled={isTestingNAtlas}
                           >
                             {isTestingNAtlas ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <ShieldCheck className="h-3 w-3 mr-1" />}
-                            Test N-ATLAS Output
+                            Test N-ATLAS Text
                           </Button>
                         </div>
                       </div>
@@ -3085,16 +3085,16 @@ export default function AdminDashboard() {
                           id="natlas_api_endpoint"
                           category="ai"
                           isSecret={false}
-                          placeholder="https://api-inference.huggingface.co/models/NCAIR1/N-ATLaS"
-                          description="Serverless inference or dedicated endpoint (vLLM / TGI)"
+                          placeholder="https://router.huggingface.co/v1/chat/completions"
+                          description="Hugging Face chat-completion router or a dedicated OpenAI-compatible endpoint"
                         />
                         <ApiKeyField
-                          label="N-ATLAS ASR Voice Endpoint (Optional)"
+                          label="External Speech-to-Text Endpoint (Optional)"
                           id="natlas_asr_endpoint"
                           category="ai"
                           isSecret={false}
-                          placeholder="https://api-inference.huggingface.co/models/..."
-                          description="Speech-to-Text endpoint for local Nigerian accents and languages"
+                          placeholder="Speech recognition service URL"
+                          description="Separate audio transcription service; the text-model test above does not test this endpoint"
                         />
                       </div>
 
@@ -3380,6 +3380,15 @@ export default function AdminDashboard() {
                         />
 
                         <ApiKeyField 
+                          label="Public Telegram Bot Link / Handle" 
+                          id="telegram_bot_url" 
+                          category="bots" 
+                          isSecret={false}
+                          placeholder="https://t.me/SabiRightBot or @SabiRightBot" 
+                          description="Public bot link or @username shown on landing page for users to chat with the Telegram agent."
+                        />
+
+                        <ApiKeyField 
                           label="Webhook Secret Token (Optional)" 
                           id="telegram_webhook_secret" 
                           category="bots" 
@@ -3470,6 +3479,15 @@ export default function AdminDashboard() {
                           category="bots" 
                           placeholder="EAAB..." 
                           description="Permanent system user token from Meta Business Manager."
+                        />
+
+                        <ApiKeyField 
+                          label="Public WhatsApp Direct Link / Phone Number" 
+                          id="whatsapp_bot_url" 
+                          category="bots" 
+                          isSecret={false}
+                          placeholder="https://wa.me/2348000000000 or +234..." 
+                          description="Public wa.me link or phone number shown on landing page for users to chat with the WhatsApp agent."
                         />
 
                         <div className="grid grid-cols-2 gap-3">

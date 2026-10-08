@@ -1,15 +1,60 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Shield, MapPin, Search, MessageSquare, Users, Scale, AlertTriangle, ChevronDown, User, Star, Code, HelpCircle, Heart, Zap, Award } from "lucide-react";
-import { motion } from "framer-motion";
+import { 
+  ArrowRight, 
+  ArrowUpRight, 
+  ShieldCheck, 
+  MapPin, 
+  MessageSquare, 
+  Scale, 
+  Sparkles, 
+  ChevronDown, 
+  HelpCircle, 
+  Zap, 
+  Send, 
+  Globe2, 
+  Smartphone, 
+  Lock, 
+  CheckCircle2, 
+  Bot, 
+  Radio, 
+  Volume2,
+  ExternalLink
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { getYouTubeEmbedUrl } from "@/lib/utils";
 
+function formatWhatsAppUrl(rawUrl?: string): string {
+  if (!rawUrl || rawUrl.trim() === "") {
+    return "https://wa.me/2348000000000?text=Hello%20SabiRight";
+  }
+  const trimmed = rawUrl.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  const cleaned = trimmed.replace(/[^0-9]/g, "");
+  return `https://wa.me/${cleaned}?text=Hello%20SabiRight`;
+}
+
+function formatTelegramUrl(rawUrl?: string): string {
+  if (!rawUrl || rawUrl.trim() === "") {
+    return "https://t.me/SabiRightBot";
+  }
+  const trimmed = rawUrl.trim();
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    return trimmed;
+  }
+  const cleaned = trimmed.replace(/^@/, "");
+  return `https://t.me/${cleaned}`;
+}
+
 export default function Home() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [activeChannelTab, setActiveChannelTab] = useState<'whatsapp' | 'telegram' | 'web'>('whatsapp');
 
   const { data: settings = {} } = useQuery<any>({
     queryKey: ['/api/settings/public'],
@@ -18,657 +63,608 @@ export default function Home() {
       if (!res.ok) return {};
       return res.json();
     },
-    staleTime: 0,
-    refetchOnWindowFocus: true
+    staleTime: 10000,
+    refetchOnWindowFocus: false
   });
 
   const getSetting = (key: string) => settings[key];
   const videoDemoUrl = getYouTubeEmbedUrl(getSetting('video_demo_url'));
 
-  const fadeInUp = {
-    initial: { opacity: 0, y: 30 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.8, ease: [0.5, 0, 0, 1] }
-  };
+  const whatsAppUrl = formatWhatsAppUrl(getSetting('whatsapp_bot_url'));
+  const telegramUrl = formatTelegramUrl(getSetting('telegram_bot_url'));
 
-  const staggerContainer = {
-    animate: {
-      transition: {
-        staggerChildren: 0.1
-      }
+  const channelDemos = {
+    whatsapp: {
+      title: "WhatsApp Bot Agent",
+      badge: "WhatsApp Cloud API",
+      color: "emerald",
+      userMsg: "Officer say make I unlock my phone for checkpoint. Wetin the law talk?",
+      botLang: "Nigerian Pidgin / English",
+      botResponse: "Under Section 37 of the 1999 Constitution (Right to Privacy) and Police Act 2020 Section 38, an officer CANNOT search your phone without a valid warrant issued by a court, or specific reasonable suspicion of an indictable offense. Speak respectfully: 'Officer, my phone contains private communications protected under the law.'",
+      actionText: "Chat on WhatsApp",
+      actionUrl: whatsAppUrl,
+      isExternal: true
+    },
+    telegram: {
+      title: "Telegram Bot Agent",
+      badge: "Telegram Bot API",
+      color: "sky",
+      userMsg: "/rights checkpoint extortion & illegal search",
+      botLang: "Instant Command Line",
+      botResponse: "Statutory Shield Activated: 1999 CFRN s.35 (Personal Liberty), Police Act 2020 s.49-54 (Bail is Free). If detention exceeds 24-48 hours, detention is unconstitutional. Tap [Nearby NBA Advocate] below to alert verified pro-bono lawyers within 2.5km.",
+      actionText: "Chat on Telegram",
+      actionUrl: telegramUrl,
+      isExternal: true
+    },
+    web: {
+      title: "SabiRight Web Platform",
+      badge: "Sovereign N-ATLAS Core",
+      color: "blue",
+      userMsg: "Mo fẹ mọ awọn ẹtọ mi nigbati wọn ba mu mi ni ilodi si.",
+      botLang: "Yorùbá / Sovereign AI",
+      botResponse: "Labẹ abala 35 ti Ofin Orilẹ-ede 1999, o ni ẹtọ si ominira rẹ. O ni ẹtọ lati dakẹ titi ti agbẹjọro rẹ yoo fi de. Ti wọn ba mu ọ, wọn gbọdọ fi ẹsun kan ọ laarin wakati 24 tabi 48.",
+      actionText: "Launch Web App",
+      actionUrl: "/app",
+      isExternal: false
     }
   };
 
-  const hoverScale: any = {
-    hover: { 
-      scale: 1.05, 
-      translateY: -5,
-      transition: { duration: 0.3, ease: "easeOut" }
-    },
-    tap: { scale: 0.95 }
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 overflow-x-hidden">
+    <div className="min-h-screen bg-slate-950 font-sans text-slate-100 selection:bg-emerald-500 selection:text-slate-950 overflow-x-hidden">
       <Navbar />
 
       {/* Hero Section */}
-      <header className="relative pt-36 pb-20 overflow-hidden bg-linear-to-b from-blue-50/50 via-white to-slate-50">
-        {/* Blobs */}
-        <div className="blob bg-blue-200/50 w-[400px] h-[400px] top-[-10%] -left-20 animate-float" />
-        <div className="blob bg-purple-200/50 w-[400px] h-[400px] bottom-0 -right-20 animate-float" style={{ animationDelay: "2s" }} />
+      <header className="relative pt-32 pb-20 md:pt-40 md:pb-28 overflow-hidden">
+        {/* Ambient Gradient Glows */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[360px] bg-gradient-to-tr from-emerald-500/20 via-blue-500/15 to-purple-500/10 blur-[130px] pointer-events-none rounded-full" />
+        <div className="absolute top-10 right-10 w-72 h-72 bg-emerald-500/10 blur-[100px] pointer-events-none" />
 
-        <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-12 items-center">
-          <motion.div 
-            initial="initial"
-            whileInView="animate"
-            viewport={{ once: true }}
-            variants={fadeInUp}
-          >
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border shadow-sm text-primary text-sm font-bold mb-8">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-              </span>
-              Mobile AI Civic Tech Platform
-            </div>
+        <div className="max-w-7xl mx-auto px-6 relative z-10">
+          <div className="grid lg:grid-cols-12 gap-12 lg:gap-8 items-center">
             
-            <motion.h1 
-              variants={fadeInUp}
-              className="text-4xl lg:text-6xl font-black leading-[1.1] mb-6 tracking-tight"
+            {/* Left Column: Hero Text & Dynamic Actions */}
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="lg:col-span-7 space-y-6 text-left"
             >
-              Know Your Rights.<br/>
-              <span className="text-primary">Protect Yourself.</span>
-            </motion.h1>
-            
-            <motion.p 
-              variants={fadeInUp}
-              className="text-lg text-slate-600 max-w-lg mb-10 leading-relaxed"
-            >
-              SabiRight is an AI civic platform that helps everyday people know their rights in clear words so nobody can exploit them. It solves systemic extortion, harassment, and unfair disputes.
-            </motion.p>
-            
-            <div className="flex flex-wrap gap-4">
-              <Link href="/app">
-                <motion.div
-                  whileHover="hover"
-                  whileTap="tap"
-                  variants={hoverScale}
-                >
-                  <Button className="h-14 px-8 rounded-2xl text-lg font-bold shadow-xl">
-                    Get Legal First Aid <ArrowRight className="ml-2 h-5 w-5" />
+              {/* Sovereign Innovation Pill */}
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-emerald-500/30 text-xs font-semibold text-emerald-400 shadow-lg shadow-emerald-500/10 backdrop-blur-md">
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span>🇳🇬 Sovereign N-ATLAS AI Core</span>
+                <span className="text-slate-600">•</span>
+                <span className="text-slate-300 font-normal">Omnichannel WhatsApp & Telegram</span>
+              </div>
+
+              {/* Punchy Hero Headline */}
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tight text-white leading-[1.08]">
+                Sovereign AI Legal Shield <br className="hidden sm:inline" />
+                <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-sky-400 bg-clip-text text-transparent">
+                  for Every Nigerian.
+                </span>
+              </h1>
+
+              {/* Concise Subtitle */}
+              <p className="text-base sm:text-lg text-slate-300 max-w-xl leading-relaxed font-normal">
+                Instant statutory legal first-aid in <span className="text-white font-medium">Pidgin, Yoruba, Hausa, Igbo & English</span>. Grounded in the 1999 Constitution, accessible 24/7 on WhatsApp, Telegram, or Web.
+              </p>
+
+              {/* Bot Launch Buttons Grid */}
+              <div className="pt-2 flex flex-wrap items-center gap-3 sm:gap-4">
+                {/* Web Launch */}
+                <Link href="/app">
+                  <Button className="h-12 px-6 rounded-xl bg-white text-slate-950 hover:bg-slate-100 font-bold text-sm shadow-xl hover:shadow-2xl transition-all flex items-center gap-2 group">
+                    <Zap className="h-4 w-4 text-emerald-600 fill-emerald-600" />
+                    <span>Launch Web Agent</span>
+                    <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                   </Button>
-                </motion.div>
-              </Link>
-            </div>
-          </motion.div>
+                </Link>
 
-          <motion.div 
-            initial={{ opacity: 0, y: 50, rotateY: -15 }}
-            whileInView={{ opacity: 1, y: 0, rotateY: -8 }}
-            viewport={{ once: true }}
-            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1], delay: 0.2 }}
-            className="relative flex justify-center lg:justify-end"
-          >
-            {/* Realistic Hyper HD 3D Mobile Mockup Container */}
-            <div className="hyper-phone-container">
-              <div className="hyper-phone-frame">
-                {/* Metallic Hardware buttons */}
-                <div className="hyper-phone-button volume-up" />
-                <div className="hyper-phone-button volume-down" />
-                <div className="hyper-phone-button power" />
+                {/* WhatsApp Bot Direct Link */}
+                <a 
+                  href={whatsAppUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-flex"
+                >
+                  <Button 
+                    variant="outline" 
+                    className="h-12 px-5 rounded-xl border-emerald-500/40 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 hover:text-emerald-200 font-bold text-sm backdrop-blur-md transition-all flex items-center gap-2"
+                  >
+                    <MessageSquare className="h-4 w-4 text-emerald-400" />
+                    <span>Chat on WhatsApp</span>
+                    <ArrowUpRight className="h-3.5 w-3.5 text-emerald-400" />
+                  </Button>
+                </a>
 
-                {/* iPhone Screen Content */}
-                <div className="hyper-phone-screen">
-                  {/* Dynamic Island Cutout */}
-                  <div className="dynamic-island" />
+                {/* Telegram Bot Direct Link */}
+                <a 
+                  href={telegramUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="inline-flex"
+                >
+                  <Button 
+                    variant="outline" 
+                    className="h-12 px-5 rounded-xl border-sky-500/40 bg-sky-950/40 hover:bg-sky-900/50 text-sky-300 hover:text-sky-200 font-bold text-sm backdrop-blur-md transition-all flex items-center gap-2"
+                  >
+                    <Send className="h-4 w-4 text-sky-400" />
+                    <span>Chat on Telegram</span>
+                    <ArrowUpRight className="h-3.5 w-3.5 text-sky-400" />
+                  </Button>
+                </a>
+              </div>
 
-                  {/* App Container */}
-                  <div className="h-full flex flex-col bg-slate-50 overflow-y-auto no-scrollbar pt-10">
-                    {/* Mockup Header */}
-                    <div className="bg-white/90 backdrop-blur-md px-4 py-3 border-b flex justify-between items-center sticky top-0 z-20">
+              {/* Trust Badges Bar */}
+              <div className="pt-4 flex flex-wrap items-center gap-6 text-xs text-slate-400 font-medium">
+                <span className="flex items-center gap-1.5 text-slate-300">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" /> 1999 CFRN & Police Act 2020
+                </span>
+                <span className="flex items-center gap-1.5 text-slate-300">
+                  <ShieldCheck className="h-4 w-4 text-sky-400" /> NDPC Privacy Compliant
+                </span>
+                <span className="flex items-center gap-1.5 text-slate-300">
+                  <Lock className="h-4 w-4 text-amber-400" /> Zero Panic Street De-escalation
+                </span>
+              </div>
+            </motion.div>
+
+            {/* Right Column: Interactive Omnichannel Terminal Card */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.7, delay: 0.15 }}
+              className="lg:col-span-5"
+            >
+              <div className="relative rounded-2xl p-1 bg-gradient-to-b from-slate-700/60 via-slate-800/40 to-slate-900/80 shadow-2xl backdrop-blur-xl border border-slate-700/50">
+                {/* Top Channel Switcher Tabs */}
+                <div className="bg-slate-950/80 p-2 rounded-t-xl border-b border-slate-800 flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1 w-full">
+                    <button
+                      onClick={() => setActiveChannelTab('whatsapp')}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        activeChannelTab === 'whatsapp'
+                          ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                      }`}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5 text-emerald-400" />
+                      <span>WhatsApp</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveChannelTab('telegram')}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        activeChannelTab === 'telegram'
+                          ? 'bg-sky-600/20 text-sky-300 border border-sky-500/40 shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                      }`}
+                    >
+                      <Send className="h-3.5 w-3.5 text-sky-400" />
+                      <span>Telegram</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveChannelTab('web')}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                        activeChannelTab === 'web'
+                          ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40 shadow-xs'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+                      }`}
+                    >
+                      <Bot className="h-3.5 w-3.5 text-blue-400" />
+                      <span>Web App</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Simulated Conversation Feed */}
+                <div className="bg-slate-950/90 p-5 space-y-4 rounded-b-xl min-h-[350px] flex flex-col justify-between">
+                  <div className="space-y-4">
+                    {/* Header bar of simulated chat */}
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 text-[11px]">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                          S
-                        </div>
-                        <span className="font-extrabold text-xs text-slate-800">SabiRight Mobile</span>
+                        <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="font-bold text-slate-300">{channelDemos[activeChannelTab].title}</span>
                       </div>
-                      <div className="flex gap-1">
-                        <span className="text-[9px] bg-slate-100 text-slate-700 border border-slate-200 font-extrabold px-1.5 py-0.5 rounded">PWA</span>
-                      </div>
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 text-[10px] font-mono">
+                        {channelDemos[activeChannelTab].botLang}
+                      </span>
                     </div>
 
-                    {/* Mockup Content */}
-                    <div className="p-4 space-y-4">
-                      <motion.div 
-                        initial={{ opacity: 0, y: 10 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.4 }}
-                      >
-                        <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider">Emergency Legal Help</p>
-                        <p className="text-base font-black tracking-tight text-slate-900 leading-none mt-1">Instant Proximity Match</p>
-                      </motion.div>
-                      
-                      <motion.div 
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        whileInView={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: 0.6 }}
-                        className="bg-red-50 p-4 rounded-2xl border-2 border-red-100 shadow-md shadow-red-500/5"
-                      >
-                        <p className="text-[10px] font-black text-red-600 uppercase tracking-wider flex items-center gap-1.5">
-                          <AlertTriangle className="h-3 w-3 shrink-0" /> Urgent Escalation
+                    {/* Animated User Query Bubble */}
+                    <motion.div 
+                      key={`user-${activeChannelTab}`}
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="flex justify-end"
+                    >
+                      <div className="bg-slate-800 border border-slate-700 text-slate-200 text-xs px-3.5 py-2.5 rounded-2xl rounded-tr-xs max-w-[85%] leading-relaxed">
+                        {channelDemos[activeChannelTab].userMsg}
+                      </div>
+                    </motion.div>
+
+                    {/* Animated Bot Response Bubble */}
+                    <motion.div 
+                      key={`bot-${activeChannelTab}`}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.4, delay: 0.15 }}
+                      className="flex justify-start"
+                    >
+                      <div className="bg-slate-900/95 border border-emerald-500/30 text-slate-200 text-xs p-3.5 rounded-2xl rounded-tl-xs max-w-[95%] space-y-2 shadow-lg shadow-black/40">
+                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400">
+                          <ShieldCheck className="h-3 w-3" />
+                          <span>SabiRight Sovereign Engine</span>
+                        </div>
+                        <p className="text-slate-300 leading-relaxed text-[11px]">
+                          {channelDemos[activeChannelTab].botResponse}
                         </p>
-                        <p className="text-xs font-black text-slate-900 mt-1.5 leading-tight">Need immediate professional backup?</p>
-                        <p className="text-[10px] text-slate-600 mt-1 leading-snug">Matching you with nearby verified lawyers & compliance leaders...</p>
-                      </motion.div>
+                      </div>
+                    </motion.div>
+                  </div>
 
-                      <motion.div 
-                        initial={{ opacity: 0, y: 10 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.8 }}
-                        className="animate-pulse-glow bg-white p-3 border border-blue-100 rounded-2xl flex items-center gap-3 shadow-md"
+                  {/* Dynamic Launch CTA Inside Preview */}
+                  <div className="pt-2 border-t border-slate-900">
+                    {channelDemos[activeChannelTab].isExternal ? (
+                      <a 
+                        href={channelDemos[activeChannelTab].actionUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="w-full block"
                       >
-                        <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-600 shrink-0">
-                          <Shield className="h-4 w-4" />
-                        </div>
-                        <p className="text-[11px] text-blue-800 font-extrabold italic">Speak to SabiDoctor AI in Pidgin...</p>
-                      </motion.div>
-
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        whileInView={{ opacity: 1 }}
-                        transition={{ delay: 1 }}
-                        className="space-y-2"
-                      >
-                        <div className="flex justify-between items-center text-[10px] font-black text-slate-500 uppercase tracking-wider">
-                          <span>Verified Professionals Nearby</span>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 hover:border-blue-500 transition-all">
-                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold shrink-0">
-                              ⚖️
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-black text-slate-900 leading-none">Barr. Audu</p>
-                              <p className="text-[10px] text-slate-400 font-bold mt-1">Distance: 0.4km away</p>
-                            </div>
-                            <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-ping"></span>
-                          </div>
-
-                          <div className="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-3 hover:border-green-500 transition-all">
-                            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold shrink-0">
-                              🎓
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-black text-slate-900 leading-none">Advocate Tunde</p>
-                              <p className="text-[10px] text-green-600 font-black mt-1 flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span> Status: Active
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    </div>
+                        <Button 
+                          className={`w-full h-10 rounded-xl font-bold text-xs flex items-center justify-center gap-2 ${
+                            activeChannelTab === 'whatsapp' 
+                              ? 'bg-emerald-600 hover:bg-emerald-500 text-white' 
+                              : 'bg-sky-600 hover:bg-sky-500 text-white'
+                          }`}
+                        >
+                          <span>{channelDemos[activeChannelTab].actionText}</span>
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Button>
+                      </a>
+                    ) : (
+                      <Link href="/app" className="w-full block">
+                        <Button className="w-full h-10 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2">
+                          <span>Launch Web App</span>
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </Link>
+                    )}
                   </div>
                 </div>
               </div>
-            </div>
-          </motion.div>
+            </motion.div>
+
+          </div>
         </div>
       </header>
 
-      {/* Partners & AI Multi-Model Section */}
-      <section className="py-12 bg-white border-y border-slate-100">
+      {/* Omnichannel Quick-Access Cards */}
+      <section className="py-12 bg-slate-900/60 border-y border-slate-800/80">
         <div className="max-w-7xl mx-auto px-6">
-          <p className="text-center text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-8">POWERED BY LEAN MULTI-MODEL AI SYSTEMS</p>
-          <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16">
-            {/* Google Gemini */}
-            <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 px-3 py-1.5 rounded-xl shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-              <span className="text-xs font-black text-blue-900 tracking-tight">GEMINI 1.5 PRO</span>
-            </div>
-
-            {/* OpenAI GPT-4 */}
-            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-xl shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span className="text-xs font-black text-emerald-900 tracking-tight">GPT-4O OMNI</span>
-            </div>
-
-            {/* Anthropic Claude */}
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 px-3 py-1.5 rounded-xl shadow-xs">
-              <span className="w-2 h-2 rounded-full bg-amber-600"></span>
-              <span className="text-xs font-black text-amber-900 tracking-tight">CLAUDE 3.5 SONNET</span>
-            </div>
-
-            {/* Trae Build */}
-            <div className="flex items-center gap-2 bg-purple-50 border border-purple-100 px-3 py-1.5 rounded-xl shadow-xs">
-              <Code className="h-4.5 w-4.5 text-purple-600" />
-              <span className="text-xs font-black text-purple-900 tracking-tight">TRAE PLATFORM</span>
-            </div>
-          </div>
-
-          {/* Compliance & Impact Section (NDPC, SCUML, Startup Nigeria, SDG) */}
-          <div className="mt-12 border-t border-slate-100 pt-8">
-            <p className="text-center text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6">COMPLIANCE, REGULATORY & SDG IMPACT AUDIT</p>
-            <div className="flex flex-wrap justify-center items-center gap-6 md:gap-12">
-              {/* SDG 10 Logo Badge */}
-              <div className="flex items-center gap-2.5 bg-orange-50 border border-orange-200 px-4 py-2 rounded-2xl shadow-xs">
-                <div className="w-6 h-6 rounded-lg bg-orange-600 text-white flex items-center justify-center font-black text-xs">
-                  =
-                </div>
-                <div className="text-left">
-                  <p className="text-[9px] font-black text-orange-900 uppercase leading-none">SDG 10 TARGET</p>
-                  <p className="text-[10px] font-bold text-orange-700 leading-tight">Reduced Inequalities</p>
-                </div>
-              </div>
-
-              {/* NDPC Logo Badge */}
-              <div className="flex items-center gap-2.5 bg-teal-50 border border-teal-200 px-4 py-2 rounded-2xl shadow-xs">
-                <Shield className="h-5 w-5 text-teal-600 shrink-0" />
-                <div className="text-left">
-                  <p className="text-[9px] font-black text-teal-900 uppercase leading-none">NDPC AUDITED</p>
-                  <p className="text-[10px] font-bold text-teal-700 leading-tight">Data Privacy Compliant</p>
-                </div>
-              </div>
-
-              {/* SCUML Logo Badge */}
-              <div className="flex items-center gap-2.5 bg-slate-100 border border-slate-300 px-4 py-2 rounded-2xl shadow-xs">
-                <Scale className="h-5 w-5 text-slate-700 shrink-0" />
-                <div className="text-left">
-                  <p className="text-[9px] font-black text-slate-900 uppercase leading-none">SCUML REGISTERED</p>
-                  <p className="text-[10px] font-bold text-slate-700 leading-tight">Civic Integrity Verified</p>
-                </div>
-              </div>
-
-              {/* Startup Nigeria Logo Badge */}
-              <div className="flex items-center gap-2.5 bg-indigo-50 border border-indigo-200 px-4 py-2 rounded-2xl shadow-xs">
-                <Award className="h-5 w-5 text-indigo-600 shrink-0" />
-                <div className="text-left">
-                  <p className="text-[9px] font-black text-indigo-900 uppercase leading-none">STARTUP NIGERIA</p>
-                  <p className="text-[10px] font-bold text-indigo-700 leading-tight">National Startup Label</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* SDG 10 Focus Section */}
-      <section className="py-24 bg-linear-to-b from-slate-50 to-white">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <motion.div 
-              initial="initial"
-              whileInView="animate"
-              viewport={{ once: true }}
-              variants={fadeInUp}
-              className="space-y-6"
-            >
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-100 text-orange-700 text-xs font-black uppercase tracking-wider">
-                SDG 10: Reduced Inequalities
-              </div>
-              <h2 className="text-3xl lg:text-5xl font-black leading-tight">
-                Bridging the Dangerous Power & Information Gap
-              </h2>
-              <p className="text-slate-600 text-lg leading-relaxed text-justify">
-                We chose SDG 10 because SabiRight is designed to close the dangerous power and information gap between vulnerable citizens and predatory actors. Systemic extortion and harassment thrive when everyday people do not know their rights or cannot afford legal support.
-              </p>
-              <p className="text-slate-600 text-lg leading-relaxed text-justify">
-                By translating complex legal codes into accessible local languages and providing immediate proximity matching with verified professionals, we ensure that safety and justice are not privileges reserved only for the wealthy.
-              </p>
-            </motion.div>
-
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0 }}
-              whileInView={{ scale: 1, opacity: 1 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.8 }}
-              className="bg-slate-900 p-8 lg:p-12 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden"
-            >
-              <div className="absolute -top-10 -right-10 w-40 h-40 bg-blue-600/20 rounded-full blur-3xl"></div>
-              <h3 className="text-2xl font-black mb-6 text-blue-400 flex items-center gap-2">
-                <Shield className="h-6 w-6 text-blue-400" /> Key Focus Areas
-              </h3>
-              
-              <div className="space-y-6 relative z-10">
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-center text-blue-400 shrink-0">
-                    <MessageSquare className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white">Local Language Translation</h4>
-                    <p className="text-sm text-slate-400 mt-1">Simplifying heavy laws into accessible Pidgin, Hausa, Yoruba, and Igbo.</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-green-500/10 border border-green-500/20 rounded-xl flex items-center justify-center text-green-400 shrink-0">
-                    <MapPin className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white">Proximity Matching</h4>
-                    <p className="text-sm text-slate-400 mt-1">Connecting users directly with nearby verified legal & compliance professionals during escalations.</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-center text-purple-400 shrink-0">
-                    <Scale className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white">Lawful Empowerment</h4>
-                    <p className="text-sm text-slate-400 mt-1">Giving citizens clear, law-backed scripts to speak respectfully but firmly to officers or landlords.</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* Problem Section */}
-      <section className="py-24 bg-white border-y border-slate-100">
-        <div className="max-w-5xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-5xl font-black text-slate-900 tracking-tight">The Problem We Are Solving</h2>
-            <div className="w-20 h-1.5 bg-red-600 mx-auto mt-4 rounded-full"></div>
-          </div>
-          
-          <div className="bg-red-50/50 border-2 border-red-100 rounded-3xl p-8 lg:p-12 space-y-6">
-            <p className="text-slate-800 text-lg lg:text-xl leading-relaxed font-semibold italic text-center">
-              "Everyday youth and students face constant harassment, profiling, and extortion by corrupt security and immigration officers, often leading to physical abuse if they try to stand up for themselves. When these crises happen on the road, victims have zero resources or immediate access to help."
-            </p>
-            <div className="border-t border-red-200/50 pt-6 grid md:grid-cols-2 gap-6 text-slate-600">
-              <div>
-                <h4 className="font-black text-slate-900 flex items-center gap-2 mb-2">
-                  <AlertTriangle className="h-5 w-5 text-red-600" /> Beyond the Highways
-                </h4>
-                <p className="text-sm leading-relaxed">
-                  Citizens face severe exploitation daily, including unfair landlord versus tenant disputes, aggressive tax enforcement officers, and fraudulent loan agents.
-                </p>
-              </div>
-              <div>
-                <h4 className="font-black text-slate-900 flex items-center gap-2 mb-2">
-                  <Scale className="h-5 w-5 text-red-600" /> Bureaucracy and Barriers
-                </h4>
-                <p className="text-sm leading-relaxed">
-                  Heavy legal language keeps ordinary people from understanding basic laws, making them easy targets for predatory authority figures.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Real-World Civic Action Showcase */}
-      <section className="py-20 bg-slate-900 text-white relative overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-sky-400 text-xs font-bold uppercase tracking-wider mb-4">
-              <Zap className="h-3.5 w-3.5" /> Civic Technology In Action
-            </div>
-            <h2 className="text-3xl lg:text-4xl font-black tracking-tight leading-tight mb-3">
-              Street Realities Meets Constitutional Power
+          <div className="text-center max-w-xl mx-auto mb-8">
+            <h2 className="text-xs font-black tracking-[0.2em] text-emerald-400 uppercase">
+              Omnichannel Access Layer
             </h2>
-            <p className="text-slate-400 text-sm lg:text-base leading-relaxed">
-              Everyday Nigerians face aggressive extortion. SabiRight places verified statutory law in the palms of citizens — works 100% offline.
+            <p className="text-lg font-bold text-white mt-1">
+              Choose your preferred channel to get immediate legal first-aid.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8 items-stretch">
-            {/* Tweaked Photo 1: Real Citizens */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              className="rounded-3xl overflow-hidden border border-slate-800 bg-slate-950/60 shadow-xl flex flex-col justify-between"
-            >
-              <div className="relative aspect-video overflow-hidden">
-                <img 
-                  src="/assets/hero-citizens.png" 
-                  alt="Citizens using SabiRight" 
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-linear-to-t from-slate-950 via-transparent to-transparent" />
-                <div className="absolute top-3 left-3 bg-slate-900/90 backdrop-blur-md border border-sky-400/40 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span className="text-[11px] font-bold text-sky-300">Street-Level Defense</span>
+          <div className="grid md:grid-cols-3 gap-5">
+            {/* WhatsApp Card */}
+            <div className="p-6 rounded-2xl bg-slate-950/80 border border-emerald-500/20 hover:border-emerald-500/50 transition-all flex flex-col justify-between group">
+              <div className="space-y-3">
+                <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <MessageSquare className="h-5 w-5" />
                 </div>
-              </div>
-              <div className="p-6">
-                <h3 className="text-xl font-black text-white mb-2">Instant Peace of Mind</h3>
-                <p className="text-slate-400 text-xs leading-relaxed">
-                  Equipping citizens with instant de-escalation protocols when approached by law enforcement or task forces.
+                <h3 className="text-base font-bold text-white flex items-center justify-between">
+                  <span>WhatsApp Bot Agent</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Official Cloud API</span>
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Send text or voice notes directly inside WhatsApp. Get instant de-escalation scripts, constitutional citations, and emergency contacts.
                 </p>
               </div>
-            </motion.div>
-
-            {/* Tweaked Photo 2: Lady Justice */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              className="rounded-3xl overflow-hidden border border-slate-800 bg-slate-950/60 shadow-xl flex flex-col justify-between"
-            >
-              <div className="relative aspect-video overflow-hidden">
-                <img 
-                  src="/assets/hero-justice.png" 
-                  alt="Constitution of Nigeria" 
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-linear-to-t from-slate-950 via-transparent to-transparent" />
-                <div className="absolute top-3 left-3 bg-slate-900/90 backdrop-blur-md border border-amber-400/40 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                  <Scale className="h-3 w-3 text-amber-400" />
-                  <span className="text-[11px] font-bold text-amber-300">1999 Constitution</span>
-                </div>
-              </div>
-              <div className="p-6">
-                <h3 className="text-xl font-black text-white mb-2">Statutory Authority</h3>
-                <p className="text-slate-400 text-xs leading-relaxed">
-                  Cross-checked against 1999 Constitution, Police Act 2020, and Administration of Criminal Justice Act.
-                </p>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-
-      {/* PWA & Design Relevance Section */}
-      <section className="py-24 bg-slate-50">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <motion.div 
-              initial="initial"
-              whileInView="animate"
-              viewport={{ once: true }}
-              variants={fadeInUp}
-              className="space-y-6 order-2 lg:order-1"
-            >
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white p-6 rounded-2xl border shadow-xs">
-                  <span className="text-4xl font-black text-primary">Instant</span>
-                  <p className="text-sm font-bold mt-2 text-slate-700">PWA Loading Speed</p>
-                </div>
-                <div className="bg-white p-6 rounded-2xl border shadow-xs">
-                  <span className="text-4xl font-black text-primary">Large</span>
-                  <p className="text-sm font-bold mt-2 text-slate-700">Panic-Reducing Text</p>
-                </div>
-              </div>
-              <div className="bg-white p-6 rounded-2xl border shadow-xs">
-                <h4 className="font-black text-slate-900 mb-2">Low Bandwidth Accessibility</h4>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Designed to open instantly on low-spec phones even on poor networks. The UI prioritizes large text and simple navigation to reduce panic.
-                </p>
-              </div>
-            </motion.div>
-
-            <motion.div 
-              initial="initial"
-              whileInView="animate"
-              viewport={{ once: true }}
-              variants={fadeInUp}
-              className="space-y-6 order-1 lg:order-2"
-            >
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-100 text-blue-700 text-xs font-black uppercase tracking-wider">
-                Human-Centered Design
-              </div>
-              <h2 className="text-3xl lg:text-5xl font-black leading-tight">
-                Designed for High-Stress Moments
-              </h2>
-              <p className="text-slate-600 text-lg leading-relaxed text-justify">
-                SabiRight is deeply rooted in human centered design. Because users open our app during high stress encounters, we designed a clean Progressive Web App (PWA) that loads instantly on low bandwidth mobile phones.
-              </p>
-              <p className="text-slate-600 text-lg leading-relaxed text-justify">
-                Our platform website and brand identity use calming yet authoritative visual elements to build immediate trust, showing users they have serious professional backup.
-              </p>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* Moral, Ethical & Social Impact */}
-      <section className="py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <motion.div 
-              initial="initial"
-              whileInView="animate"
-              viewport={{ once: true }}
-              variants={fadeInUp}
-              className="space-y-6"
-            >
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-100 text-green-700 text-xs font-black uppercase tracking-wider">
-                Moral & Ethical Standards
-              </div>
-              <h2 className="text-3xl lg:text-5xl font-black leading-tight">
-                Restoring Human Dignity on the Streets
-              </h2>
-              <p className="text-slate-600 text-lg leading-relaxed text-justify">
-                SabiRight restores human dignity by giving ordinary people the confidence to stand tall. Knowing your rights keeps your dignity intact, and knowing you can access quick professional backup during a crisis completely removes fear.
-              </p>
-              <p className="text-slate-600 text-lg leading-relaxed text-justify">
-                We tackle unfair power relations by bridging the gap between vulnerable youth and authority figures. Social responsibility is at our core, which is why we secured our National Startup Label and strict data compliance with the NDPC to protect user privacy.
-              </p>
-            </motion.div>
-
-            <motion.div 
-              initial="initial"
-              whileInView="animate"
-              viewport={{ once: true }}
-              variants={fadeInUp}
-              className="space-y-6 bg-green-50/50 border-2 border-green-100 rounded-3xl p-8 lg:p-12"
-            >
-              <h3 className="text-2xl font-black text-green-800 flex items-center gap-2">
-                <Heart className="h-6 w-6 text-green-600" /> Beneficial Experiences
-              </h3>
-              <p className="text-slate-700 text-sm leading-relaxed text-justify">
-                SabiRight brings justice and fairness to the streets by giving vulnerable youth the exact legal facts to stop extortion. It creates a highly positive experience by turning a terrifying encounter into a calm moment where the user feels totally confident and backed up.
-              </p>
-              <p className="text-slate-700 text-sm leading-relaxed text-justify">
-                We actively address social conflict through dialogue rather than arguments. Our AI gives users clear, law backed scripts to speak respectfully but firmly to officers or landlords. If the tension rises, our proximity matching instantly brings a verified professional into the conversation to peacefully mediate the issue.
-              </p>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* Platform Architecture & Google Support (Reasonable Effort) */}
-      <section className="py-24 bg-slate-900 text-white relative overflow-hidden">
-        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-        <div className="max-w-7xl mx-auto px-6 relative z-10">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div className="space-y-6">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/10 border border-white/20 text-white text-xs font-black uppercase tracking-wider">
-                Reasonable Effort & Technical Design
-              </div>
-              <h2 className="text-3xl lg:text-5xl font-black leading-tight">
-                High Value, Lean Architecture
-              </h2>
-              <p className="text-slate-400 text-lg leading-relaxed text-justify">
-                SabiRight creates massive value with very lean effort. We use resources efficiently by dropping heavy AI networks for a single fast agent paired with direct database matching. This keeps implementation simple and server costs low.
-              </p>
-              <div className="border-t border-white/10 pt-6 space-y-4 text-sm text-slate-400">
-                <p className="flex items-center gap-3">
-                  <span className="text-green-400">✔</span> Backed by a $500 Google AI agentic build and cloud infrastructure credit
-                </p>
-                <p className="flex items-center gap-3">
-                  <span className="text-green-400">✔</span> B2B directory model, charging verified professionals for leads when users need backup
-                </p>
-                <p className="flex items-center gap-3">
-                  <span className="text-green-400">✔</span> National Startup Labels and NDPC Data Privacy Compliance
-                </p>
+              <div className="pt-5">
+                <a 
+                  href={whatsAppUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="block"
+                >
+                  <Button className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5">
+                    <span>Chat on WhatsApp</span>
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </Button>
+                </a>
               </div>
             </div>
 
-            <div className="bg-white/5 p-8 rounded-3xl border border-white/10 space-y-6">
-              <h3 className="text-xl font-bold flex items-center gap-2">
-                <Zap className="h-5 w-5 text-amber-400" /> Target Audience
-              </h3>
-              <div className="space-y-4">
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <h4 className="font-bold text-white">Everyday Citizens & Youth</h4>
-                  <p className="text-sm text-slate-400 mt-1">Everyday youth, students, and vulnerable citizens facing systemic extortion or unfair disputes.</p>
+            {/* Telegram Card */}
+            <div className="p-6 rounded-2xl bg-slate-950/80 border border-sky-500/20 hover:border-sky-500/50 transition-all flex flex-col justify-between group">
+              <div className="space-y-3">
+                <div className="h-10 w-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+                  <Send className="h-5 w-5" />
                 </div>
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                  <h4 className="font-bold text-white">Verified Professionals</h4>
-                  <p className="text-sm text-slate-400 mt-1">Verified legal and compliance professionals seeking direct client leads through our B2B directory.</p>
+                <h3 className="text-base font-bold text-white flex items-center justify-between">
+                  <span>Telegram Bot Agent</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">Ultra Fast</span>
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Zero setup required. Use quick commands (<code className="text-sky-300">/rights</code>, <code className="text-sky-300">/emergency</code>) to verify police protocol and request assistance in seconds.
+                </p>
+              </div>
+              <div className="pt-5">
+                <a 
+                  href={telegramUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="block"
+                >
+                  <Button className="w-full h-10 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center justify-center gap-1.5">
+                    <span>Chat on Telegram</span>
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </Button>
+                </a>
+              </div>
+            </div>
+
+            {/* Web & PWA App Card */}
+            <div className="p-6 rounded-2xl bg-slate-950/80 border border-blue-500/20 hover:border-blue-500/50 transition-all flex flex-col justify-between group">
+              <div className="space-y-3">
+                <div className="h-10 w-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                  <Globe2 className="h-5 w-5" />
                 </div>
+                <h3 className="text-base font-bold text-white flex items-center justify-between">
+                  <span>Web App & PWA</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Full Suite</span>
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Interactive legal workspace with real-time GPS lawyer proximity matching, offline constitution reader, and SabiMove route cloaking.
+                </p>
+              </div>
+              <div className="pt-5">
+                <Link href="/app">
+                  <Button className="w-full h-10 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5">
+                    <span>Open Web App</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </Link>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Video Demo Section */}
+      {/* Structured Bento Grid: 4 Core Software Solutions */}
+      <section className="py-24 max-w-7xl mx-auto px-6">
+        <div className="text-center max-w-2xl mx-auto mb-16">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 mb-3">
+            <Sparkles className="h-3.5 w-3.5 text-emerald-400" /> Complete System Architecture
+          </div>
+          <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+            Enterprise Civic Technology Built for Reality.
+          </h2>
+          <p className="text-slate-400 text-sm sm:text-base mt-2">
+            No endless paragraphs. Four robust engineering pillars powering justice across Nigeria.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Pillar 1: N-ATLAS Sovereign LLM */}
+          <motion.div 
+            whileHover={{ y: -4 }}
+            transition={{ duration: 0.2 }}
+            className="p-6 rounded-2xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between"
+          >
+            <div className="space-y-4">
+              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <Radio className="h-5 w-5" />
+              </div>
+              <h3 className="text-base font-bold text-white">Sovereign N-ATLAS LLM</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Fine-tuned from <code className="text-emerald-300 font-mono">NCAIR1/N-ATLaS</code> 8B. Native speech recognition and conversational legal reasoning in Yoruba, Hausa, Igbo, Pidgin & English.
+              </p>
+            </div>
+            <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center gap-2 text-[11px] text-emerald-400 font-semibold">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Speech & Local Dialects
+            </div>
+          </motion.div>
+
+          {/* Pillar 2: Statutory MOAT Grounding */}
+          <motion.div 
+            whileHover={{ y: -4 }}
+            transition={{ duration: 0.2 }}
+            className="p-6 rounded-2xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between"
+          >
+            <div className="space-y-4">
+              <div className="h-10 w-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+                <Scale className="h-5 w-5" />
+              </div>
+              <h3 className="text-base font-bold text-white">Statutory Legal MOAT</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Every response is strictly verified against the 1999 Constitution (as amended), Police Act 2020, and ACJA 2015. Zero AI hallucinations in critical moments.
+              </p>
+            </div>
+            <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center gap-2 text-[11px] text-sky-400 font-semibold">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Exact Statute Grounding
+            </div>
+          </motion.div>
+
+          {/* Pillar 3: Verified Lawyer Network */}
+          <motion.div 
+            whileHover={{ y: -4 }}
+            transition={{ duration: 0.2 }}
+            className="p-6 rounded-2xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between"
+          >
+            <div className="space-y-4">
+              <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <h3 className="text-base font-bold text-white">Verified Legal Network</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Instant proximity matching with accredited Nigerian Bar Association (NBA) attorneys and paralegals when encounters require physical intervention or bail.
+              </p>
+            </div>
+            <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center gap-2 text-[11px] text-amber-400 font-semibold">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Proximity Geolocation
+            </div>
+          </motion.div>
+
+          {/* Pillar 4: SabiMove Civic Shield */}
+          <motion.div 
+            whileHover={{ y: -4 }}
+            transition={{ duration: 0.2 }}
+            className="p-6 rounded-2xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between"
+          >
+            <div className="space-y-4">
+              <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
+                <MapPin className="h-5 w-5" />
+              </div>
+              <h3 className="text-base font-bold text-white">SabiMove Route Shield</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Real-time civic alerts, community checkpoint reporting, and cloaked safe passage routing to keep citizens out of extortion hotspots.
+              </p>
+            </div>
+            <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center gap-2 text-[11px] text-purple-400 font-semibold">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Live Checkpoint Alerts
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* High-Impact Numerical Metrics Banner */}
+      <section className="py-14 bg-slate-900/80 border-y border-slate-800/80">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+            <div className="space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-emerald-400">&lt;500ms</div>
+              <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">De-escalation Latency</div>
+              <div className="text-[11px] text-slate-500">Real-time edge responses</div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-sky-400">5 Dialects</div>
+              <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">Multilingual Core</div>
+              <div className="text-[11px] text-slate-500">Pidgin, Yoruba, Hausa, Igbo, Eng</div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-purple-400">100%</div>
+              <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">Statutory Grounded</div>
+              <div className="text-[11px] text-slate-500">1999 CFRN & Police Act 2020</div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-amber-400">3 Channels</div>
+              <div className="text-xs font-bold text-slate-300 uppercase tracking-wider">Omnichannel Sync</div>
+              <div className="text-[11px] text-slate-500">WhatsApp, Telegram & Web</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Video Demo Section (if configured) */}
       {videoDemoUrl && (
-        <section className="py-24 bg-slate-950 text-white">
-          <div className="max-w-7xl mx-auto px-6 text-center">
-            <h2 className="text-3xl md:text-5xl font-black mb-12">See SabiRight in Action</h2>
-            <div className="max-w-4xl mx-auto aspect-video bg-black rounded-3xl overflow-hidden shadow-2xl border border-white/10">
-              <iframe 
-                src={videoDemoUrl} 
-                className="w-full h-full" 
-                title="SabiRight Demo"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                allowFullScreen
-              />
-            </div>
+        <section className="py-20 max-w-5xl mx-auto px-6">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl sm:text-3xl font-black text-white">System in Action</h2>
+            <p className="text-xs text-slate-400 mt-1">Live walkthrough of SabiRight de-escalation engine</p>
+          </div>
+          <div className="aspect-video w-full rounded-2xl overflow-hidden border border-slate-800 shadow-2xl bg-black">
+            <iframe 
+              src={videoDemoUrl} 
+              className="w-full h-full" 
+              title="SabiRight Demo"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+              allowFullScreen
+            />
           </div>
         </section>
       )}
 
-      {/* FAQ Section */}
-      <section id="faq" className="py-24 bg-slate-50">
-        <div className="max-w-3xl mx-auto px-6">
-          <h2 className="text-3xl font-black text-center mb-12">Frequently Asked Questions</h2>
-          <div className="space-y-4">
-            {[
-              { question: "How does SabiRight protect everyday people?", answer: "SabiRight translates complex legal codes into accessible local languages like Pidgin, Hausa, Yoruba, and Igbo, giving citizens precise law-backed scripts. It also provides immediate proximity matching to verified professionals for backup during escalations." },
-              { question: "Why SDG 10?", answer: "SabiRight targets SDG 10 (Reduced Inequalities) by closing the dangerous power and information gap between vulnerable citizens and predatory actors, ensuring safety and justice are not privileges reserved only for the wealthy." },
-              { question: "Is my data protected and compliant?", answer: "Yes. SabiRight is strictly compliant with the National Data Protection Commission (NDPC) regulations, safeguarding user privacy and data security at all times." },
-              { question: "How does SabiRight remain sustainable?", answer: "Through a B2B model, verified professional lawyers and compliance experts are listed in our directory and charged for leads when users request urgent, live backup." }
-            ].map((faq, i) => (
-              <div key={i} className="bg-white border rounded-2xl overflow-hidden shadow-xs">
-                <button 
-                  onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className="w-full p-6 text-left font-bold flex justify-between items-center hover:bg-slate-50/50 transition"
-                >
-                  <span className="text-slate-900 font-extrabold flex items-center gap-2">
-                    <HelpCircle className="h-5 w-5 text-primary shrink-0" />
-                    {faq.question}
-                  </span>
-                  <ChevronDown className={`transform transition-transform ${openFaq === i ? "rotate-180" : ""}`} />
-                </button>
-                {openFaq === i && (
-                  <div className="p-6 pt-0 text-slate-600 border-t text-sm bg-slate-50/50">
-                    {faq.answer}
-                  </div>
-                )}
-              </div>
-            ))}
+      {/* Structured FAQ Section (Limited Text, Punchy Answers) */}
+      <section id="faq" className="py-20 max-w-3xl mx-auto px-6">
+        <div className="text-center mb-10">
+          <h2 className="text-2xl sm:text-3xl font-black text-white">Frequently Asked Questions</h2>
+          <p className="text-xs text-slate-400 mt-1">Key information about access, security, and statutory accuracy.</p>
+        </div>
+
+        <div className="space-y-3">
+          {[
+            {
+              question: "How do the WhatsApp and Telegram bot agents work?",
+              answer: "You can message our verified WhatsApp or Telegram bot directly without installing any heavy app. Ask legal questions in English, Pidgin, Yoruba, Hausa, or Igbo, or send voice notes. The bot returns exact legal sections and de-escalation scripts within seconds."
+            },
+            {
+              question: "How does SabiRight prevent AI hallucinations?",
+              answer: "SabiRight employs strict Retrieval-Augmented statutory grounding. All legal responses are constrained against Nigeria's 1999 Constitution, the Police Act 2020, and the Administration of Criminal Justice Act (ACJA), complete with exact section citations."
+            },
+            {
+              question: "Can I connect to a real, licensed lawyer during an incident?",
+              answer: "Yes. In both the Web App and bots, you can trigger proximity lawyer dispatch. SabiGuard matches your location with nearby verified Nigerian Bar Association (NBA) legal practitioners for immediate call, bail representation, or mediation."
+            },
+            {
+              question: "Is user identity and location data private?",
+              answer: "Yes. SabiRight strictly adheres to the Nigeria Data Protection Commission (NDPC) guidelines. Emergency incident logs and location coordinates are protected with enterprise-grade encryption."
+            }
+          ].map((faq, i) => (
+            <div key={i} className="rounded-xl border border-slate-800/80 bg-slate-900/60 overflow-hidden transition-all">
+              <button 
+                onClick={() => setOpenFaq(openFaq === i ? null : i)}
+                className="w-full p-4 sm:p-5 text-left font-bold flex justify-between items-center hover:bg-slate-800/50 transition-colors"
+              >
+                <span className="text-slate-200 text-sm flex items-center gap-2">
+                  <HelpCircle className="h-4 w-4 text-emerald-400 shrink-0" />
+                  {faq.question}
+                </span>
+                <ChevronDown className={`h-4 w-4 text-slate-400 transform transition-transform ${openFaq === i ? "rotate-180" : ""}`} />
+              </button>
+              {openFaq === i && (
+                <div className="p-4 sm:p-5 pt-0 text-slate-400 text-xs sm:text-sm leading-relaxed border-t border-slate-800/60 bg-slate-950/40">
+                  {faq.answer}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Final Action CTA Banner */}
+      <section className="py-16 max-w-5xl mx-auto px-6">
+        <div className="rounded-3xl p-8 sm:p-12 bg-gradient-to-r from-emerald-950/60 via-slate-900 to-sky-950/60 border border-slate-800 text-center relative overflow-hidden shadow-2xl">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight mb-3">
+            Stand Protected. Anywhere in Nigeria.
+          </h2>
+          <p className="text-slate-300 text-xs sm:text-sm max-w-lg mx-auto mb-8 leading-relaxed">
+            Access statutory first-aid right now on your favourite chat app or launch our web platform.
+          </p>
+
+          <div className="flex flex-wrap justify-center gap-3">
+            <Link href="/app">
+              <Button className="h-11 px-6 rounded-xl bg-white text-slate-950 hover:bg-slate-100 font-bold text-xs shadow-lg">
+                Launch Web App
+              </Button>
+            </Link>
+            <a href={whatsAppUrl} target="_blank" rel="noopener noreferrer">
+              <Button className="h-11 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5">
+                <MessageSquare className="h-4 w-4" />
+                <span>Chat on WhatsApp</span>
+              </Button>
+            </a>
+            <a href={telegramUrl} target="_blank" rel="noopener noreferrer">
+              <Button className="h-11 px-5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs flex items-center gap-1.5">
+                <Send className="h-4 w-4" />
+                <span>Chat on Telegram</span>
+              </Button>
+            </a>
           </div>
         </div>
       </section>
