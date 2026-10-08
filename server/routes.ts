@@ -566,14 +566,15 @@ export async function registerRoutes(
     try {
       const userId = (req as any).userId;
       const { deductions } = req.body;
-      const amount = Math.max(0, parseInt(deductions, 10) || 0);
-      if (amount <= 0) {
-        const bal = await storage.getAvailableCredits(userId);
-        return res.json({ success: true, balance: bal, deducted: 0 });
+      const requested = Math.min(100, Math.max(0, parseInt(deductions, 10) || 0));
+      const available = Math.max(0, Math.floor(await storage.getAvailableCredits(userId)));
+      // Offline usage already happened; charge what the balance allows so the client can always reconcile
+      const amount = Math.min(requested, available);
+      if (amount > 0) {
+        await storage.deductCredits(userId, amount, 'offline_sync', 'Offline mobile usage sync');
       }
-      await storage.deductCredits(userId, amount, 'offline_sync', 'Offline mobile usage sync');
       const bal = await storage.getAvailableCredits(userId);
-      res.json({ success: true, balance: bal, deducted: amount });
+      res.json({ success: true, balance: bal, deducted: amount, requested });
     } catch (error) {
       next(error);
     }
@@ -1798,6 +1799,11 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
       
       if (!key || !category) {
         return res.status(400).json({ error: 'Key and category required' });
+      }
+
+      // Never overwrite a stored secret with the display mask
+      if (typeof value === 'string' && /^•+$/.test(value.trim())) {
+        return res.json({ success: true, unchanged: true });
       }
 
       await storage.setAdminSetting(key, value, category, isSecret);

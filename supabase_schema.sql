@@ -294,7 +294,12 @@ CREATE TABLE IF NOT EXISTS payment_methods (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS admin_settings (
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS webhook_hash TEXT;
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS instructions TEXT DEFAULT '';
+ALTER TABLE payment_methods ADD COLUMN IF NOT EXISTS fields JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS storage_mb NUMERIC DEFAULT 1;
+
     key TEXT PRIMARY KEY,
     value TEXT,
     category TEXT DEFAULT 'general',

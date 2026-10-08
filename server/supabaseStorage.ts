@@ -651,13 +651,14 @@ export const supabaseStorage: IStorage = {
 
   async setAdminSetting(key: string, value: any, category: string, isSecret: boolean): Promise<void> {
     const strVal = typeof value === 'object' ? JSON.stringify(value) : String(value);
-    await supabase.from('admin_settings').upsert({
+    const { error } = await supabase.from('admin_settings').upsert({
       key,
       value: strVal,
       category,
       is_secret: isSecret,
       updated_at: new Date().toISOString()
     }, { onConflict: 'key' });
+    if (error) throw new Error(`Failed to save setting "${key}": ${error.message}`);
   },
 
   async getImpersonationToken(userId: string): Promise<string> {
@@ -1729,8 +1730,21 @@ export const supabaseStorage: IStorage = {
   async createNotificationTemplate(data: any): Promise<any> { return {}; },
   async updateNotificationTemplate(id: string, updates: any): Promise<any> { return {}; },
   async deleteNotificationTemplate(id: string): Promise<boolean> { return true; },
-  async getSmtpSettings(): Promise<any> { return null; },
-  async updateSmtpSettings(s: any): Promise<any> { return s; },
+  async getSmtpSettings(): Promise<any> {
+    const s = await this.getAdminSetting('smtp_config');
+    if (!s?.value) return null;
+    try { return JSON.parse(s.value); } catch { return null; }
+  },
+  async updateSmtpSettings(s: any): Promise<any> {
+    const existing = await this.getSmtpSettings();
+    const incoming = { ...s };
+    // Keep the stored password when the client sends a blank or masked one
+    if (!incoming.password || /^•+$/.test(String(incoming.password))) {
+      if (existing?.password) incoming.password = existing.password;
+    }
+    await this.setAdminSetting('smtp_config', incoming, 'smtp', true);
+    return incoming;
+  },
   async getPushSettings(): Promise<any> { return null; },
   async updatePushSettings(s: any): Promise<any> { return s; },
   async subscribeToPush(d: any): Promise<any> { return {}; },
