@@ -3788,7 +3788,7 @@ AI:`;
 
         if (fwSecretKey) {
           try {
-            const userProfile = await storage.getUser(userId);
+            const userProfile = await storage.getUserProfile(userId);
             const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
             const fwResponse = await fetch('https://api.flutterwave.com/v3/payments', {
               method: 'POST',
@@ -3804,7 +3804,7 @@ AI:`;
                 customer: {
                   email: email || userProfile?.email || `user-${userId}@sabiright.com`,
                   phonenumber: userProfile?.phoneNumber || '',
-                  name: userProfile?.fullName || userProfile?.displayName || 'Citizen'
+                  name: userProfile?.displayName || 'Citizen'
                 },
                 customizations: {
                   title: 'SabiRight',
@@ -3846,8 +3846,8 @@ AI:`;
 
         const isSandbox = (bachsMethod?.metadata as any)?.isSandbox || bachsSecretKey.startsWith('sk_sandbox_');
         const bachsBaseUrl = isSandbox ? 'https://sandbox-api.bachs.io' : 'https://api.bachs.io';
-        const userProfile = await storage.getUser(userId);
-        const appUrl = process.env.APP_URL || 'http://localhost:5000';
+        const userProfile = await storage.getUserProfile(userId);
+        const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
         const txRef = ((payment.metadata as any)?.reference) || `PAY-${payment.id}`;
 
         const bachsPayload = {
@@ -3859,7 +3859,7 @@ AI:`;
           currency: currency || 'NGN',
           customer: {
             email: email || userProfile?.email || `user-${userId}@sabiright.com`,
-            name: userProfile?.fullName || userProfile?.displayName || 'Citizen'
+            name: userProfile?.displayName || 'Citizen'
           },
           success_url: `${appUrl}/api/payments/bachs/callback?payment_id=${payment.id}&tx_ref=${txRef}`,
           cancel_url: `${appUrl}/app/wallet?payment=cancelled`,
