@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +78,61 @@ export default function Wallet() {
     },
     enabled: !!user?.uid,
   });
+
+  const verifyBachsPayment = useCallback(async (reference: string) => {
+    if (!user) throw new Error("Not authenticated");
+    const token = await user.getIdToken();
+    const response = await fetch("/api/payments/bachs/verify", {
+      method: "POST",
+      headers: {
+        Authorization: `******`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ reference }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || "Payment confirmation is still pending");
+    }
+    await Promise.all([refetchPendingPayments(), refetchWallet(), refetchTransactions()]);
+  }, [user, refetchPendingPayments, refetchWallet, refetchTransactions]);
+
+  const handledBachsReturn = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("provider") !== "bachs") return;
+
+    const paymentStatus = params.get("payment");
+    const reference = params.get("reference");
+    if (paymentStatus === "failed") {
+      toast({
+        title: "Payment not confirmed",
+        description: "The payment could not be verified. If you completed the transfer, check its status below.",
+        variant: "destructive",
+      });
+    } else if (paymentStatus === "success" && reference && handledBachsReturn.current !== reference) {
+      handledBachsReturn.current = reference;
+      void verifyBachsPayment(reference).then(() => {
+        toast({ title: "Payment confirmed", description: "Your payment and account access have been updated." });
+      }).catch((error: Error) => {
+        toast({
+          title: "Payment confirmation is still pending",
+          description: error.message,
+        });
+        void refetchPendingPayments();
+      });
+    } else {
+      return;
+    }
+
+    params.delete("payment");
+    params.delete("provider");
+    params.delete("reference");
+    params.delete("error");
+    const query = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
+  }, [user?.uid, verifyBachsPayment, toast, refetchPendingPayments]);
 
   const { data: paymentMethods = [] } = useQuery({
     queryKey: ['payment-methods'],
@@ -295,57 +350,86 @@ export default function Wallet() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {pendingPayments.map((payment: any) => (
-                <div key={payment.id} className="p-4 bg-white rounded-lg border border-yellow-200">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="font-bold text-sm">{payment.type.replace('_', ' ').toUpperCase()}</p>
-                      <p className="text-xs text-slate-500">{payment.description}</p>
+              {pendingPayments.map((payment: any) => {
+                const provider = String(payment.provider || "").toLowerCase();
+                const isBachs = provider === "bachs";
+                const isAutomaticPayment = ["bachs", "paystack", "flutterwave", "stripe"].includes(provider);
+                return (
+                  <div key={payment.id} className="p-4 bg-white rounded-lg border border-yellow-200">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <p className="font-bold text-sm">{payment.type.replace('_', ' ').toUpperCase()}</p>
+                        <p className="text-xs text-slate-500">{payment.description}</p>
+                      </div>
+                      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
+                        {isAutomaticPayment ? "Awaiting Confirmation" : "Pending Approval"}
+                      </Badge>
                     </div>
-                    <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">
-                      Pending Approval
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between mt-3 pt-3 border-t">
-                    <p className="text-xs text-slate-500">
-                      Ref: {payment.metadata?.reference || payment.id}
-                    </p>
-                    <p className="font-bold text-lg">{payment.currency} {payment.amount}</p>
-                  </div>
-                  <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
-                    <p className="text-xs font-medium text-blue-900 mb-1">📋 Payment Instructions:</p>
-                    <div className="text-xs text-blue-800">
-                      {(() => {
-                        const method = paymentMethods.find((m: any) => m.id === payment.provider || m.name === payment.provider);
-                        if (method?.description) {
-                          return <div dangerouslySetInnerHTML={{ __html: method.description }} />;
-                        }
-                        
-                        // Fallback to manual fields if description not available
-                        if (payment.metadata?.manualFields) {
-                          return (
-                            <div className="space-y-1">
-                              {payment.metadata.manualFields.map((f: any, idx: number) => (
-                                <p key={idx}><strong>{f.name}:</strong> {f.value}</p>
-                              ))}
-                            </div>
-                          );
-                        }
+                    <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                      <p className="text-xs text-slate-500">
+                        Ref: {payment.metadata?.reference || payment.id}
+                      </p>
+                      <p className="font-bold text-lg">{payment.currency} {payment.amount}</p>
+                    </div>
+                    {isAutomaticPayment ? (
+                      <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                        <p className="text-xs text-blue-800">
+                          Your payment is being confirmed by {provider}. This does not require manual admin approval.
+                        </p>
+                        {isBachs && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="mt-2"
+                            onClick={() => {
+                              void verifyBachsPayment(String(payment.id)).then(() => {
+                                toast({ title: "Payment confirmed", description: "Your payment and account access have been updated." });
+                              }).catch((error: Error) => {
+                                toast({ title: "Payment confirmation is still pending", description: error.message });
+                              });
+                            }}
+                          >
+                            Check payment status
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                        <p className="text-xs font-medium text-blue-900 mb-1">📋 Payment Instructions:</p>
+                        <div className="text-xs text-blue-800">
+                          {(() => {
+                            const method = paymentMethods.find((m: any) => m.id === payment.provider || m.name === payment.provider);
+                            if (method?.description) {
+                              return <div dangerouslySetInnerHTML={{ __html: method.description }} />;
+                            }
 
-                        return (
-                          <>
-                            Transfer <strong>{payment.currency} {payment.amount}</strong> to our bank account.<br />
-                            <strong>Reference:</strong> {payment.metadata?.reference || payment.id}
-                          </>
-                        );
-                      })()}
-                    </div>
-                    <p className="text-xs text-blue-700 mt-2">
-                      ⏳ Your payment will be credited after admin verification.
-                    </p>
+                            if (payment.metadata?.manualFields) {
+                              return (
+                                <div className="space-y-1">
+                                  {payment.metadata.manualFields.map((field: any, index: number) => (
+                                    <p key={index}><strong>{field.name}:</strong> {field.value}</p>
+                                  ))}
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <>
+                                Transfer <strong>{payment.currency} {payment.amount}</strong> to our bank account.<br />
+                                <strong>Reference:</strong> {payment.metadata?.reference || payment.id}
+                              </>
+                            );
+                          })()}
+                        </div>
+                        <p className="text-xs text-blue-700 mt-2">
+                          ⏳ Your payment will be credited after admin verification.
+                        </p>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

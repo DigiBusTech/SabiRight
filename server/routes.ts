@@ -4136,30 +4136,56 @@ AI:`;
 
       const providerRef = String(verifiedSessionId || sessionId);
       const result = await storage.fulfillPayment(payment.id, providerRef, paidAmount);
-      return result.ok ? { ok: true, status: 'success' } : { ok: false, status: 'failed', error: result.reason, code: 400 };
+      return result.ok
+        ? { ok: true, status: 'success' }
+        : {
+          ok: false,
+          status: 'failed',
+          error: result.reason,
+          code: result.reason === 'status_update_failed' ? 503 : 400
+        };
     } catch (vErr: any) {
       console.error('[Bachs] Session verification failed:', vErr?.message || vErr);
       return { ok: false, status: 'failed', error: 'Unable to verify Bachs checkout session', code: 502 };
     }
   }
 
-  // Bachs Webhook: validates HMAC-SHA256 signature when secret is configured
+  // Bachs signs `${timestamp}.${rawBody}` with HMAC-SHA256.
   app.post("/api/payments/bachs/webhook", async (req, res) => {
     try {
-      const signature = (req.headers['x-bachs-signature'] || req.headers['bachs-signature']) as string;
+      const signature = String(req.headers['x-bachs-signature'] || req.headers['bachs-signature'] || '');
+      const timestamp = String(req.headers['x-bachs-timestamp'] || '');
       const raw: Buffer | undefined = (req as any).rawBody;
 
       const paymentMethods = await storage.getPaymentMethods();
       const bachsMethod: any = paymentMethods.find((m: any) => m.type === 'bachs' && m.active);
       const webhookSecret = bachsMethod?.webhookHash || process.env.BACHS_WEBHOOK_SECRET;
 
-      if (webhookSecret && signature && raw) {
-        const computed = crypto.createHmac('sha256', webhookSecret).update(raw).digest('hex');
-        const sigBuf = Buffer.from(signature);
-        const compBuf = Buffer.from(computed);
-        if (sigBuf.length !== compBuf.length || !crypto.timingSafeEqual(sigBuf, compBuf)) {
-          return res.status(401).json({ error: 'Invalid Bachs signature' });
-        }
+      if (!webhookSecret) {
+        console.error('Bachs webhook rejected: signing secret is not configured');
+        return res.status(503).json({ error: 'Bachs webhook signing secret is not configured' });
+      }
+      if (!signature || !timestamp || !raw || !/^\d+$/.test(timestamp)) {
+        return res.status(400).json({ error: 'Missing or invalid Bachs signature headers or request body' });
+      }
+
+      const timestampSeconds = Number(timestamp);
+      const timestampAgeMs = Math.abs(Date.now() - timestampSeconds * 1000);
+      if (!Number.isSafeInteger(timestampSeconds) || timestampAgeMs > 5 * 60 * 1000) {
+        return res.status(401).json({ error: 'Bachs webhook timestamp is invalid or expired' });
+      }
+
+      const computed = crypto.createHmac('sha256', webhookSecret)
+        .update(`${timestamp}.`)
+        .update(raw)
+        .digest('hex');
+      if (!/^[a-f\d]{64}$/i.test(signature)) {
+        return res.status(401).json({ error: 'Invalid Bachs signature' });
+      }
+      const sigBuf = Buffer.from(signature, 'hex');
+      const compBuf = Buffer.from(computed, 'hex');
+      if (sigBuf.length !== compBuf.length || !crypto.timingSafeEqual(sigBuf, compBuf)) {
+        return res.status(401).json({ error: 'Invalid Bachs signature' });
       }
 
       const event = req.body;
@@ -4180,7 +4206,15 @@ AI:`;
           eventData?.reference ||
           eventData?.id;
         if (ref) {
-          await settleBachsTransaction(String(ref));
+          const result = await settleBachsTransaction(String(ref));
+          if (!result.ok) {
+            const retryableCodes = [402, 404, 502, 503];
+            const responseCode = retryableCodes.includes(result.code || 0) ? 503 : result.code || 400;
+            return res.status(responseCode).json({
+              error: result.error || 'Bachs payment could not be settled',
+              status: result.status
+            });
+          }
         }
       }
 
@@ -4201,8 +4235,8 @@ AI:`;
       if (!ref) return res.redirect(`/app/wallet?payment=failed&error=no_reference`);
       const result = await settleBachsTransaction(ref);
       return res.redirect(result.ok
-        ? `/app/wallet?payment=success&provider=bachs`
-        : `/app/wallet?payment=failed&provider=bachs&error=verification_failed`);
+        ? `/app/wallet?payment=success&provider=bachs&reference=${encodeURIComponent(ref)}`
+        : `/app/wallet?payment=failed&provider=bachs&reference=${encodeURIComponent(ref)}&error=verification_failed`);
     } catch (error: any) {
       console.error('Bachs callback error:', error);
       return res.redirect(`/app/wallet?payment=failed&error=server_error`);

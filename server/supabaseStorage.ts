@@ -1712,13 +1712,21 @@ export const supabaseStorage: IStorage = {
     }
 
     // Only one caller can flip pending -> completed; everyone else sees zero rows.
-    const { data: claimed } = await supabase
+    const { data: claimed, error: claimError } = await supabase
       .from('payments')
       .update({ status: 'completed', provider_ref: providerRef })
       .eq('id', paymentId)
       .neq('status', 'completed')
       .select('id');
-    if (!claimed || claimed.length === 0) return { ok: true, reason: 'already_processed' };
+    if (claimError) {
+      console.error(`Could not mark payment ${paymentId} as completed:`, claimError);
+      return { ok: false, reason: 'status_update_failed' };
+    }
+    if (!claimed || claimed.length === 0) {
+      const latestPayment = await this.getPayment(paymentId);
+      if (latestPayment?.status === 'completed') return { ok: true, reason: 'already_processed' };
+      return { ok: false, reason: 'status_update_failed' };
+    }
 
     const meta: any = payment.metadata || {};
     const userId = (payment as any).userId;
