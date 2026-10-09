@@ -1065,11 +1065,12 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   }
 
   // Unified Credit Verification & Dynamic Cost
-  const [balance, configuredCost] = await Promise.all([
+  const [balance, costSetting] = await Promise.all([
     storage.getBalance(userId),
-    storage.getCreditCost('credit_cost_ai_query', 1)
+    storage.getAdminSetting('credit_cost_ai_query')
   ]);
-  const cost = Math.max(1, Math.ceil(configuredCost));
+  const parsedCost = Number(costSetting?.value ?? 1);
+  const cost = Math.max(1, Math.ceil(Number.isFinite(parsedCost) ? parsedCost : 1));
 
   if (balance.availableCredits < cost) {
     return {
