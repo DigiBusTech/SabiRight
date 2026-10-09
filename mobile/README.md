@@ -1,6 +1,6 @@
 # SabiRight Native Mobile App (Expo / React Native)
 
-A fully native mobile application for SabiRight built using **Expo SDK 52**, **React Native 0.76**, **NativeWind (Tailwind CSS)**, and **Supabase**.
+A fully native mobile application for SabiRight built using **Expo SDK 57**, **React Native 0.86**, **NativeWind (Tailwind CSS)**, and **Supabase**.
 
 ---
 
@@ -45,6 +45,18 @@ npx expo start
 - Press `a` to open on an Android emulator or connected device via USB.
 - Press `i` to open on an iOS simulator (macOS required).
 - Scan the QR code using the **Expo Go** app on your physical Android or iPhone.
+
+### Build an Android APK for internal testing
+
+The EAS `preview` profile builds an installable APK for direct testing:
+
+```bash
+npx eas-cli login
+npx eas-cli init
+npx eas-cli build --platform android --profile preview
+```
+
+Before building, add `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, and `EXPO_PUBLIC_API_URL` to the EAS `preview` environment. Do not commit local `.env` values. Install the resulting APK on an Android device to test native features such as microphone access and notifications.
 
 ---
 
