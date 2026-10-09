@@ -33,7 +33,7 @@
   "crons": [
     {
       "path": "/api/bots/inbox/worker",
-      "schedule": "* * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
