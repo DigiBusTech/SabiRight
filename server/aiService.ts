@@ -1,8 +1,11 @@
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { supabaseStorage as storage } from "./supabaseStorage.js";
 import { selectNAtlasAsrModel } from "./natlasAsrModels.js";
 
 const NATLAS_REQUEST_TIMEOUT_MS = 25_000;
 const NATLAS_ASR_REQUEST_TIMEOUT_MS = 50_000;
+const NATLAS_ASR_TRANSCODE_TIMEOUT_MS = 15_000;
 const AI_PROVIDER_TIMEOUT_MS = 20_000;
 const GROQ_MODEL_TIMEOUT_MS = 8_000;
 const FAST_BOT_AI_BUDGET_MS = 7_000;
@@ -11,6 +14,103 @@ const FAST_BOT_MAX_OUTPUT_TOKENS = 768;
 const DEFAULT_NATLAS_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
 const DEFAULT_NATLAS_ASR_ENDPOINT = 'https://router.huggingface.co/hf-inference/models';
 export const MAX_TRANSCRIPTION_AUDIO_BYTES = 8 * 1024 * 1024;
+const ffmpegPath: string | null = createRequire(import.meta.url)('ffmpeg-static');
+
+function createTranscriptionError(message: string, statusCode: number) {
+  return Object.assign(new Error(message), { statusCode });
+}
+
+function transcodeAudioToNAtlasWav(audio: Buffer): Promise<Buffer> {
+  if (!ffmpegPath) {
+    return Promise.reject(createTranscriptionError(
+      'N-ATLAS audio conversion is unavailable on this server.',
+      503
+    ));
+  }
+
+  return new Promise((resolve, reject) => {
+    const converter = spawn(ffmpegPath, [
+      '-hide_banner',
+      '-loglevel', 'error',
+      '-i', 'pipe:0',
+      '-vn',
+      '-ac', '1',
+      '-ar', '16000',
+      '-acodec', 'pcm_s16le',
+      '-f', 's16le',
+      'pipe:1'
+    ], {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'] as const
+    });
+    const chunks: Buffer[] = [];
+    let outputBytes = 0;
+    let stderr = '';
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      fail(createTranscriptionError('Audio conversion timed out.', 504));
+    }, NATLAS_ASR_TRANSCODE_TIMEOUT_MS);
+
+    function fail(error: Error & { statusCode?: number }) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (converter.exitCode === null) converter.kill();
+      reject(error);
+    }
+
+    converter.once('error', (error) => {
+      console.error('[Transcribe] FFmpeg could not start:', error.message);
+      fail(createTranscriptionError('Audio conversion is unavailable on the server.', 503));
+    });
+    converter.stderr.on('data', (chunk: Buffer) => {
+      if (stderr.length < 1000) stderr += chunk.toString().slice(0, 1000 - stderr.length);
+    });
+    converter.stdout.on('data', (chunk: Buffer) => {
+      outputBytes += chunk.length;
+      if (outputBytes + 44 > MAX_TRANSCRIPTION_AUDIO_BYTES) {
+        fail(createTranscriptionError('Converted audio exceeds the 8 MB transcription limit.', 413));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    converter.stdin.once('error', (error) => {
+      if (!settled && error.message !== 'write EPIPE') {
+        fail(createTranscriptionError('Audio input could not be read.', 422));
+      }
+    });
+    converter.once('close', (code) => {
+      if (settled) return;
+      clearTimeout(timeout);
+      if (code !== 0 || outputBytes === 0) {
+        settled = true;
+        console.error('[Transcribe] FFmpeg could not normalize audio:', stderr.trim() || `exit code ${code}`);
+        reject(createTranscriptionError('This recording could not be decoded. Please record it again and retry.', 422));
+        return;
+      }
+
+      const pcm = Buffer.concat(chunks, outputBytes);
+      const wav = Buffer.alloc(44);
+      wav.write('RIFF', 0);
+      wav.writeUInt32LE(pcm.length + 36, 4);
+      wav.write('WAVE', 8);
+      wav.write('fmt ', 12);
+      wav.writeUInt32LE(16, 16);
+      wav.writeUInt16LE(1, 20);
+      wav.writeUInt16LE(1, 22);
+      wav.writeUInt32LE(16000, 24);
+      wav.writeUInt32LE(32000, 28);
+      wav.writeUInt16LE(2, 32);
+      wav.writeUInt16LE(16, 34);
+      wav.write('data', 36);
+      wav.writeUInt32LE(pcm.length, 40);
+      settled = true;
+      resolve(Buffer.concat([wav, pcm]));
+    });
+    converter.stdin.end(audio);
+  });
+}
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, stage: string): Promise<T> {
   if (timeoutMs <= 0) throw new Error(`AI response budget exhausted before ${stage}`);
@@ -287,6 +387,7 @@ export async function transcribeAudio(
       throw error;
     }
 
+    const normalizedAudio = await transcodeAudioToNAtlasWav(audio);
     const asrSetting = await storage.getAdminSetting('natlas_asr_endpoint');
     const configuredEndpoint = asrSetting?.value?.trim();
     const endpoint = configuredEndpoint
@@ -299,9 +400,9 @@ export async function transcribeAudio(
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Content-Type': contentType
+          'Content-Type': 'audio/wav'
         },
-        body: audio,
+        body: normalizedAudio,
         signal: AbortSignal.timeout(NATLAS_ASR_REQUEST_TIMEOUT_MS)
       });
     } catch (requestError: any) {
