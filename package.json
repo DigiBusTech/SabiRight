@@ -12,6 +12,9 @@
     "check": "tsc",
     "db:push": "drizzle-kit push"
   },
+  "allowScripts": {
+    "ffmpeg-static@5.3.0": true
+  },
   "overrides": {
     "react-helmet-async": {
       "react": "^19.0.0",

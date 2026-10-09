@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
+import ffmpegPackage from "ffmpeg-static";
 import { supabaseStorage as storage } from "./supabaseStorage.js";
 import { selectNAtlasAsrModel } from "./natlasAsrModels.js";
 
@@ -14,7 +14,9 @@ const FAST_BOT_MAX_OUTPUT_TOKENS = 768;
 const DEFAULT_NATLAS_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
 const DEFAULT_NATLAS_ASR_ENDPOINT = 'https://router.huggingface.co/hf-inference/models';
 export const MAX_TRANSCRIPTION_AUDIO_BYTES = 8 * 1024 * 1024;
-const ffmpegPath: string | null = createRequire(import.meta.url)('ffmpeg-static');
+const ffmpegPath: string | null = typeof ffmpegPackage === 'string'
+  ? ffmpegPackage
+  : ffmpegPackage.default;
 
 function createTranscriptionError(message: string, statusCode: number) {
   return Object.assign(new Error(message), { statusCode });
