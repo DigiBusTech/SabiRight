@@ -1,12 +1,11 @@
 import { supabase, supabaseStorage as storage } from "../supabaseStorage.js";
 import crypto from "crypto";
-import { getLegalAgent, summarizeCaseForProfessional } from "../agent/legalAgent.js";
-import { Runner, InMemorySessionService, toStructuredEvents, EventType } from "@google/adk";
-import { generateAIResponse, isNAtlasSovereignMode } from "../aiService.js";
+import { summarizeCaseForProfessional } from "../agent/legalAgent.js";
+import { generateAIResponse } from "../aiService.js";
 import PaystackService from "../paystackService.js";
 import type { IncomingBotMessage, BotResponse } from "./types.js";
 
-const botSessionService = new InMemorySessionService();
+const BOT_AI_RESPONSE_BUDGET_MS = 7_000;
 type ChatTurn = { role: string; content: string; eventId?: string };
 const userChatBuffers: Map<string, ChatTurn[]> = new Map();
 
@@ -1066,8 +1065,11 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   }
 
   // Unified Credit Verification & Dynamic Cost
-  const balance = await storage.getBalance(userId);
-  const cost = Math.max(1, Math.ceil(await storage.getCreditCost('credit_cost_ai_query', 1)));
+  const [balance, configuredCost] = await Promise.all([
+    storage.getBalance(userId),
+    storage.getCreditCost('credit_cost_ai_query', 1)
+  ]);
+  const cost = Math.max(1, Math.ceil(configuredCost));
 
   if (balance.availableCredits < cost) {
     return {
@@ -1104,82 +1106,18 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     };
   }
 
-  // Execute AI Response (Unified ADK with platform-wide provider fallback)
-  let finalResponse = "";
+  const safetyConcern = /\b(?:police|officer|checkpoint|arrest|detain(?:ed|tion)?|search(?:ing|ed)?|phone|device|threat|danger|emergency|violence)\b/i.test(rawText);
+  const fallbackGuidance = safetyConcern
+    ? ' If this involves an immediate physical encounter, prioritize your safety, stay calm, avoid physical confrontation, and contact someone you trust or local emergency services if needed. I cannot verify the specific legal position right now.'
+    : '';
+
+  // Use the configured provider pipeline with a total bot inference deadline.
   try {
-    const geminiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
-    const geminiKey = geminiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
-    const primarySetting = await storage.getAdminSetting('ai_provider');
-    const activeProvider = (primarySetting?.value || 'groq').toLowerCase();
+    const historyContext = history.slice(0, -1).slice(-6)
+      .map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content.slice(0, 400)}`)
+      .join('\n');
 
-    // In sovereign mode, route through the shared provider layer instead of Google ADK.
-    if (
-      !(await isNAtlasSovereignMode()) &&
-      (activeProvider === 'google' || activeProvider === 'gemini') &&
-      geminiKey
-    ) {
-      try {
-        const agent = await getLegalAgent(userLang);
-        const runner = new Runner({
-          appName: "SabiRight",
-          agent,
-          sessionService: botSessionService,
-        });
-
-        const sessionId = `bot-session-${userId}`;
-        const existingSession = await botSessionService.getSession({
-          appName: "SabiRight",
-          userId,
-          sessionId
-        });
-
-        // Replay recent turns from memory or Supabase if fresh session
-        let recap = '';
-        if (!existingSession) {
-          await botSessionService.createSession({
-            appName: "SabiRight",
-            userId,
-            sessionId
-          });
-          const earlier = history.slice(0, -1).slice(-10);
-          if (earlier.length > 0) {
-            recap = 'Earlier in this conversation:\n' +
-              earlier.map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content.slice(0, 500)}`).join('\n') +
-              '\n\nCurrent message:\n';
-          }
-        }
-
-        const promptWithLocation = `[Location: ${profile.city || profile.state || 'not provided'}, Language: ${userLang}] ${recap}${rawText}`;
-
-        const events = runner.runAsync({
-          userId,
-          sessionId,
-          newMessage: { role: 'user', parts: [{ text: promptWithLocation }] } as any,
-          abortSignal: AbortSignal.timeout(20_000)
-        });
-
-        for await (const event of events) {
-          const structuredEvents = toStructuredEvents(event);
-          for (const se of structuredEvents) {
-            if (se.type === EventType.CONTENT) {
-              finalResponse += se.content;
-            } else if (se.type === EventType.ERROR) {
-              console.error(`[BotController] ADK error:`, se.error);
-            }
-          }
-        }
-      } catch (adkErr: any) {
-        console.warn(`[BotController] ADK notice: ${adkErr.message}. Routing to unified AI fallback...`);
-      }
-    }
-
-    // 2. If ADK was skipped or returned empty, execute via unified multi-provider fallback (Groq, OpenAI, etc.)
-    if (!finalResponse) {
-      const historyContext = history.slice(0, -1).slice(-6)
-        .map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content.slice(0, 400)}`)
-        .join('\n');
-
-      let fallbackInstruction = `You are the "SabiRight AI Agent", a general civic information responder for Nigerians communicating via ${msg.channel.toUpperCase()}. Be clear and cautious; you are not a substitute for advice from a qualified Nigerian lawyer.
+    let fallbackInstruction = `You are the "SabiRight AI Agent", a general civic information responder for Nigerians communicating via ${msg.channel.toUpperCase()}. Be clear and cautious; you are not a substitute for advice from a qualified Nigerian lawyer.
 
 STRICT OPERATING RULES:
 1. NO GREETING: Answer the citizen's enquiry directly and immediately.
@@ -1189,37 +1127,44 @@ STRICT OPERATING RULES:
 5. RESPONSE STYLE: Be concise and formatted for chat screens. Use short bullet points when useful; include citations only when supported by the available source.
 6. ADVOCATE REFERRAL: If the dispute needs formal representation, inform the user they can type /lawyer to search the professional directory.`;
 
-      if (userLang && userLang.toLowerCase() !== 'english') {
-        fallbackInstruction += `\n7. MULTILINGUAL OUTPUT: Conduct the entire response in ${userLang}, using natural phrasing while preserving uncertainty.`;
-      }
+    if (userLang && userLang.toLowerCase() !== 'english') {
+      fallbackInstruction += `\n7. MULTILINGUAL OUTPUT: Conduct the entire response in ${userLang}, using natural phrasing while preserving uncertainty.`;
+    }
 
-      const fallbackPrompt = `${fallbackInstruction}
+    const fallbackPrompt = `${fallbackInstruction}
 
 ${historyContext ? `Conversation history:\n${historyContext}\n` : ""}
+[Location: ${profile.city || profile.state || 'not provided'}]
 User: ${rawText}
 AI:`;
 
-      const aiText = await generateAIResponse(fallbackPrompt);
-      if (aiText) {
-        finalResponse = aiText;
-      }
-    }
+    let finalResponse = await generateAIResponse(fallbackPrompt, false, {
+      maxLatencyMs: BOT_AI_RESPONSE_BUDGET_MS
+    }) || '';
 
     if (!finalResponse) {
       await refundBotCredit(userId, cost, creditKey);
-      finalResponse = "I couldn't generate a reliable response to that enquiry. Your credits have been refunded. Please try again or type /lawyer to find a verified professional.";
+      finalResponse = `I couldn't generate a reliable response to that enquiry. Your credits have been refunded.${fallbackGuidance} Please try again or type /lawyer to find a verified professional.`;
     } else {
       history.push({ role: 'ai', content: finalResponse, eventId: msg.eventId });
-      await saveHistory(userId, history);
+      try {
+        await saveHistory(userId, history);
+      } catch (historyError) {
+        console.error('[BotController] Could not persist bot conversation history:', historyError);
+      }
 
-      const { error: metricError } = await supabase.from('impact_metrics').insert({
-        metric_key: 'civic_guidance_delivered',
-        city: profile.city || null,
-        channel: msg.channel,
-        metadata: { length: finalResponse.length },
-        created_at: new Date().toISOString()
+      void (async () => {
+        const { error: metricError } = await supabase.from('impact_metrics').insert({
+          metric_key: 'civic_guidance_delivered',
+          city: profile.city || null,
+          channel: msg.channel,
+          metadata: { length: finalResponse.length },
+          created_at: new Date().toISOString()
+        });
+        if (metricError) console.error('[BotController] Could not record delivered guidance metric:', metricError);
+      })().catch(metricError => {
+        console.error('[BotController] Could not record delivered guidance metric:', metricError);
       });
-      if (metricError) console.error('[BotController] Could not record delivered guidance metric:', metricError);
     }
 
     return {
@@ -1242,7 +1187,7 @@ AI:`;
       refundNotice = 'I could not confirm the credit refund; please contact support if your balance does not update.';
     }
     return {
-      text: `⚠️ I couldn't complete that response. ${refundNotice} You can try again or type /lawyer to look for an advocate in your area.`,
+      text: `⚠️ The answer service did not respond in time. ${refundNotice}${fallbackGuidance} You can try again or type /lawyer to look for an advocate in your area.`,
       quickActions: [
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },

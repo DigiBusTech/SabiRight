@@ -221,29 +221,23 @@ export const supabaseStorage: IStorage = {
 
   // Credits & Plans
   async getBalance(userId: string): Promise<{ totalCredits: number; usedCredits: number; availableCredits: number; planCredits: number; renewalDate?: string | null; planId?: string; planName?: string }> {
-    await this.ensureCreditsRow(userId);
-    await this.refreshAllowance(userId);
+    const [, plan] = await Promise.all([
+      this.ensureCreditsRow(userId),
+      this.getUserPlan(userId)
+    ]);
+    await this.refreshAllowance(userId, plan);
     const credits = await this.getUserCredits(userId);
     const total = credits?.totalCredits ?? 0;
     const used = credits?.usedCredits ?? 0;
     const planCredits = credits?.planCredits ?? 0;
-    let planId = 'free';
-    let planName = 'Citizen Free';
-    try {
-      const plan = await this.getUserPlan(userId);
-      if (plan) {
-        planId = plan.id;
-        planName = plan.name;
-      }
-    } catch {}
     return {
       totalCredits: total,
       usedCredits: used,
       availableCredits: Math.max(0, total - used),
       planCredits,
       renewalDate: credits?.renewalDate,
-      planId,
-      planName
+      planId: plan?.id || 'free',
+      planName: plan?.name || 'Citizen Free'
     };
   },
 
@@ -448,13 +442,17 @@ export const supabaseStorage: IStorage = {
 
   async getUserPlan(userId: string): Promise<UserPlan | null> {
     const sub = await this.getUserSubscription(userId);
+    const [plans, profile] = await Promise.all([
+      this.getAllPlans(),
+      sub?.planId ? Promise.resolve(null) : this.getUserProfile(userId)
+    ]);
     if (sub && sub.planId) {
-      const plan = await this.getPlanById(sub.planId);
+      const plan = plans.find(candidate => candidate.id === sub.planId);
       if (plan) return plan;
     }
-    const profile = await this.getUserProfile(userId);
-    const defaultPlanId = profile?.isVendor ? 'plan-vendor' : 'plan-free';
-    return await this.getPlanById(defaultPlanId);
+    const fallbackProfile = profile || await this.getUserProfile(userId);
+    const defaultPlanId = fallbackProfile?.isVendor ? 'plan-vendor' : 'plan-free';
+    return plans.find(candidate => candidate.id === defaultPlanId) || null;
   },
 
   async getUserSubscription(userId: string): Promise<Subscription | null> {

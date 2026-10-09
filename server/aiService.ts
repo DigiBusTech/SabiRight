@@ -5,9 +5,28 @@ const NATLAS_REQUEST_TIMEOUT_MS = 25_000;
 const NATLAS_ASR_REQUEST_TIMEOUT_MS = 50_000;
 const AI_PROVIDER_TIMEOUT_MS = 20_000;
 const GROQ_MODEL_TIMEOUT_MS = 8_000;
+const FAST_BOT_AI_BUDGET_MS = 7_000;
+const FAST_BOT_NATLAS_BUDGET_MS = 3_000;
+const FAST_BOT_MAX_OUTPUT_TOKENS = 768;
 const DEFAULT_NATLAS_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
 const DEFAULT_NATLAS_ASR_ENDPOINT = 'https://router.huggingface.co/hf-inference/models';
 export const MAX_TRANSCRIPTION_AUDIO_BYTES = 8 * 1024 * 1024;
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, stage: string): Promise<T> {
+  if (timeoutMs <= 0) throw new Error(`AI response budget exhausted before ${stage}`);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${stage} exceeded ${timeoutMs}ms`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 async function fetchAIProvider(
   url: string,
@@ -27,9 +46,16 @@ async function fetchAIProvider(
   }
 }
 
-async function generateGroqResponse(prompt: string, apiKey: string): Promise<string | null> {
-  const candidateModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile'];
-  const deadline = Date.now() + AI_PROVIDER_TIMEOUT_MS;
+async function generateGroqResponse(
+  prompt: string,
+  apiKey: string,
+  timeoutMs = AI_PROVIDER_TIMEOUT_MS,
+  maxOutputTokens = 2048
+): Promise<string | null> {
+  const candidateModels = timeoutMs < AI_PROVIDER_TIMEOUT_MS
+    ? ['openai/gpt-oss-20b', 'qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile']
+    : ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile'];
+  const deadline = Date.now() + timeoutMs;
   let lastError = '';
 
   for (const model of candidateModels) {
@@ -48,7 +74,8 @@ async function generateGroqResponse(prompt: string, apiKey: string): Promise<str
           body: JSON.stringify({
             model,
             messages: [{ role: 'user', content: prompt }],
-            temperature: 0.6
+            temperature: 0.6,
+            max_tokens: maxOutputTokens
           })
         },
         Math.min(GROQ_MODEL_TIMEOUT_MS, remainingMs)
@@ -125,16 +152,23 @@ export async function getRelevantMoatContext(userPrompt: string): Promise<string
  * Calls Nigeria's Sovereign LLM: N-ATLAS (NCAIR1/N-ATLaS fine-tuned on Llama-3 8B)
  * Supports the Hugging Face chat-completion API and custom OpenAI-compatible endpoints.
  */
-export async function generateNAtlasResponse(prompt: string): Promise<string | null> {
-  const tokenSetting = await storage.getAdminSetting('natlas_api_token') 
-    || await storage.getAdminSetting('huggingface_api_key');
-  const token = tokenSetting?.value || process.env.NATLAS_API_TOKEN || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
+export async function generateNAtlasResponse(
+  prompt: string,
+  timeoutMs = NATLAS_REQUEST_TIMEOUT_MS
+): Promise<string | null> {
+  const [tokenSetting, huggingFaceSetting, endpointSetting, modelIdSetting] = await Promise.all([
+    storage.getAdminSetting('natlas_api_token'),
+    storage.getAdminSetting('huggingface_api_key'),
+    storage.getAdminSetting('natlas_api_endpoint'),
+    storage.getAdminSetting('natlas_model_id')
+  ]);
+  const effectiveTokenSetting = tokenSetting || huggingFaceSetting;
+  const token = effectiveTokenSetting?.value || process.env.NATLAS_API_TOKEN || process.env.HUGGINGFACE_API_KEY || process.env.HF_TOKEN;
 
-  const endpointSetting = await storage.getAdminSetting('natlas_api_endpoint');
   const endpoint = endpointSetting?.value?.trim() || DEFAULT_NATLAS_ENDPOINT;
-
-  const modelIdSetting = await storage.getAdminSetting('natlas_model_id');
   const modelId = modelIdSetting?.value?.trim() || 'NCAIR1/N-ATLaS';
+  const requestTimeoutMs = Math.max(1, Math.min(timeoutMs, NATLAS_REQUEST_TIMEOUT_MS));
+  const maxOutputTokens = timeoutMs < NATLAS_REQUEST_TIMEOUT_MS ? FAST_BOT_MAX_OUTPUT_TOKENS : 1024;
 
   if (!token) {
     throw new Error('N-ATLAS API token not configured. Please set natlas_api_token in Admin Settings or provide HuggingFace token.');
@@ -158,9 +192,9 @@ export async function generateNAtlasResponse(prompt: string): Promise<string | n
           { role: 'user', content: prompt }
         ],
         temperature: 0.6,
-        max_tokens: 1024
+        max_tokens: maxOutputTokens
       }),
-      signal: AbortSignal.timeout(NATLAS_REQUEST_TIMEOUT_MS)
+      signal: AbortSignal.timeout(requestTimeoutMs)
     });
     if (!res.ok) {
       const errText = (await res.text()).slice(0, 500);
@@ -190,7 +224,7 @@ export async function generateNAtlasResponse(prompt: string): Promise<string | n
     body: JSON.stringify({
       inputs: prompt,
       parameters: {
-        max_new_tokens: 1024,
+        max_new_tokens: maxOutputTokens,
         return_full_text: false,
         temperature: 0.6,
         top_p: 0.9
@@ -199,7 +233,7 @@ export async function generateNAtlasResponse(prompt: string): Promise<string | n
         wait_for_model: true
       }
     }),
-    signal: AbortSignal.timeout(NATLAS_REQUEST_TIMEOUT_MS)
+    signal: AbortSignal.timeout(requestTimeoutMs)
   });
 
   if (!response.ok) {
@@ -420,21 +454,78 @@ export async function transcribeAudio(
  * - Mode 1: Sovereign N-ATLAS (NAIC Challenge Mode - primary N-ATLAS with automatic resilience fallbacks)
  * - Mode 2: Multi-Model Enterprise Grid (Standard production mode with admin provider selection)
  */
-export async function generateAIResponse(prompt: string, skipMoatGrounding = false): Promise<string | null> {
+export async function generateAIResponse(
+  prompt: string,
+  skipMoatGrounding = false,
+  options: { maxLatencyMs?: number } = {}
+): Promise<string | null> {
+  const deadline = options.maxLatencyMs
+    ? Date.now() + Math.min(options.maxLatencyMs, FAST_BOT_AI_BUDGET_MS)
+    : undefined;
+  const remainingMs = (stage: string): number => {
+    if (deadline === undefined) return AI_PROVIDER_TIMEOUT_MS;
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error(`AI response budget exhausted before ${stage}`);
+    return remaining;
+  };
+  const getAISetting = (key: string) => {
+    const setting = storage.getAdminSetting(key);
+    return deadline === undefined
+      ? setting
+      : withTimeout(setting, remainingMs(`loading ${key}`), `Loading ${key}`);
+  };
+
   let effectivePrompt = prompt;
   if (!skipMoatGrounding) {
-    const moatContext = await getRelevantMoatContext(prompt);
+    let moatContext = '';
+    if (deadline === undefined) {
+      moatContext = await getRelevantMoatContext(prompt);
+    } else {
+      try {
+        moatContext = await withTimeout(
+          getRelevantMoatContext(prompt),
+          Math.min(1_000, remainingMs('MOAT context')),
+          'MOAT context lookup'
+        );
+      } catch (error) {
+        console.warn('[aiService] Skipping slow MOAT context lookup for time-bounded bot response:', error);
+      }
+    }
     if (moatContext && !prompt.includes('[ADMIN-MANAGED LEGAL REFERENCE MATERIAL]')) {
       effectivePrompt = `${moatContext}\n${prompt}`;
     }
   }
 
   // Check if system is set to Sovereign N-ATLAS Mode (NITDA NAIC Challenge)
-  const sovereignMode = await isNAtlasSovereignMode();
+  let sovereignMode: boolean;
+  let configuredProvider: string;
+  if (deadline === undefined) {
+    sovereignMode = await isNAtlasSovereignMode();
+    configuredProvider = '';
+  } else {
+    const [modeSetting, primaryAISetting] = await withTimeout(
+      Promise.all([
+        storage.getAdminSetting('ai_mode'),
+        storage.getAdminSetting('ai_provider')
+      ]),
+      remainingMs('AI provider settings'),
+      'AI provider settings lookup'
+    );
+    sovereignMode = (modeSetting?.value || 'natlas_sovereign').trim().toLowerCase() === 'natlas_sovereign';
+    configuredProvider = (primaryAISetting?.value || 'google').toLowerCase();
+  }
+
   if (sovereignMode) {
     try {
       console.log('[aiService] 🇳🇬 Sovereign Mode Active: Routing prompt to N-ATLAS (NCAIR1/N-ATLaS)...');
-      const natlasResponse = await generateNAtlasResponse(effectivePrompt);
+      const natlasTimeoutMs = deadline === undefined
+        ? NATLAS_REQUEST_TIMEOUT_MS
+        : Math.min(FAST_BOT_NATLAS_BUDGET_MS, remainingMs('N-ATLAS request'));
+      const natlasResponse = await withTimeout(
+        generateNAtlasResponse(effectivePrompt, natlasTimeoutMs),
+        natlasTimeoutMs,
+        'N-ATLAS response'
+      );
       if (natlasResponse && natlasResponse.trim()) {
         return natlasResponse;
       }
@@ -443,14 +534,23 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     }
     // If N-ATLAS encountered cold-start or error, proceed seamlessly to fallback provider below
   }
-  const primaryAISetting = await storage.getAdminSetting('ai_provider');
-  const configuredProvider = (primaryAISetting?.value || 'google').toLowerCase();
+  if (deadline === undefined) {
+    const primaryAISetting = await storage.getAdminSetting('ai_provider');
+    configuredProvider = (primaryAISetting?.value || 'google').toLowerCase();
+  }
   const provider = configuredProvider === 'natlas' && sovereignMode ? 'google' : configuredProvider;
 
   if (provider === 'natlas') {
-    return await generateNAtlasResponse(effectivePrompt);
+    const natlasTimeoutMs = deadline === undefined
+      ? NATLAS_REQUEST_TIMEOUT_MS
+      : remainingMs('N-ATLAS provider request');
+    return await withTimeout(
+      generateNAtlasResponse(effectivePrompt, natlasTimeoutMs),
+      natlasTimeoutMs,
+      'N-ATLAS provider response'
+    );
   } else if (provider === 'openai') {
-    const apiKeySetting = await storage.getAdminSetting('openai_api_key');
+    const apiKeySetting = await getAISetting('openai_api_key');
     const apiKey = apiKeySetting?.value || process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
@@ -466,9 +566,10 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: effectivePrompt }],
-        temperature: 0.7
+        temperature: 0.7,
+        ...(deadline === undefined ? {} : { max_tokens: FAST_BOT_MAX_OUTPUT_TOKENS })
       })
-    });
+    }, remainingMs('OpenAI request'));
 
     if (!response.ok) {
       if (response.status === 429) {
@@ -483,7 +584,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     const data = await response.json() as any;
     return data?.choices?.[0]?.message?.content || null;
   } else if (provider === 'anthropic') {
-    const apiKeySetting = await storage.getAdminSetting('anthropic_api_key');
+    const apiKeySetting = await getAISetting('anthropic_api_key');
     const apiKey = apiKeySetting?.value || process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
@@ -499,10 +600,10 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       },
       body: JSON.stringify({
         model: 'claude-3-5-sonnet-20240620',
-        max_tokens: 2048,
+        max_tokens: deadline === undefined ? 2048 : FAST_BOT_MAX_OUTPUT_TOKENS,
         messages: [{ role: 'user', content: effectivePrompt }]
       })
-    });
+    }, remainingMs('Anthropic request'));
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -512,16 +613,21 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     const data = await response.json() as any;
     return data?.content?.[0]?.text || null;
   } else if (provider === 'groq') {
-    const apiKeySetting = await storage.getAdminSetting('groq_api_key');
+    const apiKeySetting = await getAISetting('groq_api_key');
     const apiKey = apiKeySetting?.value || process.env.GROQ_API_KEY;
 
     if (!apiKey) {
       throw new Error('Groq API key not configured');
     }
 
-    return await generateGroqResponse(effectivePrompt, apiKey);
+    return await generateGroqResponse(
+      effectivePrompt,
+      apiKey,
+      remainingMs('Groq request'),
+      deadline === undefined ? 2048 : FAST_BOT_MAX_OUTPUT_TOKENS
+    );
   } else if (provider === 'deepseek') {
-    const apiKeySetting = await storage.getAdminSetting('deepseek_api_key');
+    const apiKeySetting = await getAISetting('deepseek_api_key');
     const apiKey = apiKeySetting?.value || process.env.DEEPSEEK_API_KEY;
 
     if (!apiKey) {
@@ -537,9 +643,10 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       body: JSON.stringify({
         model: 'deepseek-chat',
         messages: [{ role: 'user', content: effectivePrompt }],
-        temperature: 0.7
+        temperature: 0.7,
+        ...(deadline === undefined ? {} : { max_tokens: FAST_BOT_MAX_OUTPUT_TOKENS })
       })
-    });
+    }, remainingMs('DeepSeek request'));
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -549,7 +656,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     const data = await response.json() as any;
     return data?.choices?.[0]?.message?.content || null;
   } else if (provider === 'openrouter') {
-    const apiKeySetting = await storage.getAdminSetting('openrouter_api_key');
+    const apiKeySetting = await getAISetting('openrouter_api_key');
     const apiKey = apiKeySetting?.value || process.env.OPENROUTER_API_KEY;
 
     if (!apiKey) {
@@ -566,9 +673,10 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       },
       body: JSON.stringify({
         model: 'openrouter/auto',
-        messages: [{ role: 'user', content: effectivePrompt }]
+        messages: [{ role: 'user', content: effectivePrompt }],
+        ...(deadline === undefined ? {} : { max_tokens: FAST_BOT_MAX_OUTPUT_TOKENS })
       })
-    });
+    }, remainingMs('OpenRouter request'));
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -578,7 +686,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     const data = await response.json() as any;
     return data?.choices?.[0]?.message?.content || null;
   } else if (provider === 'perplexity') {
-    const apiKeySetting = await storage.getAdminSetting('perplexity_api_key');
+    const apiKeySetting = await getAISetting('perplexity_api_key');
     const apiKey = apiKeySetting?.value || process.env.PERPLEXITY_API_KEY;
 
     if (!apiKey) {
@@ -593,9 +701,10 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       },
       body: JSON.stringify({
         model: 'llama-3.1-sonar-small-128k-online',
-        messages: [{ role: 'user', content: effectivePrompt }]
+        messages: [{ role: 'user', content: effectivePrompt }],
+        ...(deadline === undefined ? {} : { max_tokens: FAST_BOT_MAX_OUTPUT_TOKENS })
       })
-    });
+    }, remainingMs('Perplexity request'));
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -605,7 +714,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     const data = await response.json() as any;
     return data?.choices?.[0]?.message?.content || null;
   } else if (provider === 'mistral') {
-    const apiKeySetting = await storage.getAdminSetting('mistral_api_key');
+    const apiKeySetting = await getAISetting('mistral_api_key');
     const apiKey = apiKeySetting?.value || process.env.MISTRAL_API_KEY;
 
     if (!apiKey) {
@@ -620,9 +729,10 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       },
       body: JSON.stringify({
         model: 'mistral-tiny',
-        messages: [{ role: 'user', content: effectivePrompt }]
+        messages: [{ role: 'user', content: effectivePrompt }],
+        ...(deadline === undefined ? {} : { max_tokens: FAST_BOT_MAX_OUTPUT_TOKENS })
       })
-    });
+    }, remainingMs('Mistral request'));
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -632,7 +742,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     const data = await response.json() as any;
     return data?.choices?.[0]?.message?.content || null;
   } else if (provider === 'huggingface') {
-    const apiKeySetting = await storage.getAdminSetting('huggingface_api_key');
+    const apiKeySetting = await getAISetting('huggingface_api_key');
     const apiKey = apiKeySetting?.value || process.env.HUGGINGFACE_API_KEY;
 
     if (!apiKey) {
@@ -647,9 +757,13 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       },
       body: JSON.stringify({
         inputs: effectivePrompt,
-        parameters: { max_new_tokens: 1024, return_full_text: false, temperature: 0.7 }
+        parameters: {
+          max_new_tokens: deadline === undefined ? 1024 : FAST_BOT_MAX_OUTPUT_TOKENS,
+          return_full_text: false,
+          temperature: 0.7
+        }
       })
-    });
+    }, remainingMs('Hugging Face request'));
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -663,14 +777,21 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     return typeof data === 'string' ? data : JSON.stringify(data);
   } else {
     // Default to Gemini (google) if key exists
-    const apiKeySetting = await storage.getAdminSetting('google_gemini_api_key');
+    const apiKeySetting = await getAISetting('google_gemini_api_key');
     const apiKey = apiKeySetting?.value || process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
 
     // If Gemini is not configured, check if Groq key is present as automatic smart fallback
     if (!apiKey) {
-      const groqSetting = await storage.getAdminSetting('groq_api_key');
+      const groqSetting = await getAISetting('groq_api_key');
       const groqKey = groqSetting?.value || process.env.GROQ_API_KEY;
-      if (groqKey) return await generateGroqResponse(effectivePrompt, groqKey);
+      if (groqKey) {
+        return await generateGroqResponse(
+          effectivePrompt,
+          groqKey,
+          remainingMs('Groq fallback request'),
+          deadline === undefined ? 2048 : FAST_BOT_MAX_OUTPUT_TOKENS
+        );
+      }
       throw new Error('Gemini API key not configured, and no fallback AI provider available');
     }
 
@@ -694,20 +815,25 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
           temperature: 0.7,
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 2048,
+          maxOutputTokens: deadline === undefined ? 2048 : FAST_BOT_MAX_OUTPUT_TOKENS,
         }
       })
-    });
+    }, remainingMs('Gemini request'));
 
     if (!response.ok) {
       const errorBody = await response.text();
       console.warn(`Gemini API Error (${response.status}): ${errorBody}. Attempting fallback to Groq...`);
 
-      const groqSetting = await storage.getAdminSetting('groq_api_key');
+      const groqSetting = await getAISetting('groq_api_key');
       const groqKey = groqSetting?.value || process.env.GROQ_API_KEY;
       if (groqKey) {
         try {
-          const groqResponse = await generateGroqResponse(effectivePrompt, groqKey);
+          const groqResponse = await generateGroqResponse(
+            effectivePrompt,
+            groqKey,
+            remainingMs('Groq fallback request'),
+            deadline === undefined ? 2048 : FAST_BOT_MAX_OUTPUT_TOKENS
+          );
           if (groqResponse) return groqResponse;
         } catch (groqError) {
           console.warn('[aiService] Groq fallback failed after Gemini returned an error:', groqError);
