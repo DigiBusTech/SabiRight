@@ -3885,7 +3885,7 @@ AI:`;
             name: userProfile?.displayName || 'Citizen'
           },
           success_url: `${appUrl}/api/payments/bachs/callback?payment_id=${payment.id}&tx_ref=${txRef}`,
-          cancel_url: `${appUrl}/app/wallet?payment=cancelled`,
+          cancel_url: `${appUrl}/app?payment=cancelled`,
           reference: txRef,
           metadata: {
             paymentId: payment.id,
@@ -3975,14 +3975,14 @@ AI:`;
   app.get("/api/payments/paystack/callback", async (req, res) => {
     try {
       const reference = String(req.query.reference || req.query.trxref || '');
-      if (!reference) return res.redirect(`/app/wallet?payment=failed&error=no_reference`);
+      if (!reference) return res.redirect(`/app?payment=failed&error=no_reference`);
       const r = await settlePaystackReference(reference);
       return res.redirect(r.ok
-        ? `/app/wallet?payment=success&reference=${encodeURIComponent(reference)}`
-        : `/app/wallet?payment=failed&reference=${encodeURIComponent(reference)}`);
+        ? `/app?payment=success&reference=${encodeURIComponent(reference)}`
+        : `/app?payment=failed&reference=${encodeURIComponent(reference)}`);
     } catch (error: any) {
       console.error('Paystack callback error:', error);
-      return res.redirect(`/app/wallet?payment=failed&error=server_error`);
+      return res.redirect(`/app?payment=failed&error=server_error`);
     }
   });
 
@@ -4093,13 +4093,13 @@ AI:`;
       if (status === 'successful' && transactionId) {
         const r = await settleFlutterwaveTransaction(transactionId);
         return res.redirect(r.ok
-          ? `/app/wallet?payment=success&tx=${encodeURIComponent(transactionId)}`
-          : `/app/wallet?payment=failed&tx=${encodeURIComponent(transactionId)}`);
+          ? `/app?payment=success&tx=${encodeURIComponent(transactionId)}`
+          : `/app?payment=failed&tx=${encodeURIComponent(transactionId)}`);
       }
-      return res.redirect(`/app/wallet?payment=cancelled`);
+      return res.redirect(`/app?payment=cancelled`);
     } catch (error: any) {
       console.error('Flutterwave callback error:', error);
-      return res.redirect(`/app/wallet?payment=failed&error=server_error`);
+      return res.redirect(`/app?payment=failed&error=server_error`);
     }
   });
 
@@ -4257,14 +4257,14 @@ AI:`;
       const txRef = String(req.query.tx_ref || req.query.sessionId || '');
       const ref = paymentId || txRef;
 
-      if (!ref) return res.redirect(`/app/wallet?payment=failed&error=no_reference`);
+      if (!ref) return res.redirect(`/app?payment=failed&error=no_reference`);
       const result = await settleBachsTransaction(ref);
       return res.redirect(result.ok
-        ? `/app/wallet?payment=success&provider=bachs&reference=${encodeURIComponent(ref)}`
-        : `/app/wallet?payment=failed&provider=bachs&reference=${encodeURIComponent(ref)}&error=verification_failed`);
+        ? `/app?payment=success&provider=bachs&reference=${encodeURIComponent(ref)}`
+        : `/app?payment=failed&provider=bachs&reference=${encodeURIComponent(ref)}&error=verification_failed`);
     } catch (error: any) {
       console.error('Bachs callback error:', error);
-      return res.redirect(`/app/wallet?payment=failed&error=server_error`);
+      return res.redirect(`/app?payment=failed&error=server_error`);
     }
   });
 

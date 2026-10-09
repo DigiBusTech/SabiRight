@@ -16,8 +16,8 @@ interface Plan {
   userType: string;
   price: number | null;
   billingCycle: string | null;
-  dailyCredits?: number | null;
-  marketplaceListings?: number | null;
+  credits?: number | null;
+  storageMb?: number | null;
   features: string[];
 }
 
@@ -34,6 +34,24 @@ const VENDOR_FEATURES = [
   { id: "client_demographics", label: "Client Demographics & Stats" },
   { id: "ai_growth_suggestions", label: "AI Approach Suggestions" }
 ];
+
+const FEATURE_ALIASES: Record<string, string[]> = {
+  ai_chat: ["ai_chat", "basic ai legal guidance", "right-to-know ai chat", "priority ai support"],
+  civic_alerts: ["civic_alerts", "real-time traffic alerts", "real-time civic & traffic alerts", "advanced route optimization"],
+  community_forum: ["community_forum", "community forum access"],
+  job_applications: ["job_applications", "job postings & applications", "job board early access"],
+  service_listings: ["service_listings", "unlimited marketplace listings"],
+  lead_view: ["lead_view", "priority lead matching", "direct messaging access"],
+  client_demographics: ["client_demographics", "client lead analytics", "advanced analytics & reporting"],
+  ai_growth_suggestions: ["ai_growth_suggestions"]
+};
+
+const normalizeFeature = (feature: string) => feature.trim().toLowerCase();
+
+const planHasFeature = (features: string[], featureId: string) => {
+  const aliases = FEATURE_ALIASES[featureId] || [featureId];
+  return features.some((feature) => aliases.includes(normalizeFeature(feature)));
+};
 
 export default function PlanManagement() {
   const { user } = useAuth();
@@ -165,6 +183,13 @@ export default function PlanManagement() {
         ) : filteredPlans.map((plan: Plan) => {
           const isCurrentPlan = currentPlan?.id === plan.id;
           const isFree = plan.type === 'free';
+          const creditPeriod = plan.billingCycle === 'yearly' ? 'year' : 'month';
+          const availableFeatures = userType === 'vendor' ? VENDOR_FEATURES : USER_FEATURES;
+          const customBenefits = (Array.isArray(plan.features) ? plan.features : []).filter((feature) =>
+            !availableFeatures.some((item) =>
+              (FEATURE_ALIASES[item.id] || [item.id]).includes(normalizeFeature(feature))
+            ) && !/\bcredits?\b|\bstorage\b/i.test(feature)
+          );
 
           return (
             <Card 
@@ -212,23 +237,25 @@ export default function PlanManagement() {
                   )}
                 </div>
 
-                {/* Credits/Listings */}
-                {plan.dailyCredits && (
+                {/* Plan allocations */}
+                {plan.credits != null && (
                   <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
                     <Zap className="h-5 w-5 text-blue-600" />
                     <div>
-                      <p className="text-xs font-bold text-blue-900 uppercase">Daily Credits</p>
-                      <p className="text-lg font-bold text-blue-700">{plan.dailyCredits} credits/day</p>
+                      <p className="text-xs font-bold text-blue-900 uppercase">Credit Allocation</p>
+                      <p className="text-lg font-bold text-blue-700">
+                        {plan.credits.toLocaleString()} credits per {creditPeriod}
+                      </p>
                     </div>
                   </div>
                 )}
 
-                {plan.marketplaceListings && (
+                {plan.storageMb != null && (
                   <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
                     <Check className="h-5 w-5 text-green-600" />
                     <div>
-                      <p className="text-xs font-bold text-green-900 uppercase">Marketplace</p>
-                      <p className="text-lg font-bold text-green-700">{plan.marketplaceListings} listings</p>
+                      <p className="text-xs font-bold text-green-900 uppercase">Chat Storage</p>
+                      <p className="text-lg font-bold text-green-700">{plan.storageMb} MB</p>
                     </div>
                   </div>
                 )}
@@ -237,8 +264,8 @@ export default function PlanManagement() {
                 <div className="space-y-2">
                   <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">Features & Benefits</p>
                   <ul className="space-y-2.5">
-                    {(userType === 'vendor' ? VENDOR_FEATURES : USER_FEATURES).map((item) => {
-                      const hasFeature = Array.isArray(plan.features) && plan.features.includes(item.id);
+                    {availableFeatures.map((item) => {
+                      const hasFeature = Array.isArray(plan.features) && planHasFeature(plan.features, item.id);
                       return (
                         <li key={item.id} className={`flex items-center gap-2.5 text-sm ${hasFeature ? 'text-slate-800' : 'text-slate-400 line-through font-light'}`}>
                           {hasFeature ? (
@@ -251,6 +278,16 @@ export default function PlanManagement() {
                       );
                     })}
                   </ul>
+                  {customBenefits.length > 0 && (
+                    <ul className="space-y-2.5 pt-1">
+                      {customBenefits.map((benefit) => (
+                        <li key={benefit} className="flex items-center gap-2.5 text-sm text-slate-800">
+                          <Check className="h-4 w-4 text-green-600 bg-green-50 rounded-full p-0.5 shrink-0" />
+                          <span>{benefit}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
 
                 {/* Action Button */}

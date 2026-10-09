@@ -144,7 +144,7 @@ async function generateBotCheckoutLink(
           pricing: { amount: Number(amount).toFixed(2), currency: 'NGN' },
           customer: { email: customerEmail, name: customerName },
           success_url: `${appUrl}/api/payments/bachs/callback?payment_id=${payment.id}&tx_ref=${txRef}`,
-          cancel_url: `${appUrl}/app/wallet?payment=cancelled`,
+          cancel_url: `${appUrl}/app?payment=cancelled`,
           reference: txRef,
           metadata: { paymentId: payment.id, userId, type, reference: txRef, ...metadata }
         })
@@ -1154,7 +1154,8 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
         const events = runner.runAsync({
           userId,
           sessionId,
-          newMessage: { role: 'user', parts: [{ text: promptWithLocation }] } as any
+          newMessage: { role: 'user', parts: [{ text: promptWithLocation }] } as any,
+          abortSignal: AbortSignal.timeout(20_000)
         });
 
         for await (const event of events) {

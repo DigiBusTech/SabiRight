@@ -3,9 +3,73 @@ import { selectNAtlasAsrModel } from "./natlasAsrModels.js";
 
 const NATLAS_REQUEST_TIMEOUT_MS = 25_000;
 const NATLAS_ASR_REQUEST_TIMEOUT_MS = 50_000;
+const AI_PROVIDER_TIMEOUT_MS = 20_000;
+const GROQ_MODEL_TIMEOUT_MS = 8_000;
 const DEFAULT_NATLAS_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
 const DEFAULT_NATLAS_ASR_ENDPOINT = 'https://router.huggingface.co/hf-inference/models';
 export const MAX_TRANSCRIPTION_AUDIO_BYTES = 8 * 1024 * 1024;
+
+async function fetchAIProvider(
+  url: string,
+  init: RequestInit,
+  timeoutMs = AI_PROVIDER_TIMEOUT_MS
+): Promise<Response> {
+  const startedAt = Date.now();
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+  } catch (error) {
+    const errorType = error instanceof Error ? error.name : 'UnknownError';
+    console.warn(`[aiService] Provider request failed after ${Date.now() - startedAt}ms (type=${errorType})`);
+    throw error;
+  }
+}
+
+async function generateGroqResponse(prompt: string, apiKey: string): Promise<string | null> {
+  const candidateModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile'];
+  const deadline = Date.now() + AI_PROVIDER_TIMEOUT_MS;
+  let lastError = '';
+
+  for (const model of candidateModels) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
+
+    try {
+      const response = await fetchAIProvider(
+        'https://api.groq.com/openai/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.6
+          })
+        },
+        Math.min(GROQ_MODEL_TIMEOUT_MS, remainingMs)
+      );
+
+      if (response.ok) {
+        const data = await response.json() as any;
+        const text = data?.choices?.[0]?.message?.content;
+        if (typeof text === 'string' && text.trim()) return text;
+        lastError = `${model} returned no text`;
+      } else {
+        lastError = `${model} returned ${response.status}: ${(await response.text()).slice(0, 300)}`;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  if (lastError) throw new Error(`Groq error across candidate models: ${lastError}`);
+  return null;
+}
 
 export async function isNAtlasSovereignMode(): Promise<boolean> {
   const setting = await storage.getAdminSetting('ai_mode');
@@ -393,7 +457,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       throw new Error('OpenAI API key not configured');
     }
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetchAIProvider('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -426,7 +490,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       throw new Error('Anthropic API key not configured');
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetchAIProvider('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -455,36 +519,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       throw new Error('Groq API key not configured');
     }
 
-    const candidateModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile'];
-    let lastErr = '';
-    for (const model of candidateModels) {
-      try {
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          },
-          body: JSON.stringify({
-            model,
-            messages: [{ role: 'user', content: effectivePrompt }],
-            temperature: 0.6
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json() as any;
-          const text = data?.choices?.[0]?.message?.content;
-          if (text) return text;
-        } else {
-          lastErr = await response.text();
-        }
-      } catch (mErr: any) {
-        lastErr = mErr.message || String(mErr);
-      }
-    }
-
-    throw new Error(`Groq error across candidate models: ${lastErr}`);
+    return await generateGroqResponse(effectivePrompt, apiKey);
   } else if (provider === 'deepseek') {
     const apiKeySetting = await storage.getAdminSetting('deepseek_api_key');
     const apiKey = apiKeySetting?.value || process.env.DEEPSEEK_API_KEY;
@@ -493,7 +528,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       throw new Error('DeepSeek API key not configured');
     }
 
-    const response = await fetch('https://api.deepseek.com/chat/completions', {
+    const response = await fetchAIProvider('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -521,7 +556,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       throw new Error('OpenRouter API key not configured');
     }
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetchAIProvider('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -550,7 +585,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       throw new Error('Perplexity API key not configured');
     }
 
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+    const response = await fetchAIProvider('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -577,7 +612,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       throw new Error('Mistral API key not configured');
     }
 
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    const response = await fetchAIProvider('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -604,7 +639,7 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       throw new Error('HuggingFace API key not configured');
     }
 
-    const response = await fetch('https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3', {
+    const response = await fetchAIProvider('https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -635,37 +670,14 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
     if (!apiKey) {
       const groqSetting = await storage.getAdminSetting('groq_api_key');
       const groqKey = groqSetting?.value || process.env.GROQ_API_KEY;
-      if (groqKey) {
-        const candidateModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile'];
-        for (const model of candidateModels) {
-          try {
-            const gResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${groqKey}`
-              },
-              body: JSON.stringify({
-                model,
-                messages: [{ role: 'user', content: effectivePrompt }],
-                temperature: 0.6
-              })
-            });
-            if (gResponse.ok) {
-              const gData = await gResponse.json() as any;
-              const text = gData?.choices?.[0]?.message?.content;
-              if (text) return text;
-            }
-          } catch (gErr) {}
-        }
-      }
+      if (groqKey) return await generateGroqResponse(effectivePrompt, groqKey);
       throw new Error('Gemini API key not configured, and no fallback AI provider available');
     }
 
     // Use gemini-2.0-flash with v1beta endpoint for stability and modern features
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     
-    const response = await fetch(url, {
+    const response = await fetchAIProvider(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -694,27 +706,11 @@ export async function generateAIResponse(prompt: string, skipMoatGrounding = fal
       const groqSetting = await storage.getAdminSetting('groq_api_key');
       const groqKey = groqSetting?.value || process.env.GROQ_API_KEY;
       if (groqKey) {
-        const candidateModels = ['qwen/qwen3.8-27b', 'openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'llama-3.3-70b-versatile'];
-        for (const model of candidateModels) {
-          try {
-            const gResponse = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${groqKey}`
-              },
-              body: JSON.stringify({
-                model,
-                messages: [{ role: 'user', content: effectivePrompt }],
-                temperature: 0.6
-              })
-            });
-            if (gResponse.ok) {
-              const gData = await gResponse.json() as any;
-              const text = gData?.choices?.[0]?.message?.content;
-              if (text) return text;
-            }
-          } catch (gErr) {}
+        try {
+          const groqResponse = await generateGroqResponse(effectivePrompt, groqKey);
+          if (groqResponse) return groqResponse;
+        } catch (groqError) {
+          console.warn('[aiService] Groq fallback failed after Gemini returned an error:', groqError);
         }
       }
       

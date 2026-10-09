@@ -49,7 +49,7 @@ const StripeCheckoutForm = ({ clientSecret, onSuccess }: { clientSecret: string,
     const { error } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: window.location.origin + "/app/wallet?payment=success",
+        return_url: window.location.origin + "/app?payment=success",
       },
     });
 
@@ -265,7 +265,7 @@ export default function Payment() {
           : "Your subscription has been activated!",
       });
       queryClient.invalidateQueries({ queryKey: [`wallet-${user?.uid}`] });
-      navigate('/app/dashboard');
+      navigate('/app');
     },
     onError: (error: Error) => {
       toast({
@@ -418,28 +418,35 @@ export default function Payment() {
             callback: function(response: any) {
               // Payment successful
               toast({
-                title: "Payment Successful!",
+                title: "Verifying payment",
                 description: "Your payment is being verified...",
               });
               
               // Verify payment
-              fetch('/api/payments/paystack/verify', {
+              user.getIdToken().then(token => fetch('/api/payments/paystack/verify', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${token}`
+                },
                 body: JSON.stringify({ reference: response.reference })
-              }).then(res => res.json())
+              })).then(async res => {
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Payment verification failed');
+                return data;
+              })
                 .then(data => {
-                  if (data.status && data.data.status === 'success') {
+                  if (data.success && data.status === 'success') {
                     queryClient.invalidateQueries({ queryKey: [`wallet-${user.uid}`] });
                     queryClient.invalidateQueries({ queryKey: ['pending-payments'] });
-                    navigate('/app/wallet?payment=success');
+                    navigate('/app?payment=success');
                   } else {
-                    navigate('/app/wallet?payment=failed');
+                    throw new Error(data.error || 'Payment verification failed');
                   }
                 })
                 .catch(err => {
                   console.error('Verification error:', err);
-                  navigate('/app/wallet?payment=failed');
+                  navigate('/app?payment=failed');
                 });
             }
           });
@@ -504,7 +511,7 @@ export default function Payment() {
             amount: amount,
             currency: 'NGN',
             payment_options: 'card,banktransfer,ussd,mobilemoney',
-            redirect_url: window.location.origin + "/app/wallet?payment=success&provider=flutterwave",
+            redirect_url: window.location.origin + "/app?payment=success&provider=flutterwave",
             customer: {
               email: paymentData.email,
               name: user.displayName || 'SabiRight User',
@@ -525,31 +532,38 @@ export default function Payment() {
               console.log('Flutterwave callback:', response);
               if (response.status === 'successful' || response.status === 'completed') {
                 toast({
-                  title: "Payment Successful!",
+                  title: "Verifying payment",
                   description: "Your payment is being verified...",
                 });
                 
                 // Verify payment
-                fetch('/api/payments/flutterwave/verify', {
+                user.getIdToken().then(token => fetch('/api/payments/flutterwave/verify', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ 
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                  },
+                  body: JSON.stringify({
                     transaction_id: response.transaction_id,
-                    tx_ref: response.tx_ref 
+                    tx_ref: response.tx_ref
                   })
-                }).then(res => res.json())
+                })).then(async res => {
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error || 'Payment verification failed');
+                  return data;
+                })
                   .then(data => {
                     if (data.status === 'success') {
                       queryClient.invalidateQueries({ queryKey: [`wallet-${user.uid}`] });
                       queryClient.invalidateQueries({ queryKey: ['pending-payments'] });
-                      navigate('/app/wallet?payment=success');
+                      navigate('/app?payment=success');
                     } else {
-                      navigate('/app/wallet?payment=failed');
+                      throw new Error(data.error || 'Payment verification failed');
                     }
                   })
                   .catch(err => {
                     console.error('Verification error:', err);
-                    navigate('/app/wallet?payment=failed');
+                    navigate('/app?payment=failed');
                   });
               } else {
                 toast({
@@ -679,7 +693,7 @@ export default function Payment() {
               description: "Please wait for admin approval.",
               duration: 5000
             });
-            navigate('/app/wallet');
+            navigate('/app?payment=pending');
           }
         });
     } catch (error) {
@@ -722,7 +736,7 @@ export default function Payment() {
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Go Back
               </Button>
-              <Button onClick={() => navigate('/app/dashboard')}>
+              <Button onClick={() => navigate('/app')}>
                 Go to Dashboard
               </Button>
             </div>
@@ -1000,7 +1014,13 @@ export default function Payment() {
             </DialogHeader>
             {stripeClientSecret && stripePromise && (
                 <Elements stripe={stripePromise} options={{ clientSecret: stripeClientSecret }}>
-                    <StripeCheckoutForm clientSecret={stripeClientSecret} onSuccess={() => setIsStripeModalOpen(false)} />
+                    <StripeCheckoutForm
+                      clientSecret={stripeClientSecret}
+                      onSuccess={() => {
+                        setIsStripeModalOpen(false);
+                        navigate('/app?payment=success');
+                      }}
+                    />
                 </Elements>
             )}
         </DialogContent>

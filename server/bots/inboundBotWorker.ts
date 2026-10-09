@@ -23,6 +23,7 @@ interface InboundBotRow {
   provider_payload: Record<string, any>;
   response: BotResponse | null;
   processed_at: string | null;
+  received_at?: string;
   retry_count: number;
   lease_token: string;
 }
@@ -42,8 +43,10 @@ interface WhatsAppEvent {
 const MAX_PROCESS_ATTEMPTS = 5;
 const MAX_DELIVERY_ATTEMPTS = 8;
 const MAX_BACKOFF_MS = 15 * 60 * 1000;
+const MAX_INBOUND_WORKER_CONCURRENCY = 3;
 
 let activeDrain: Promise<{ claimed: number; delivered: number; failed: number }> | null = null;
+let pendingDrainRequests = 0;
 let pollTimer: NodeJS.Timeout | null = null;
 
 export async function enqueueInboundBotEvent(
@@ -348,11 +351,17 @@ async function processClaimedRow(row: InboundBotRow): Promise<boolean> {
   let response = row.response;
   let recipient: string | number;
   let callbackQueryId: string | undefined;
+  const startedAt = Date.now();
+  const receivedAt = row.received_at ? Date.parse(row.received_at) : Number.NaN;
+  const queueWaitMs = Number.isFinite(receivedAt) ? Math.max(0, startedAt - receivedAt) : undefined;
+  let responseGenerationMs: number | undefined;
 
   try {
     if (!response) {
       try {
+        const generationStartedAt = Date.now();
         const generated = await buildResponse(row);
+        responseGenerationMs = Date.now() - generationStartedAt;
         recipient = generated.recipient;
         callbackQueryId = generated.callbackQueryId;
         response = generated.response;
@@ -381,7 +390,9 @@ async function processClaimedRow(row: InboundBotRow): Promise<boolean> {
       recipient = String(event.message?.from || "");
     }
 
+    const deliveryStartedAt = Date.now();
     await sendResponse(row, recipient, response, callbackQueryId);
+    const deliveryMs = Date.now() - deliveryStartedAt;
     await updateClaimedRow(row, {
       delivered_at: new Date().toISOString(),
       error: null,
@@ -390,31 +401,75 @@ async function processClaimedRow(row: InboundBotRow): Promise<boolean> {
       next_attempt_at: new Date().toISOString(),
       dead_letter_at: null
     });
+    console.info(
+      `[BotInbox] Delivered channel=${row.channel} event=${row.provider_event_id}` +
+      ` queue_wait_ms=${queueWaitMs ?? "unknown"}` +
+      ` generation_ms=${responseGenerationMs ?? "cached"}` +
+      ` delivery_ms=${deliveryMs} total_ms=${Date.now() - startedAt} attempt=${row.retry_count}`
+    );
     return true;
   } catch (error) {
+    const retryInMs = row.retry_count >= MAX_DELIVERY_ATTEMPTS ? 0 : retryDelayMs(row.retry_count);
+    console.warn(
+      `[BotInbox] Event ${row.provider_event_id} failed after ${Date.now() - startedAt}ms;` +
+      ` attempt=${row.retry_count} retry_in_ms=${retryInMs}: ${errorMessage(error)}`
+    );
     await scheduleRetry(row, error);
     return false;
   }
 }
 
 async function drain(limit: number): Promise<{ claimed: number; delivered: number; failed: number }> {
-  const { data, error } = await supabase.rpc("claim_inbound_bot_messages", { p_limit: limit });
+  const { data, error } = await supabase.rpc("claim_inbound_bot_messages", {
+    p_limit: Math.min(limit, MAX_INBOUND_WORKER_CONCURRENCY)
+  });
   if (error) throw error;
 
   const rows = (data || []) as InboundBotRow[];
-  let delivered = 0;
-  let failed = 0;
-  for (const row of rows) {
-    if (await processClaimedRow(row)) delivered++;
-    else failed++;
-  }
-  return { claimed: rows.length, delivered, failed };
+  const results = await Promise.all(rows.map(processClaimedRow));
+  return {
+    claimed: rows.length,
+    delivered: results.filter(Boolean).length,
+    failed: results.filter(result => !result).length
+  };
 }
 
 export function drainInboundBotQueue(limit = 10): Promise<{ claimed: number; delivered: number; failed: number }> {
-  if (activeDrain) return activeDrain;
-  activeDrain = drain(limit).finally(() => {
+  const requestedLimit = Math.min(Math.max(Math.floor(limit) || 1, 1), 50);
+  if (activeDrain) {
+    pendingDrainRequests = Math.min(50, pendingDrainRequests + requestedLimit);
+    return activeDrain;
+  }
+
+  activeDrain = (async () => {
+    const totals = { claimed: 0, delivered: 0, failed: 0 };
+    let requestBudget = requestedLimit;
+
+    while (requestBudget > 0) {
+      const batchLimit = Math.min(requestBudget, MAX_INBOUND_WORKER_CONCURRENCY);
+      const result = await drain(batchLimit);
+      totals.claimed += result.claimed;
+      totals.delivered += result.delivered;
+      totals.failed += result.failed;
+      requestBudget -= result.claimed;
+
+      if (result.claimed < batchLimit) requestBudget = 0;
+      if (requestBudget === 0 && pendingDrainRequests > 0) {
+        requestBudget = pendingDrainRequests;
+        pendingDrainRequests = 0;
+      }
+    }
+
+    return totals;
+  })().finally(() => {
+    const followUpLimit = pendingDrainRequests;
+    pendingDrainRequests = 0;
     activeDrain = null;
+    if (followUpLimit > 0) {
+      void drainInboundBotQueue(followUpLimit).catch(error => {
+        console.error("[BotInbox] Follow-up queue drain failed:", error);
+      });
+    }
   });
   return activeDrain;
 }

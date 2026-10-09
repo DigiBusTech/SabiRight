@@ -64,6 +64,48 @@ export default function Dashboard() {
   const [referralCode, setReferralCode] = useState(profile?.referralCode || "");
   const [isGeneratingCode, setIsGeneratingCode] = useState(false);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentStatus = params.get("payment");
+
+    switch (paymentStatus) {
+      case "success":
+        toast({
+          title: "Payment confirmed",
+          description: "Your payment has been verified and your account updated.",
+        });
+        break;
+      case "pending":
+        toast({
+          title: "Payment submitted",
+          description: "Your payment is awaiting approval.",
+        });
+        break;
+      case "failed":
+        toast({
+          title: "Payment not confirmed",
+          description: "The payment could not be confirmed. If you were charged, contact support.",
+          variant: "destructive",
+        });
+        break;
+      case "cancelled":
+        toast({ title: "Payment cancelled", description: "No payment was completed." });
+        break;
+      default:
+        return;
+    }
+
+    for (const key of ["payment", "provider", "reference", "tx", "error"]) {
+      params.delete(key);
+    }
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`
+    );
+  }, [toast]);
+
   const fetchReferralCode = async () => {
     if (!user || referralCode) return;
     setIsGeneratingCode(true);
