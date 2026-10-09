@@ -736,7 +736,8 @@ export const supabaseStorage: IStorage = {
     if (filters?.status) q = q.eq('status', filters.status);
     if (filters?.role) q = q.eq('role', filters.role);
     if (filters?.verified !== undefined) q = q.eq('verified', filters.verified);
-    const { data } = await q;
+    const { data, error } = await q;
+    if (error) throw error;
     return (data || []).map((p: any) => {
       const loc = p.location || {};
       const lat = p.latitude ?? loc.latitude;
@@ -758,7 +759,7 @@ export const supabaseStorage: IStorage = {
           longitude: lon
         },
         wallet: { NGN: 0, USD: 0, credits: 0, updatedAt: new Date() },
-        rating: Number(p.rating || 5),
+        rating: p.rating !== null && p.rating !== undefined ? Number(p.rating) : undefined,
         reviewCount: p.review_count || 0,
         publicProfile: p.public_profile || {},
         createdAt: new Date(p.created_at),
@@ -768,7 +769,8 @@ export const supabaseStorage: IStorage = {
   },
 
   async getProfessionalById(professionalId: string): Promise<Professional | null> {
-    const { data } = await supabase.from('professionals').select('*').eq('id', professionalId).maybeSingle();
+    const { data, error } = await supabase.from('professionals').select('*').eq('id', professionalId).maybeSingle();
+    if (error) throw error;
     if (!data) return null;
     return {
       id: data.id,
@@ -783,7 +785,7 @@ export const supabaseStorage: IStorage = {
       credentials: data.credentials || {},
       location: data.location || {},
       wallet: { NGN: 0, USD: 0, credits: 0, updatedAt: new Date() },
-      rating: Number(data.rating || 5),
+      rating: data.rating !== null && data.rating !== undefined ? Number(data.rating) : undefined,
       reviewCount: data.review_count || 0,
       publicProfile: data.public_profile || {},
       createdAt: new Date(data.created_at),

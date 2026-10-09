@@ -11,6 +11,7 @@ import { Runner, InMemorySessionService, toStructuredEvents, EventType } from "@
 import PaystackService from "./paystackService.js";
 import { whatsappRouter } from "./bots/whatsapp/whatsappRoutes.js";
 import { telegramRouter } from "./bots/telegram/telegramRoutes.js";
+import { drainInboundBotQueue } from "./bots/inboundBotWorker.js";
 import {
   normalizeTelegramBotUrl,
   normalizeWhatsAppBotUrl
@@ -327,6 +328,30 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  app.get("/api/bots/inbox/worker", async (req, res) => {
+    const secret = process.env.CRON_SECRET || process.env.BOT_INBOX_WORKER_SECRET;
+    if (!secret && process.env.NODE_ENV === "production") {
+      return res.status(503).json({ error: "Bot inbox worker secret is not configured" });
+    }
+
+    if (secret) {
+      const authorization = String(req.headers.authorization || "");
+      const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+      const suppliedBytes = Buffer.from(supplied);
+      const secretBytes = Buffer.from(secret);
+      const valid = suppliedBytes.length === secretBytes.length &&
+        crypto.timingSafeEqual(suppliedBytes, secretBytes);
+      if (!valid) return res.sendStatus(403);
+    }
+
+    try {
+      res.json(await drainInboundBotQueue(25));
+    } catch (error) {
+      console.error("[BotInbox] Scheduled queue drain failed:", error);
+      res.status(500).json({ error: "Bot inbox processing failed" });
+    }
+  });
+
   // Serve uploaded files
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 

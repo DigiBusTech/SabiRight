@@ -29,5 +29,11 @@
       "src": "/(.*)",
       "dest": "server/index.ts"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/bots/inbox/worker",
+      "schedule": "* * * * *"
+    }
   ]
 }

@@ -1,4 +1,5 @@
 import { supabase, supabaseStorage as storage } from "../supabaseStorage.js";
+import crypto from "crypto";
 import { getLegalAgent, summarizeCaseForProfessional } from "../agent/legalAgent.js";
 import { Runner, InMemorySessionService, toStructuredEvents, EventType } from "@google/adk";
 import { generateAIResponse, isNAtlasSovereignMode } from "../aiService.js";
@@ -6,7 +7,7 @@ import PaystackService from "../paystackService.js";
 import type { IncomingBotMessage, BotResponse } from "./types.js";
 
 const botSessionService = new InMemorySessionService();
-type ChatTurn = { role: string; content: string };
+type ChatTurn = { role: string; content: string; eventId?: string };
 const userChatBuffers: Map<string, ChatTurn[]> = new Map();
 
 /**
@@ -204,92 +205,121 @@ async function generateBotCheckoutLink(
 async function loadHistory(userId: string): Promise<ChatTurn[]> {
   const cached = userChatBuffers.get(userId);
   if (cached) return cached;
-  let history: ChatTurn[] = [];
-  try {
-    const { data } = await supabase.from('bot_sessions').select('history').eq('user_id', userId).maybeSingle();
-    if (data && Array.isArray(data.history)) history = data.history.slice(-20);
-  } catch (e) {
-    console.error('[BotController] history load failed:', e);
-  }
+  const { data, error } = await supabase.from('bot_sessions').select('history').eq('user_id', userId).maybeSingle();
+  if (error) throw error;
+  const history: ChatTurn[] = data && Array.isArray(data.history) ? data.history.slice(-20) : [];
   userChatBuffers.set(userId, history);
   return history;
 }
 
 async function saveHistory(userId: string, history: ChatTurn[]): Promise<void> {
-  try {
-    await supabase.from('bot_sessions').upsert({
-      user_id: userId,
-      history: history.slice(-20),
-      updated_at: new Date().toISOString()
-    });
-  } catch (e) {
-    console.error('[BotController] history save failed:', e);
-  }
-}
-
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const R = 6371; // Earth's radius in km
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 10) / 10;
+  const { error } = await supabase.from('bot_sessions').upsert({
+    user_id: userId,
+    history: history.slice(-20),
+    updated_at: new Date().toISOString()
+  });
+  if (error) throw error;
 }
 
 interface RankedProfessional {
   pro: any;
-  distanceKm?: number;
+  travelTimeMinutes?: number;
+  travelDistanceKm?: number;
+  trafficAware?: boolean;
+}
+
+interface ProfessionalSearchResult {
+  results: RankedProfessional[];
+  travelTimeUnavailable: boolean;
+  trafficDataUnavailable: boolean;
 }
 
 async function searchNearbyProfessionals(
   role: string = 'lawyer',
   userLocation?: { latitude: number; longitude: number },
   userCity?: string | null
-): Promise<RankedProfessional[]> {
-  const allVerified = await storage.getProfessionals({ role, verified: true, status: 'active' });
-  // Fall back to any verified if none active yet
-  const pool = allVerified.length > 0 ? allVerified : await storage.getProfessionals({ role, verified: true });
-
-  const ranked: RankedProfessional[] = pool.map(pro => {
-    const pLat = pro.location?.latitude;
-    const pLon = pro.location?.longitude;
-    let dist: number | undefined;
-    if (userLocation && typeof pLat === 'number' && typeof pLon === 'number') {
-      dist = haversineDistance(userLocation.latitude, userLocation.longitude, pLat, pLon);
-    }
-    return { pro, distanceKm: dist };
-  });
-
+): Promise<ProfessionalSearchResult> {
+  const pool = await storage.getProfessionals({ role, verified: true, status: 'active' });
+  const ranked: RankedProfessional[] = pool.map(pro => ({ pro }));
+  const city = userCity?.trim().toLocaleLowerCase();
   ranked.sort((a, b) => {
-    if (a.distanceKm !== undefined && b.distanceKm !== undefined) {
-      return a.distanceKm - b.distanceKm;
-    }
-    if (a.distanceKm !== undefined) return -1;
-    if (b.distanceKm !== undefined) return 1;
-
-    // Secondary city match
-    if (userCity) {
-      const aCity = (a.pro.location?.city || '').toLowerCase();
-      const bCity = (b.pro.location?.city || '').toLowerCase();
-      const target = userCity.toLowerCase();
-      if (aCity.includes(target) && !bCity.includes(target)) return -1;
-      if (!aCity.includes(target) && bCity.includes(target)) return 1;
-    }
-
+    const aCity = String(a.pro.location?.city || '').toLocaleLowerCase();
+    const bCity = String(b.pro.location?.city || '').toLocaleLowerCase();
+    const aCityMatch = !!city && aCity.includes(city);
+    const bCityMatch = !!city && bCity.includes(city);
+    if (aCityMatch !== bCityMatch) return aCityMatch ? -1 : 1;
     return (b.pro.rating || 0) - (a.pro.rating || 0);
   });
 
-  return ranked;
+  if (!userLocation || !Number.isFinite(userLocation.latitude) || !Number.isFinite(userLocation.longitude)) {
+    return { results: ranked, travelTimeUnavailable: true, trafficDataUnavailable: true };
+  }
+
+  const mapsSetting = await storage.getAdminSetting('google_maps_api_key');
+  const apiKey = mapsSetting?.value || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return { results: ranked, travelTimeUnavailable: true, trafficDataUnavailable: true };
+
+  const candidates = ranked.filter(({ pro }) =>
+    Number.isFinite(pro.location?.latitude) && Number.isFinite(pro.location?.longitude)
+  );
+  if (candidates.length === 0) return { results: ranked, travelTimeUnavailable: true, trafficDataUnavailable: true };
+
+  const byEta: RankedProfessional[] = [];
+  let trafficDataUnavailable = false;
+  for (let start = 0; start < candidates.length; start += 25) {
+    const batch = candidates.slice(start, start + 25);
+    const params = new URLSearchParams({
+      origins: `${userLocation.latitude},${userLocation.longitude}`,
+      destinations: batch.map(({ pro }) => `${pro.location.latitude},${pro.location.longitude}`).join('|'),
+      mode: 'driving',
+      departure_time: 'now',
+      traffic_model: 'best_guess',
+      key: apiKey
+    });
+    const response = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?${params}`, {
+      signal: AbortSignal.timeout(10_000)
+    });
+    if (!response.ok) throw new Error(`Google Maps travel-time request failed (${response.status})`);
+    const matrix = await response.json() as {
+      status?: string;
+      error_message?: string;
+      rows?: Array<{ elements?: Array<{
+        status?: string;
+        duration_in_traffic?: { value?: number };
+        duration?: { value?: number };
+        distance?: { value?: number };
+      }> }>;
+    };
+    if (matrix.status !== 'OK') {
+      throw new Error(`Google Maps travel-time lookup failed: ${matrix.error_message || matrix.status || 'unknown status'}`);
+    }
+
+    const elements = matrix.rows?.[0]?.elements || [];
+    for (const [index, { pro }] of batch.entries()) {
+      const element = elements[index];
+      const trafficSeconds = element?.duration_in_traffic?.value;
+      const seconds = trafficSeconds ?? element?.duration?.value;
+      if (trafficSeconds === undefined) trafficDataUnavailable = true;
+      if (element?.status !== 'OK' || !Number.isFinite(seconds)) continue;
+      byEta.push({
+        pro,
+        travelTimeMinutes: Math.ceil(Number(seconds) / 60),
+        travelDistanceKm: Number.isFinite(element.distance?.value)
+          ? Math.round(Number(element.distance?.value) / 100) / 10
+          : undefined,
+        trafficAware: trafficSeconds !== undefined
+      });
+    }
+  }
+  byEta.sort((a, b) => a.travelTimeMinutes! - b.travelTimeMinutes!);
+  return { results: byEta, travelTimeUnavailable: false, trafficDataUnavailable };
 }
 
 const LINK_COMMAND = /^\/?link\s+([A-Za-z0-9]{6,10})$/i;
 
-function getAccountLinkInstructions(isLinked: boolean): string {
+function getAccountLinkInstructions(isLinked: boolean, channel: IncomingBotMessage['channel']): string {
   if (isLinked) {
-    return '✅ Your Telegram chat is connected to your SabiRight account. Your account credits and chat history are shared here.';
+    return `✅ Your ${channel} chat is connected to your SabiRight account. Your account credits and chat history are shared here.`;
   }
 
   const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
@@ -303,72 +333,37 @@ function getAccountLinkInstructions(isLinked: boolean): string {
 }
 
 async function handleLinkCommand(msg: IncomingBotMessage, code: string): Promise<BotResponse> {
-  const fail = { text: '\u26A0\uFE0F That code is invalid or has expired. Open SabiRight > Profile > Link WhatsApp/Telegram to get a new one.' };
-  const { data: row, error: lookupError } = await supabase
-    .from('channel_link_codes')
-    .select('code, user_id, expires_at, used_at')
-    .eq('code', code.toUpperCase())
-    .maybeSingle();
-  if (lookupError) {
-    console.error('[BotController] link-code lookup failed:', lookupError);
-    return { text: '⚠️ I could not check that link code right now. Please try again in a moment.' };
-  }
-  if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) return fail;
-
-  // Mark the code used first (conditional) so it can never be redeemed twice.
-  const claimedAt = new Date().toISOString();
-  const { data: claimed, error: claimError } = await supabase
-    .from('channel_link_codes')
-    .update({ used_at: claimedAt })
-    .eq('code', row.code)
-    .is('used_at', null)
-    .gt('expires_at', claimedAt)
-    .select('code');
-  if (claimError) {
-    console.error('[BotController] link-code claim failed:', claimError);
-    return { text: '⚠️ I could not verify that link code right now. Please try again in a moment.' };
-  }
-  if (!claimed || claimed.length === 0) return fail;
-
-  const previousGuestUserId = msg.channelUserId;
-
-  const { error } = await supabase.from('channel_links').upsert({
-    channel: msg.channel,
-    channel_user_id: msg.channelUserId,
-    user_id: row.user_id,
-    linked_at: new Date().toISOString()
+  const currentProfile = await resolveBotProfile(msg);
+  const { data: result, error } = await supabase.rpc('link_bot_channel', {
+    p_code: code.toUpperCase(),
+    p_channel: msg.channel,
+    p_channel_user_id: msg.channelUserId,
+    p_guest_user_id: currentProfile?.is_guest ? msg.channelUserId : null
   });
   if (error) {
-    console.error('[BotController] link failed:', error);
-    const { error: rollbackError } = await supabase
-      .from('channel_link_codes')
-      .update({ used_at: null })
-      .eq('code', row.code)
-      .eq('used_at', claimedAt);
-    if (rollbackError) console.error('[BotController] link-code rollback failed:', rollbackError);
-    return { text: '\u26A0\uFE0F Could not link your account right now. Please try again.' };
+    console.error('[BotController] transactional channel linking failed:', error);
+    return { text: '⚠️ I could not link your account right now. Please try again shortly.' };
+  }
+  if (!result?.success) {
+    return { text: '⚠️ That code is invalid or expired, or it belongs to a different account. Generate a new code in SabiRight settings and try again.' };
   }
 
-  // Migrate guest records (pre-case files and bookings) to the newly linked real account
-  try {
-    await supabase.from('pre_case_files').update({ user_id: row.user_id }).eq('user_id', previousGuestUserId);
-    await supabase.from('direct_bookings').update({ user_id: row.user_id }).eq('user_id', previousGuestUserId);
-  } catch (migErr) {
-    console.warn('[BotController] Guest record migration warning:', migErr);
-  }
-
-  userChatBuffers.delete(row.user_id);
   userChatBuffers.delete(msg.channelUserId);
-  return { text: '\u2705 Account linked successfully! Your credits, chats, and case files now sync with your SabiRight account.' };
+  if (result.user_id) userChatBuffers.delete(result.user_id);
+  if (result.already_linked) return { text: '✅ This chat is already linked to that SabiRight account.' };
+  return {
+    text: `✅ Account linked successfully. Your chat history and case records were moved to your SabiRight account (${result.migrated_case_files || 0} case files, ${result.migrated_bookings || 0} bookings).`
+  };
 }
 
 async function handleUnlinkCommand(msg: IncomingBotMessage): Promise<BotResponse> {
-  const { data: link } = await supabase
+  const { data: link, error: lookupError } = await supabase
     .from('channel_links')
     .select('user_id')
     .eq('channel', msg.channel)
     .eq('channel_user_id', msg.channelUserId)
     .maybeSingle();
+  if (lookupError) throw lookupError;
 
   if (!link) {
     return {
@@ -403,64 +398,94 @@ async function handleUnlinkCommand(msg: IncomingBotMessage): Promise<BotResponse
   };
 }
 
-export async function resolveBotProfile(msg: IncomingBotMessage): Promise<any> {
-  const { channel, channelUserId, userName, phoneNumber } = msg;
-
-  // 1. Check explicit channel links table (user authenticated and linked via link code)
-  const { data: link } = await supabase
+export async function resolveBotProfile(msg: IncomingBotMessage): Promise<any | null> {
+  const { channel, channelUserId } = msg;
+  const { data: link, error: linkError } = await supabase
     .from('channel_links')
     .select('user_id')
     .eq('channel', channel)
     .eq('channel_user_id', channelUserId)
     .maybeSingle();
+  if (linkError) throw linkError;
   if (link?.user_id) {
-    const { data: linked } = await supabase.from('profiles').select('*').eq('id', link.user_id).maybeSingle();
+    const { data: linked, error } = await supabase.from('profiles').select('*').eq('id', link.user_id).maybeSingle();
+    if (error) throw error;
     if (linked) return linked;
+    throw new Error('Channel link points to a missing SabiRight profile');
   }
 
-  // 2. Check existing guest profile by channel_id
-  const { data: existingByChannel } = await supabase
+  const { data: guest, error: guestError } = await supabase
     .from('profiles')
     .select('*')
-    .eq('channel_id', channelUserId)
+    .eq('id', channelUserId)
+    .eq('is_guest', true)
     .maybeSingle();
+  if (guestError) throw guestError;
+  return guest || null;
+}
 
-  if (existingByChannel) return existingByChannel;
-
-  // 3. Create a new guest profile with is_guest = true, unverified email status, and no presumed city
-  const newProfile = {
-    id: channelUserId,
-    channel,
-    channel_id: channelUserId,
-    display_name: userName || `${channel.toUpperCase()} Citizen`,
-    phone_number: phoneNumber || null,
-    city: null,
-    state: null,
-    language: 'English',
-    is_admin: false,
-    is_vendor: false,
-    is_guest: true,
-    email_verified: false,
-    email_verification_status: 'pending',
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  };
-
-  const { error: insertErr } = await supabase.from('profiles').insert(newProfile);
-  if (insertErr) {
-    console.error('[BotController] Guest profile creation failed:', insertErr);
-    // If insert errored due to a race condition, try reading existing again
-    const { data: retryProfile } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('channel_id', channelUserId)
-      .maybeSingle();
-    if (retryProfile) return retryProfile;
+async function createBotGuestProfile(msg: IncomingBotMessage): Promise<any> {
+  let profile = await resolveBotProfile(msg);
+  if (!profile) {
+    const newProfile = {
+      id: msg.channelUserId,
+      channel: msg.channel,
+      channel_id: msg.channelUserId,
+      display_name: msg.userName || `${msg.channel.toUpperCase()} Citizen`,
+      phone_number: msg.phoneNumber || null,
+      city: null,
+      state: null,
+      language: 'English',
+      is_admin: false,
+      is_vendor: false,
+      is_guest: true,
+      email_verified: false,
+      email_verification_status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    const { error: insertErr } = await supabase.from('profiles').insert(newProfile);
+    if (insertErr && insertErr.code !== '23505') {
+      console.error('[BotController] Explicit guest profile creation failed:', insertErr);
+      throw insertErr;
+    }
+    profile = await resolveBotProfile(msg);
+    if (!profile) throw new Error('Guest profile could not be read after creation');
   }
 
-  await storage.activatePlan(channelUserId, 'free').catch(() => {});
+  if (profile.id === msg.channelUserId && profile.is_guest) {
+    const subscription = await storage.getUserSubscription(msg.channelUserId);
+    if (!subscription) {
+      const activated = await storage.activatePlan(msg.channelUserId, 'free');
+      if (!activated) throw new Error('Could not activate the guest account plan');
+    }
+  }
+  return profile;
+}
 
-  return newProfile;
+export async function getBotLanguage(channel: IncomingBotMessage['channel'], channelUserId: string): Promise<string> {
+  const { data: link, error: linkError } = await supabase
+    .from('channel_links')
+    .select('user_id')
+    .eq('channel', channel)
+    .eq('channel_user_id', channelUserId)
+    .maybeSingle();
+  if (linkError) throw linkError;
+  const userId = link?.user_id || channelUserId;
+  const { data: profile, error } = await supabase.from('profiles').select('language').eq('id', userId).maybeSingle();
+  if (error) throw error;
+  return profile?.language || 'English';
+}
+
+async function refundBotCredit(userId: string, amount: number, idempotencyKey: string): Promise<void> {
+  const { data, error } = await supabase.rpc('refund_bot_credits_once', {
+    p_user_id: userId,
+    p_amount: amount,
+    p_feature: 'civic_guard',
+    p_idempotency_key: `${idempotencyKey}:refund`
+  });
+  if (error) throw error;
+  if (data !== true) throw new Error('Bot credit refund was not applied');
 }
 
 // Serialise messages per user so rapid-fire messages cannot race on credits or history.
@@ -481,16 +506,63 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   const linkMatch = (msg.text || '').trim().match(LINK_COMMAND);
   if (linkMatch) return handleLinkCommand(msg, linkMatch[1]);
 
-  const profile = await resolveBotProfile(msg);
-  const userId = profile.id;
-  const userLang = profile.language || 'English';
   const rawText = (msg.text || '').trim();
   const payload = msg.actionPayload;
+  let profile = await resolveBotProfile(msg);
+  if (!profile && payload === 'ACTION_CONTINUE_GUEST') {
+    profile = await createBotGuestProfile(msg);
+  }
+  if (!profile) {
+    const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
+    return {
+      text: `Welcome to SabiRight. Before we start, choose how you want to continue:\n\n` +
+        `• Register or sign in to connect a full account and keep your history across devices.\n` +
+        `• Continue as a guest to use this chat without creating a web account. You can link later with \`link CODE\`.`,
+      quickActions: [
+        { id: 'register', title: 'Register / Sign in', payload: 'ACTION_REGISTER', url: `${appUrl}/auth/login?mode=register` },
+        { id: 'guest', title: 'Continue as Guest', payload: 'ACTION_CONTINUE_GUEST' }
+      ]
+    };
+  }
+
+  const userId = profile.id;
+  const userLang = profile.language || 'English';
   const isLinked = profile.id !== msg.channelUserId;
 
+  if (msg.location) {
+    const { error } = await supabase.from('profiles').update({
+      bot_location_latitude: msg.location.latitude,
+      bot_location_longitude: msg.location.longitude,
+      bot_location_updated_at: new Date().toISOString()
+    }).eq('id', userId);
+    if (error) throw error;
+    profile.bot_location_latitude = msg.location.latitude;
+    profile.bot_location_longitude = msg.location.longitude;
+    return {
+      text: '✅ Location received and saved for travel-time matching. Choose a professional category or send `/lawyer` to search.',
+      quickActions: [
+        { id: 'directory', title: '📂 Find Professionals', payload: 'ACTION_DIRECTORY' },
+        { id: 'lawyer', title: '👨‍⚖️ Find Lawyers', payload: 'ACTION_LAWYER' },
+        { id: 'clear_location', title: 'Clear Saved Location', payload: 'ACTION_CLEAR_LOCATION' }
+      ]
+    };
+  }
+
+  if (/^\/?location\s+clear$/i.test(rawText) || payload === 'ACTION_CLEAR_LOCATION') {
+    const { error } = await supabase.from('profiles').update({
+      bot_location_latitude: null,
+      bot_location_longitude: null,
+      bot_location_updated_at: null
+    }).eq('id', userId);
+    if (error) throw error;
+    return { text: '✅ Your saved location has been cleared. Share a new location whenever you want travel-time matching.' };
+  }
+
   const history = await loadHistory(userId);
-  if (rawText) {
-    history.push({ role: 'user', content: rawText });
+  const priorAnswer = msg.eventId && history.find(turn => turn.role === 'ai' && turn.eventId === msg.eventId);
+  if (priorAnswer) return { text: priorAnswer.content };
+  if (rawText && !msg.actionPayload && (!msg.eventId || !history.some(turn => turn.eventId === msg.eventId))) {
+    history.push({ role: 'user', content: rawText, eventId: msg.eventId });
     if (history.length > 20) history.shift();
   }
 
@@ -509,7 +581,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   }
   if (payload === 'ACTION_LINK' || /^\/?link$/i.test(rawText)) {
     return {
-      text: getAccountLinkInstructions(isLinked),
+      text: getAccountLinkInstructions(isLinked, msg.channel),
       quickActions: [
         { id: 'start', title: '🏠 Main Menu', payload: 'ACTION_START' },
         { id: 'balance', title: '💳 Check Credits', payload: 'ACTION_BALANCE' }
@@ -531,18 +603,32 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     };
   }
 
-  if (payload === 'ACTION_LAWYER' || rawText.toLowerCase() === '/lawyer' || payload?.startsWith('PROS_ROLE_')) {
-    const role = payload?.startsWith('PROS_ROLE_') ? payload.replace('PROS_ROLE_', '') : 'lawyer';
-    const ranked = await searchNearbyProfessionals(role, msg.location, profile.city);
-    const topThree = ranked.slice(0, 3);
+  const moreMatch = rawText.match(/^\/?more\s+(lawyer|cac_agent|tax_agent|accountant)\s+(\d+)$/i);
+  if (
+    payload === 'ACTION_LAWYER' ||
+    rawText.toLowerCase() === '/lawyer' ||
+    payload?.startsWith('PROS_ROLE_') ||
+    !!moreMatch
+  ) {
+    const role = moreMatch
+      ? moreMatch[1].toLowerCase()
+      : payload?.startsWith('PROS_ROLE_') ? payload.replace('PROS_ROLE_', '') : 'lawyer';
+    const offset = moreMatch ? Math.max(0, Number(moreMatch[2])) : 0;
+    const location = Number.isFinite(profile.bot_location_latitude) && Number.isFinite(profile.bot_location_longitude)
+      ? { latitude: profile.bot_location_latitude, longitude: profile.bot_location_longitude }
+      : undefined;
+    const search = await searchNearbyProfessionals(role, location, profile.city);
+    const ranked = search.results;
+    const topThree = ranked.slice(offset, offset + 3);
 
     if (topThree.length === 0) {
       const locationText = profile.city ? ` in ${profile.city}` : '';
       return {
         text: `🔍 *No Verified ${role.replace('_', ' ').toUpperCase()}s Found${locationText}*\n\n` +
-          `There are currently no verified ${role.replace('_', ' ')}s listed in this area.\n\n` +
-          `• You can share your GPS location using the chat attachment button to search by distance.\n` +
-          `• Or open the full directory on the SabiRight web app.`,
+          (ranked.length > 0
+            ? 'There are no more results in this set. Open the SabiRight directory for the full list.'
+            : `There are currently no verified, active ${role.replace('_', ' ')}s listed.\n\n` +
+              'Share your GPS location for travel-time ranking, or open the full directory on the SabiRight web app.'),
         quickActions: [
           { id: 'all_pros', title: '📂 Other Categories', payload: 'ACTION_DIRECTORY' },
           { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
@@ -555,30 +641,38 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
       const p = item.pro;
       const cleanPhone = (p.phoneNumber || '').replace(/[^0-9]/g, '');
       const waLink = cleanPhone ? ` | [Chat on WhatsApp](https://wa.me/${cleanPhone})` : '';
-      const distInfo = item.distanceKm !== undefined ? ` (~${item.distanceKm} km away)` : '';
+      const routeInfo = item.travelTimeMinutes !== undefined
+        ? ` (~${item.travelTimeMinutes} min drive${item.travelDistanceKm !== undefined ? `, ${item.travelDistanceKm} km` : ''})`
+        : '';
       const loc = p.location?.city || p.location?.state || 'Nigeria';
-      return `*${idx + 1}. ${p.displayName || 'Verified Practitioner'}*\n` +
-        `📍 Location: ${loc}${distInfo}\n` +
+      return `*${idx + 1 + offset}. ${p.displayName || 'Verified Practitioner'}*\n` +
+        `📍 Location: ${loc}${routeInfo}\n` +
         `📞 Contact: ${p.phoneNumber || 'Available upon booking'}${waLink}\n` +
-        `⭐ Rating: ${p.rating || 5.0}/5.0\n` +
-        `👉 _To connect, tap below: Connect with #${idx + 1}_`;
+        `⭐ Rating: ${p.reviewCount ? `${p.rating}/5.0 (${p.reviewCount} reviews)` : 'Not yet rated'}\n` +
+        `👉 _To connect, tap below: Connect with #${idx + 1 + offset}_`;
     }).join('\n\n');
 
     const connectActions = topThree.map((item, idx) => ({
-      id: `book_${item.pro.id}`,
-      title: `🤝 Connect #${idx + 1}`,
+      id: `book_${item.pro.id}`.slice(0, 64),
+      title: `🤝 Connect #${idx + 1 + offset}`.slice(0, 20),
       payload: `BOOK_PRO_${item.pro.id}`
     }));
+    const nextPage = offset + topThree.length;
 
     return {
       text: `⚖️ *Verified ${role.replace('_', ' ').toUpperCase()} Directory*\n\n` +
         `Here are the verified practitioners found for you:\n\n` +
         `${proListText}\n\n` +
+        (search.travelTimeUnavailable
+          ? '_Traffic-aware driving times are unavailable. Share a location and configure Google Maps routing for ETA ranking._\n\n'
+          : search.trafficDataUnavailable
+            ? '_Live traffic data was unavailable for some routes; those results use the standard driving duration._\n\n'
+            : '') +
+        (nextPage < ranked.length ? `To see more results, send \`/more ${role} ${nextPage}\`.\n\n` : '') +
         `_Your case brief will ONLY be shared with a practitioner after you tap to connect._`,
       quickActions: [
         ...connectActions,
-        { id: 'categories', title: '📂 Categories', payload: 'ACTION_DIRECTORY' },
-        { id: 'menu', title: '🏠 Main Menu', payload: 'ACTION_START' }
+        { id: 'categories', title: '📂 Categories', payload: 'ACTION_DIRECTORY' }
       ]
     };
   }
@@ -588,9 +682,9 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     const targetProId = payload.replace('BOOK_PRO_', '');
     const matchedPro = await storage.getProfessionalById(targetProId);
 
-    if (!matchedPro) {
+    if (!matchedPro || matchedPro.status !== 'active' || !matchedPro.verified || !matchedPro.userId) {
       return {
-        text: '⚠️ Could not find that professional. Please search the directory again.',
+        text: '⚠️ That professional is no longer available in the verified directory. Please search again.',
         quickActions: [{ id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' }]
       };
     }
@@ -604,41 +698,42 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
       console.error("[BotController] Summarization error:", e);
     }
 
-    const caseRef = `CASE-${Date.now().toString().slice(-6)}`;
-    const caseFileId = `cf-${Date.now()}`;
-    await supabase.from('pre_case_files').insert({
-      id: caseFileId,
-      case_ref: caseRef,
-      user_id: userId,
-      channel: msg.channel,
-      issue_summary: caseSummary.slice(0, 500),
-      raw_chat_history: history,
-      created_at: new Date().toISOString()
+    const requestKey = msg.eventId || crypto.randomUUID();
+    const suffix = crypto.createHash('sha256').update(`${msg.channel}:${requestKey}`).digest('hex').slice(0, 24);
+    const caseRef = `CASE-${suffix.slice(0, 10).toUpperCase()}`;
+    const caseFileId = `cf-${suffix}`;
+    const bookingId = `bk-${suffix}`;
+    const { data: lead, error: leadError } = await supabase.rpc('create_bot_professional_lead', {
+      p_case_file_id: caseFileId,
+      p_case_ref: caseRef,
+      p_booking_id: bookingId,
+      p_user_id: userId,
+      p_professional_id: matchedPro.id,
+      p_channel: msg.channel,
+      p_summary: caseSummary.slice(0, 500),
+      p_raw_chat_history: history,
+      p_contact_phone: msg.phoneNumber || profile.phone_number || ''
     });
+    if (leadError) {
+      console.error('[BotController] Professional lead creation failed:', leadError);
+      throw leadError;
+    }
+    if (!lead?.success || !lead.eligible) {
+      return {
+        text: '⚠️ This professional is no longer accepting new enquiries. Please choose someone else from the directory.',
+        quickActions: [{ id: 'lawyer', title: '🔍 Search Directory', payload: 'ACTION_LAWYER' }]
+      };
+    }
 
-    // Create Direct Lead now that user gave explicit consent
-    const bookingId = `bk-${Date.now()}`;
-    await supabase.from('direct_bookings').insert({
-      id: bookingId,
-      user_id: userId,
-      vendor_id: matchedPro.userId || matchedPro.id,
-      case_file_id: caseFileId,
-      title: `Civic Lead (${msg.channel.toUpperCase()}) - ${caseRef}`,
-      description: caseSummary.slice(0, 500),
-      contact_phone: msg.phoneNumber || profile.phone_number || '',
-      channel: msg.channel,
-      status: 'pending',
-      created_at: new Date().toISOString()
-    });
-
-    // Notify the professional
-    await storage.sendNotification({
-      userId: matchedPro.userId || matchedPro.id,
-      type: 'new_case_lead',
-      title: `🚨 New Case Lead (${caseRef})`,
-      message: `A client from ${msg.channel.toUpperCase()} selected you for legal representation. Pre-case brief generated.`,
-      data: { caseRef, caseFileId, bookingId }
-    });
+    if (lead.created) {
+      await storage.sendNotification({
+        userId: matchedPro.userId,
+        type: 'new_case_lead',
+        title: `🚨 New Case Lead (${caseRef})`,
+        message: `A client from ${msg.channel.toUpperCase()} selected you for a new professional enquiry.`,
+        data: { caseRef, caseFileId, bookingId }
+      });
+    }
 
     const cleanPhone = (matchedPro.phoneNumber || '').replace(/[^0-9]/g, '');
     const waLink = cleanPhone ? `\n💬 *WhatsApp Direct:* https://wa.me/${cleanPhone}` : '';
@@ -934,7 +1029,13 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     };
   }
 
-  if (rawText.toLowerCase() === '/start' || rawText.toLowerCase() === 'hi' || rawText.toLowerCase() === 'hello' || payload === 'ACTION_START') {
+  if (
+    rawText.toLowerCase() === '/start' ||
+    rawText.toLowerCase() === 'hi' ||
+    rawText.toLowerCase() === 'hello' ||
+    payload === 'ACTION_START' ||
+    payload === 'ACTION_CONTINUE_GUEST'
+  ) {
     const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
     const accountStatusText = isLinked
       ? `✅ *Account Status:* Connected to SabiRight account (${profile.email || profile.display_name || 'Citizen'})`
@@ -966,7 +1067,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
 
   // Unified Credit Verification & Dynamic Cost
   const balance = await storage.getBalance(userId);
-  const cost = await storage.getCreditCost('credit_cost_ai_query', 1);
+  const cost = Math.max(1, Math.ceil(await storage.getCreditCost('credit_cost_ai_query', 1)));
 
   if (balance.availableCredits < cost) {
     return {
@@ -981,7 +1082,15 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     };
   }
 
-  const charged = await storage.deductCredits(userId, cost, 'civic_guard', `${msg.channel.toUpperCase()} Civic Query: ${rawText.substring(0, 50)}`);
+  const creditKey = `bot-ai:${crypto.createHash('sha256').update(`${msg.channel}:${msg.eventId || crypto.randomUUID()}`).digest('hex')}`;
+  const { data: charged, error: chargeError } = await supabase.rpc('deduct_bot_credits_once', {
+    p_user_id: userId,
+    p_amount: cost,
+    p_feature: 'civic_guard',
+    p_description: `${msg.channel.toUpperCase()} Civic Query: ${rawText.substring(0, 50)}`,
+    p_idempotency_key: creditKey
+  });
+  if (chargeError) throw chargeError;
   if (!charged) {
     const updatedBalance = await storage.getBalance(userId);
     return {
@@ -1040,7 +1149,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
           }
         }
 
-        const promptWithLocation = `[Location: ${profile.city || 'Lagos'}, Language: ${userLang}] ${recap}${rawText}`;
+        const promptWithLocation = `[Location: ${profile.city || profile.state || 'not provided'}, Language: ${userLang}] ${recap}${rawText}`;
 
         const events = runner.runAsync({
           userId,
@@ -1096,21 +1205,20 @@ AI:`;
     }
 
     if (!finalResponse) {
-      await storage.refundCredits(userId, cost, 'civic_guard');
-      finalResponse = "I have noted your enquiry. For formal advice on this situation, you can connect directly with a verified Nigerian attorney by typing /lawyer.";
+      await refundBotCredit(userId, cost, creditKey);
+      finalResponse = "I couldn't generate a reliable response to that enquiry. Your credits have been refunded. Please try again or type /lawyer to find a verified professional.";
     } else {
-      history.push({ role: 'ai', content: finalResponse });
+      history.push({ role: 'ai', content: finalResponse, eventId: msg.eventId });
       await saveHistory(userId, history);
 
-      try {
-        await supabase.from('impact_metrics').insert({
-          metric_key: 'civic_guidance_delivered',
-          city: profile.city || 'Lagos',
-          channel: msg.channel,
-          metadata: { length: finalResponse.length },
-          created_at: new Date().toISOString()
-        });
-      } catch (e) {}
+      const { error: metricError } = await supabase.from('impact_metrics').insert({
+        metric_key: 'civic_guidance_delivered',
+        city: profile.city || null,
+        channel: msg.channel,
+        metadata: { length: finalResponse.length },
+        created_at: new Date().toISOString()
+      });
+      if (metricError) console.error('[BotController] Could not record delivered guidance metric:', metricError);
     }
 
     return {
@@ -1124,9 +1232,16 @@ AI:`;
     };
   } catch (error: any) {
     console.error("[BotController] Agent Error:", error);
-    await storage.refundCredits(userId, cost, 'civic_guard').catch(() => {});
+    let refundNotice = 'The request failed.';
+    try {
+      await refundBotCredit(userId, cost, creditKey);
+      refundNotice = 'Your credits have been refunded.';
+    } catch (refundError) {
+      console.error('[BotController] Could not confirm bot credit refund:', refundError);
+      refundNotice = 'I could not confirm the credit refund; please contact support if your balance does not update.';
+    }
     return {
-      text: `⚠️ I couldn't complete that response. If you need legal help, you can type /lawyer to look for an advocate in your area.`,
+      text: `⚠️ I couldn't complete that response. ${refundNotice} You can try again or type /lawyer to look for an advocate in your area.`,
       quickActions: [
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },

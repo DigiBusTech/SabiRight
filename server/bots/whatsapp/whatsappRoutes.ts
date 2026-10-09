@@ -1,39 +1,38 @@
 import { Router, Request, Response } from "express";
-import { supabase, supabaseStorage as storage } from "../../supabaseStorage.js";
-import { processBotMessage, resolveBotProfile } from "../botController.js";
-import { sendWhatsAppMessage, markWhatsAppAsRead, checkWhatsAppStatus, downloadWhatsAppAudio } from "./whatsappService.js";
-import { transcribeAudio } from "../../aiService.js";
-import type { IncomingBotMessage } from "../types.js";
+import { supabaseStorage as storage } from "../../supabaseStorage.js";
+import { checkWhatsAppStatus } from "./whatsappService.js";
+import { enqueueInboundBotEvent, drainInboundBotQueue } from "../inboundBotWorker.js";
 import crypto from "crypto";
-import { isDuplicate } from "../format.js";
 
 export const whatsappRouter = Router();
 
-whatsappRouter.get("/status", async (req: Request, res: Response) => {
+whatsappRouter.get("/status", async (_req: Request, res: Response) => {
   try {
-    const status = await checkWhatsAppStatus();
-    res.json(status);
+    res.json(await checkWhatsAppStatus());
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET: Meta Webhook Verification Handshake
 whatsappRouter.get("/webhook", async (req: Request, res: Response) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
+  try {
+    const mode = req.query["hub.mode"];
+    const token = req.query["hub.verify_token"];
+    const challenge = req.query["hub.challenge"];
+    const setting = await storage.getAdminSetting("whatsapp_verify_token");
+    const expectedToken = setting?.value || process.env.WHATSAPP_VERIFY_TOKEN;
 
-  const setting = await storage.getAdminSetting("whatsapp_verify_token");
-  const expectedToken = setting?.value || process.env.WHATSAPP_VERIFY_TOKEN;
+    if (expectedToken && mode === "subscribe" && token === expectedToken) {
+      console.log("[WhatsAppWebhook] Webhook successfully verified with Meta.");
+      return res.status(200).send(challenge);
+    }
 
-  if (expectedToken && mode === "subscribe" && token === expectedToken) {
-    console.log("[WhatsAppWebhook] Webhook successfully verified with Meta.");
-    return res.status(200).send(challenge);
+    console.warn("[WhatsAppWebhook] Verification failed (token mismatch or not configured).");
+    return res.sendStatus(403);
+  } catch (err) {
+    console.error("[WhatsAppWebhook] Webhook verification failed:", err);
+    return res.sendStatus(503);
   }
-
-  console.warn("[WhatsAppWebhook] Verification failed (token mismatch or not configured).");
-  return res.sendStatus(403);
 });
 
 async function validSignature(req: Request): Promise<boolean> {
@@ -43,6 +42,7 @@ async function validSignature(req: Request): Promise<boolean> {
     console.warn("[WhatsAppWebhook] whatsapp_app_secret not configured - signature NOT verified. Set it in Admin Settings.");
     return process.env.NODE_ENV !== "production";
   }
+
   const header = String(req.headers["x-hub-signature-256"] || "");
   const raw: Buffer | undefined = (req as any).rawBody;
   if (!raw || !header.startsWith("sha256=")) return false;
@@ -51,164 +51,53 @@ async function validSignature(req: Request): Promise<boolean> {
   return got.length === expected.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(expected));
 }
 
-// POST: Incoming WhatsApp Message Events
 whatsappRouter.post("/webhook", async (req: Request, res: Response) => {
-  if (!(await validSignature(req))) return res.sendStatus(403);
-  // Acknowledge immediately to Meta
-  res.sendStatus(200);
-
   try {
+    if (!(await validSignature(req))) return res.sendStatus(403);
     const body = req.body;
-    if (body.object !== "whatsapp_business_account") return;
+    if (body?.object !== "whatsapp_business_account") return res.sendStatus(200);
 
+    const messages: Array<{ message: any; contact: any }> = [];
     for (const entry of body.entry || []) {
       for (const change of entry.changes || []) {
         const value = change.value;
         for (const message of value?.messages || []) {
-          const contact = (value.contacts || []).find((c: any) => c.wa_id === message.from) || value.contacts?.[0];
-          await handleMessage(message, contact);
+          const contact = (value.contacts || []).find((candidate: any) => candidate.wa_id === message.from)
+            || value.contacts?.[0];
+          messages.push({ message, contact });
         }
       }
     }
-  } catch (err) {
-    console.error("[WhatsAppWebhook] Error handling incoming payload:", err);
-  }
-});
 
-async function handleMessage(message: any, contact: any) {
-  try {
-    const messageId = message.id;
-    if (isDuplicate(messageId)) return;
+    if (messages.length === 0) return res.sendStatus(200);
 
-    const senderPhone = message.from; // e.g. "2348012345678"
-    const senderName = contact?.profile?.name || "Citizen";
-
-    if (messageId) await markWhatsAppAsRead(messageId);
-
-    let text = "";
-    let actionPayload: string | undefined;
-
-    if (message.type === "text") {
-      text = message.text?.body || "";
-    } else if (message.type === "interactive") {
-      const btnReply = message.interactive?.button_reply;
-      const listReply = message.interactive?.list_reply;
-      actionPayload = btnReply?.id || listReply?.id;
-      text = btnReply?.title || listReply?.title || actionPayload || "";
-    } else if (message.type === "location") {
-      text = "Shared my location";
-    } else if (
-      message.type === "audio" ||
-      (message.type === "document" && message.document?.mime_type?.toLowerCase().startsWith('audio/'))
-    ) {
-      const audioMessage = message.audio || message.document;
-      if (!audioMessage?.id) {
-        await sendWhatsAppMessage(senderPhone, {
-          text: "I couldn't access that audio. Please try recording a new voice note or type your question.",
-        });
-        return;
+    let newlyQueued = 0;
+    for (const { message, contact } of messages) {
+      if (!message.id || !message.from) {
+        throw new Error("WhatsApp message is missing its provider ID or sender");
       }
-
-      try {
-        const { audio, mimeType } = await downloadWhatsAppAudio(audioMessage.id);
-        const profile = await resolveBotProfile({
-          channel: "whatsapp",
+      const senderPhone = String(message.from);
+      const queued = await enqueueInboundBotEvent(
+        "whatsapp",
+        String(message.id),
+        { kind: "whatsapp_message", message, contact },
+        {
           channelUserId: `wa_${senderPhone}`,
           rawSenderId: senderPhone,
-          userName: senderName,
-          phoneNumber: `+${senderPhone}`,
-          text: ''
-        });
-        const transcript = await transcribeAudio(audio, mimeType, profile.language || 'English');
-        text = transcript.text;
-      } catch (error: any) {
-        console.warn('[WhatsAppWebhook] Audio transcription failed:', error.message || error);
-        await sendWhatsAppMessage(senderPhone, {
-          text: "I couldn't transcribe that audio. Please send a shorter, clearer voice note or type your question.",
-        });
-        return;
-      }
-      if (!text.trim()) {
-        await sendWhatsAppMessage(senderPhone, {
-          text: "I couldn't hear any speech in that recording. Please try again or type your question.",
-        });
-        return;
-      }
-    } else {
-      await sendWhatsAppMessage(senderPhone, {
-        text: "I can read text and audio messages. Please send a voice note, supported audio file, or type your question.",
-      });
-      return;
+          userName: contact?.profile?.name || "Citizen",
+          phoneNumber: `+${senderPhone}`
+        }
+      );
+      if (!queued.duplicate) newlyQueued++;
     }
 
-    if (!text && !actionPayload) return;
-
-    const incoming: IncomingBotMessage = {
-      channel: "whatsapp",
-      channelUserId: `wa_${senderPhone}`,
-      rawSenderId: senderPhone,
-      userName: senderName,
-      phoneNumber: `+${senderPhone}`,
-      text,
-      actionPayload,
-      location: message.location ? {
-        latitude: message.location.latitude,
-        longitude: message.location.longitude
-      } : undefined
-    };
-
-    // 1. Persist inbound message to outbox
-    const inboundId = `in_wa_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    try {
-      await supabase.from('inbound_bot_messages').insert({
-        id: inboundId,
-        channel: 'whatsapp',
-        channel_user_id: incoming.channelUserId,
-        raw_sender_id: incoming.rawSenderId,
-        user_name: incoming.userName,
-        phone_number: incoming.phoneNumber,
-        text: incoming.text || '',
-        action_payload: incoming.actionPayload || null,
-        location: incoming.location || null,
-        received_at: new Date().toISOString()
-      });
-    } catch (dbErr) {
-      console.warn('[WhatsAppWebhook] Outbox persistence notice:', dbErr);
-    }
-
-    try {
-      // 2. Process through unified SabiRight AI agent controller
-      const response = await processBotMessage(incoming);
-
-      // 3. Send response back to WhatsApp recipient
-      const sendResult = await sendWhatsAppMessage(senderPhone, response);
-
-      // 4. Update outbox record
-      try {
-        await supabase.from('inbound_bot_messages').update({
-          processed_at: new Date().toISOString(),
-          delivered_at: sendResult && !sendResult.error ? new Date().toISOString() : null,
-          error: sendResult?.error ? JSON.stringify(sendResult.error) : null
-        }).eq('id', inboundId);
-      } catch {}
-    } catch (procErr: any) {
-      console.error("[WhatsAppWebhook] Message processing error:", procErr);
-      try {
-        await supabase.from('inbound_bot_messages').update({
-          error: procErr?.message || String(procErr)
-        }).eq('id', inboundId);
-      } catch {}
-
-      // Send chat-safe error message to avoid silence on WhatsApp
-      await sendWhatsAppMessage(senderPhone, {
-        text: "⚠️ I encountered an issue while generating your response. Please try sending your question again, or type /urgent if you are in an emergency.",
-        quickActions: [
-          { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
-          { id: 'start', title: '🏠 Main Menu', payload: 'ACTION_START' }
-        ]
-      }).catch(() => {});
+    res.sendStatus(200);
+    if (newlyQueued > 0) {
+      const result = await drainInboundBotQueue(Math.min(newlyQueued, 5));
+      if (result.failed > 0) console.warn(`[WhatsAppWebhook] ${result.failed} queued message(s) will be retried`);
     }
   } catch (err) {
-    console.error("[WhatsAppWebhook] Message handling failed:", err);
+    console.error("[WhatsAppWebhook] Error handling incoming payload:", err);
+    if (!res.headersSent) res.sendStatus(503);
   }
-}
+});

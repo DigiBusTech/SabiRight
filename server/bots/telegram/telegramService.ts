@@ -129,11 +129,16 @@ export async function sendTelegramMessage(chatId: string | number, response: Bot
       if (i === chunks.length - 1 && response.quickActions?.length) {
         const rows: any[] = [];
         for (let j = 0; j < response.quickActions.length; j += 2) {
-          rows.push(response.quickActions.slice(j, j + 2).map(a => ({ text: a.title, callback_data: a.payload.slice(0, 64) })));
+          rows.push(response.quickActions.slice(j, j + 2).map(a =>
+            a.url
+              ? { text: a.title, url: a.url }
+              : { text: a.title, callback_data: a.payload.slice(0, 64) }
+          ));
         }
         payload.reply_markup = { inline_keyboard: rows };
       }
       result = await sendOne(token, payload);
+      if (!result?.ok) return result;
     }
     return result;
   } catch (err) {

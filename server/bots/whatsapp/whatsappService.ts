@@ -98,19 +98,22 @@ export async function sendWhatsAppMessage(to: string, response: BotResponse): Pr
   if (chunks.length === 0) return null;
 
   // Everything except the last chunk is plain text; the last one carries the actions.
-  for (const c of chunks.slice(0, -1)) await sendWhatsAppPlainText(cleanTo, c, creds);
+  for (const c of chunks.slice(0, -1)) {
+    const result = await sendWhatsAppPlainText(cleanTo, c, creds);
+    if (!result || result.error || !Array.isArray(result.messages) || result.messages.length === 0) return result;
+  }
   const last = chunks[chunks.length - 1];
   const actions = response.quickActions || [];
 
   try {
     let interactive: any = null;
-    if (actions.length > 0 && actions.length <= 3 && last.length <= 1024) {
+    if (actions.length > 0 && actions.length <= 3 && last.length <= 1024 && actions.every(action => !action.url)) {
       interactive = {
         type: 'button',
         body: { text: last },
         action: { buttons: actions.map(a => ({ type: 'reply', reply: { id: a.payload.slice(0, 256), title: a.title.slice(0, 20) } })) }
       };
-    } else if (actions.length > 3 && last.length <= 1024) {
+    } else if (actions.length > 3 && last.length <= 1024 && actions.every(action => !action.url)) {
       interactive = {
         type: 'list',
         body: { text: last },
@@ -129,7 +132,9 @@ export async function sendWhatsAppMessage(to: string, response: BotResponse): Pr
     console.error('[WhatsAppService] Interactive message error:', e);
   }
 
-  const menu = actions.length ? '\n\n' + actions.map(a => `? ${a.title}`).join('\n') : '';
+  const menu = actions.length
+    ? '\n\n' + actions.map(a => `? ${a.title}${a.url ? `: ${a.url}` : ''}`).join('\n')
+    : '';
   return await sendWhatsAppPlainText(cleanTo, last + (actions.length ? menu : ''), creds);
 }
 
@@ -154,7 +159,11 @@ async function sendWhatsAppPlainText(to: string, text: string, creds: WhatsAppCr
       },
       body: JSON.stringify(payload)
     });
-    return await res.json();
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      return { error: data.error || { message: `WhatsApp API returned HTTP ${res.status}` } };
+    }
+    return data;
   } catch (err) {
     console.error('[WhatsAppService] Send text error:', err);
     return null;

@@ -3,6 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes.js";
 import { createServer } from "http";
 import path from "path";
+import { startInboundBotWorker } from "./bots/inboundBotWorker.js";
 
 const app = express();
 app.use(express.json({ limit: '12mb', verify: (req: any, _res, buf) => { req.rawBody = buf; } }));
@@ -56,8 +57,10 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   }
 });
 
-// Setup routes
-registerRoutes(server, app).catch(console.error);
+// Setup routes and start the durable bot inbox poller on long-running servers.
+registerRoutes(server, app)
+  .then(() => startInboundBotWorker())
+  .catch(error => console.error("[Server] Route registration failed:", error));
 
 // Fallback for unknown API routes
 app.use('/api', (_req, res) => {

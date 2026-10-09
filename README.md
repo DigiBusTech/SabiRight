@@ -415,9 +415,9 @@ Set `EXPO_PUBLIC_EAS_PROJECT_ID` to the EAS project UUID linked to the app to en
 
 2. **Initialize or update the database schema:**
    - Open your Supabase SQL Editor.
-   - For a **new project**, run the entire `supabase_schema.sql` baseline once.
-   - For an **existing project**, run the newest unapplied SQL file in `supabase/migrations/` instead of rerunning the baseline. Apply migrations in filename order and track which ones have been run.
-   - Apply the versioned files in filename order, including `supabase/migrations/20261008114000_repair_feature_schema.sql`, `supabase/migrations/20261008123000_notification_system_schema.sql`, `supabase/migrations/20261008123900_update_natlas_inference_endpoint.sql`, and `supabase/migrations/20261008140000_notification_hardening.sql`. The N-ATLAS migration preserves any custom endpoint; apply the notification migrations to existing projects before deploying this notification code.
+   - For a **new project**, run the entire `supabase_schema.sql` baseline once, then apply every versioned migration in `supabase/migrations/` in filename order to bring the database up to date.
+   - For an **existing project**, apply only unapplied SQL files from `supabase/migrations/` in filename order; do not rerun the baseline.
+   - This includes `supabase/migrations/20261008114000_repair_feature_schema.sql`, `supabase/migrations/20261008123000_notification_system_schema.sql`, `supabase/migrations/20261008123900_update_natlas_inference_endpoint.sql`, `supabase/migrations/20261008140000_notification_hardening.sql`, and `supabase/migrations/20261009000000_bot_delivery_and_linking.sql`. The N-ATLAS migration preserves any custom endpoint; apply the notification and bot-delivery migrations before deploying code that depends on them.
 
 3. **Start the development server:**
    ```bash

@@ -4,6 +4,7 @@ export interface BotQuickAction {
   id: string;
   title: string;
   payload: string;
+  url?: string;
 }
 
 export interface IncomingBotMessage {
@@ -14,6 +15,7 @@ export interface IncomingBotMessage {
   phoneNumber?: string;
   text: string;
   actionPayload?: string;
+  eventId?: string;
   location?: {
     latitude: number;
     longitude: number;
