@@ -106,7 +106,7 @@ export default function Home() {
       isExternal: true
     },
     web: {
-      title: "SabiRight Web Platform & PWA",
+      title: "SabiRight Web Platform & App",
       badge: "Full Sovereign Suite",
       userMsg: "Match me with a nearby verified human rights lawyer in Ikeja.",
       botLang: "Proximity Directory & SOS",
@@ -118,14 +118,14 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-white font-sans text-slate-900 selection:bg-emerald-500 selection:text-white overflow-x-hidden">
+    <div className="min-h-screen bg-white font-sans text-slate-900 selection:bg-primary selection:text-white overflow-x-hidden">
       <Navbar />
 
-      {/* Hero Section (Clean White Background with Ambient Emerald & Navy Highlights) */}
+      {/* Hero Section (Clean White Background with Ambient Royal Blue & Slate Highlights) */}
       <header className="relative pt-32 pb-16 md:pt-40 md:pb-24 overflow-hidden bg-white">
         {/* Subtle Ambient Radial Gradients */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[850px] h-[450px] bg-linear-to-b from-emerald-50/70 via-blue-50/40 to-transparent blur-[100px] pointer-events-none rounded-full" />
-        <div className="absolute -top-10 right-0 w-80 h-80 bg-emerald-100/40 blur-[80px] pointer-events-none" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[850px] h-[450px] bg-linear-to-b from-blue-50/70 via-indigo-50/30 to-transparent blur-[100px] pointer-events-none rounded-full" />
+        <div className="absolute -top-10 right-0 w-80 h-80 bg-blue-100/40 blur-[80px] pointer-events-none" />
 
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           <div className="grid lg:grid-cols-12 gap-12 lg:gap-8 items-center">
@@ -138,14 +138,14 @@ export default function Home() {
               className="lg:col-span-7 space-y-6 text-left"
             >
               {/* Sovereign & Regulatory Status Pill */}
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 border border-emerald-200/80 text-xs font-bold text-emerald-800 shadow-xs">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200/80 text-xs font-bold text-primary shadow-xs">
                 <span className="flex h-2 w-2 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
                 </span>
                 <span>🇳🇬 Sovereign AI Civic Tech</span>
-                <span className="text-emerald-300">•</span>
-                <span className="text-emerald-700 font-semibold">Web · WhatsApp · Telegram · Mobile</span>
+                <span className="text-blue-300">•</span>
+                <span className="text-blue-900 font-semibold">Web · WhatsApp · Telegram · Mobile</span>
               </div>
 
               {/* Dynamic Hero Title */}
@@ -162,8 +162,8 @@ export default function Home() {
               <div className="pt-2 flex flex-wrap items-center gap-3 sm:gap-4">
                 {/* Launch Web App Button */}
                 <Link href="/app">
-                  <Button className="h-12 px-6 rounded-xl bg-slate-900 text-white hover:bg-slate-800 font-bold text-sm shadow-xl shadow-slate-900/15 hover:shadow-2xl transition-all flex items-center gap-2 group cursor-pointer">
-                    <Zap className="h-4 w-4 text-emerald-400 fill-emerald-400" />
+                  <Button className="h-12 px-6 rounded-xl bg-primary text-white hover:bg-blue-700 font-bold text-sm shadow-xl shadow-primary/20 hover:shadow-2xl transition-all flex items-center gap-2 group cursor-pointer">
+                    <Zap className="h-4 w-4 text-blue-200 fill-blue-200" />
                     <span>Launch Web Platform</span>
                     <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                   </Button>
@@ -190,9 +190,9 @@ export default function Home() {
                   <Button
                     variant="outline"
                     onClick={triggerPwaInstall}
-                    className="h-12 px-5 rounded-xl border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm flex items-center gap-2"
+                    className="h-12 px-5 rounded-xl border-blue-200 bg-blue-50/60 hover:bg-blue-100 text-primary font-bold text-sm flex items-center gap-2 cursor-pointer"
                   >
-                    <Smartphone className="h-4 w-4 text-slate-600" />
+                    <Smartphone className="h-4 w-4 text-primary" />
                     <span>Install Mobile App</span>
                   </Button>
                 )}
@@ -240,9 +240,9 @@ export default function Home() {
                     onClick={triggerPwaInstall}
                     className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all border border-slate-200 cursor-pointer"
                   >
-                    <Smartphone className="h-4 w-4 text-slate-700" />
+                    <Smartphone className="h-4 w-4 text-primary" />
                     <div className="text-left leading-none">
-                      <p className="text-[9px] uppercase font-semibold text-slate-500">Android APK / PWA</p>
+                      <p className="text-[9px] uppercase font-semibold text-slate-500">Android APK / Web App</p>
                       <p className="text-xs font-bold text-slate-900">Install SabiRight</p>
                     </div>
                   </button>
@@ -269,9 +269,9 @@ export default function Home() {
                     onClick={triggerPwaInstall}
                     className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all border border-slate-200 cursor-pointer"
                   >
-                    <Globe2 className="h-4 w-4 text-slate-700" />
+                    <Globe2 className="h-4 w-4 text-primary" />
                     <div className="text-left leading-none">
-                      <p className="text-[9px] uppercase font-semibold text-slate-500">iOS Safari PWA</p>
+                      <p className="text-[9px] uppercase font-semibold text-slate-500">iOS Safari App</p>
                       <p className="text-xs font-bold text-slate-900">Add to Home Screen</p>
                     </div>
                   </button>
@@ -281,10 +281,10 @@ export default function Home() {
               {/* Statutory Legal Disclaimer */}
               <div className="pt-2 flex flex-wrap items-center gap-5 text-xs text-slate-500 font-medium">
                 <span className="flex items-center gap-1.5 text-slate-600">
-                  <Scale className="h-4 w-4 text-emerald-600" /> Nigeria Police Act 2020 & 1999 Constitution
+                  <Scale className="h-4 w-4 text-primary" /> Nigeria Police Act 2020 & 1999 Constitution
                 </span>
                 <span className="flex items-center gap-1.5 text-slate-600">
-                  <ShieldCheck className="h-4 w-4 text-primary" /> Verified NBA-Accredited Lawyer Network
+                  <ShieldCheck className="h-4 w-4 text-sky-600" /> Verified NBA-Accredited Lawyer Network
                 </span>
               </div>
             </motion.div>
@@ -336,7 +336,7 @@ export default function Home() {
                       }`}
                     >
                       <Bot className="h-3.5 w-3.5" />
-                      <span>Web & PWA</span>
+                      <span>Web & App</span>
                     </button>
                   </div>
                 </div>
@@ -347,10 +347,10 @@ export default function Home() {
                     {/* Channel Header Bar */}
                     <div className="flex items-center justify-between pb-3 border-b border-slate-800 text-[11px]">
                       <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
                         <span className="font-bold text-slate-200">{channelDemos[activeChannelTab].title}</span>
                       </div>
-                      <span className="px-2 py-0.5 rounded bg-slate-800 text-emerald-400 text-[10px] font-mono font-semibold">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-blue-400 text-[10px] font-mono font-semibold">
                         {channelDemos[activeChannelTab].badge}
                       </span>
                     </div>
@@ -376,8 +376,8 @@ export default function Home() {
                       transition={{ duration: 0.35, delay: 0.1 }}
                       className="flex justify-start"
                     >
-                      <div className="bg-slate-900 border border-emerald-500/30 text-slate-100 text-xs p-4 rounded-2xl rounded-tl-xs max-w-[95%] space-y-2 shadow-xl">
-                        <div className="flex items-center justify-between text-[10px] font-bold text-emerald-400">
+                      <div className="bg-slate-900 border border-blue-500/30 text-slate-100 text-xs p-4 rounded-2xl rounded-tl-xs max-w-[95%] space-y-2 shadow-xl">
+                        <div className="flex items-center justify-between text-[10px] font-bold text-blue-400">
                           <span className="flex items-center gap-1.5">
                             <Bot className="h-3.5 w-3.5" />
                             <span>SabiRight Civic Shield</span>
@@ -419,7 +419,7 @@ export default function Home() {
                         variant="outline"
                         className="w-full h-11 rounded-xl font-bold text-xs border-slate-700 bg-slate-900 text-slate-300 hover:text-white flex items-center justify-center gap-2"
                       >
-                        <span>Access via Web / PWA App</span>
+                        <span>Access via Web App</span>
                         <ArrowRight className="h-3.5 w-3.5" />
                       </Button>
                     ) : (
@@ -450,13 +450,13 @@ export default function Home() {
 
           <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-6 md:gap-8">
             {/* NITDA / NCAIR Badge */}
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-emerald-300 transition-all">
-              <div className="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-black text-xs">
+            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-blue-300 transition-all">
+              <div className="w-7 h-7 rounded-xl bg-blue-100 text-primary flex items-center justify-center font-black text-xs">
                 🇳🇬
               </div>
               <div className="text-left">
                 <p className="text-[10px] font-black text-slate-900 uppercase leading-none">NITDA · NCAIR</p>
-                <p className="text-[10px] font-semibold text-emerald-700 leading-tight">National AI Innovation Challenge</p>
+                <p className="text-[10px] font-semibold text-primary leading-tight">National AI Innovation Challenge</p>
               </div>
             </div>
 
@@ -471,7 +471,7 @@ export default function Home() {
 
             {/* CAC Registered Badge */}
             <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-blue-300 transition-all">
-              <Scale className="h-6 w-6 text-blue-600 shrink-0" />
+              <Scale className="h-6 w-6 text-primary shrink-0" />
               <div className="text-left">
                 <p className="text-[10px] font-black text-slate-900 uppercase leading-none">CAC REGISTERED</p>
                 <p className="text-[10px] font-semibold text-blue-700 leading-tight">Corporate Affairs Commission</p>
@@ -499,11 +499,11 @@ export default function Home() {
             </div>
 
             {/* SUPABASE Badge */}
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-emerald-300 transition-all">
-              <Database className="h-6 w-6 text-emerald-500 shrink-0" />
+            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-blue-300 transition-all">
+              <Database className="h-6 w-6 text-blue-600 shrink-0" />
               <div className="text-left">
                 <p className="text-[10px] font-black text-slate-900 uppercase leading-none">SUPABASE</p>
-                <p className="text-[10px] font-semibold text-emerald-700 leading-tight">PostgreSQL & Vector Storage</p>
+                <p className="text-[10px] font-semibold text-blue-700 leading-tight">PostgreSQL & Vector Storage</p>
               </div>
             </div>
 
@@ -544,8 +544,8 @@ export default function Home() {
       {/* High-Level Software Solutions Bento Grid (Concise & Structured) */}
       <section className="py-20 md:py-28 max-w-7xl mx-auto px-6 bg-white">
         <div className="text-center max-w-2xl mx-auto mb-16">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 mb-3">
-            <Sparkles className="h-3.5 w-3.5 text-emerald-600" /> Core Platform Capabilities
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-xs font-bold text-primary mb-3">
+            <Sparkles className="h-3.5 w-3.5 text-primary" /> Core Platform Capabilities
           </div>
           <h2 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight leading-tight">
             Comprehensive Civic Intelligence Suite
@@ -560,18 +560,18 @@ export default function Home() {
           <motion.div 
             whileHover={{ y: -6 }}
             transition={{ duration: 0.2 }}
-            className="p-7 rounded-3xl bg-slate-50 border border-slate-200 flex flex-col justify-between shadow-xs hover:shadow-lg hover:border-emerald-300 transition-all"
+            className="p-7 rounded-3xl bg-slate-50 border border-slate-200 flex flex-col justify-between shadow-xs hover:shadow-lg hover:border-blue-300 transition-all"
           >
             <div className="space-y-4">
-              <div className="h-12 w-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-                <Scale className="h-6 w-6 text-emerald-700" />
+              <div className="h-12 w-12 rounded-2xl bg-blue-100 text-primary flex items-center justify-center font-bold">
+                <Scale className="h-6 w-6 text-primary" />
               </div>
               <h3 className="text-xl font-black text-slate-900">SabiGuard</h3>
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
                 Legal First-Aid powered by statutory Nigerian jurisprudence. Instant script guidance during stop-and-search, unlawful detentions, and landlord disputes.
               </p>
             </div>
-            <div className="pt-6 border-t border-slate-200/80 mt-6 flex items-center justify-between text-xs font-bold text-emerald-700">
+            <div className="pt-6 border-t border-slate-200/80 mt-6 flex items-center justify-between text-xs font-bold text-primary">
               <span>Section 37 & 49 Scripts</span>
               <CheckCircle2 className="h-4 w-4" />
             </div>
@@ -665,8 +665,8 @@ export default function Home() {
 
         <div className="max-w-7xl mx-auto px-6 relative z-10">
           <div className="max-w-2xl space-y-6">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-bold">
-              <Shield className="h-4 w-4 text-emerald-400" /> Human Dignity on the Streets
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-bold">
+              <Shield className="h-4 w-4 text-blue-400" /> Human Dignity on the Streets
             </div>
             <h2 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
               Turning Street Intimidation Into Calm, Lawful Confidence.
@@ -677,7 +677,7 @@ export default function Home() {
 
             <div className="pt-4 grid grid-cols-2 gap-4">
               <div className="p-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-                <div className="text-2xl font-black text-emerald-400">100%</div>
+                <div className="text-2xl font-black text-blue-400">100%</div>
                 <div className="text-xs text-slate-300 font-semibold mt-1">Law-Backed Citations</div>
                 <div className="text-[11px] text-slate-400 mt-0.5">ACJA 2015 & Police Act 2020</div>
               </div>
@@ -690,7 +690,7 @@ export default function Home() {
 
             <div className="pt-2">
               <Link href="/app">
-                <Button className="h-12 px-6 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black text-sm shadow-xl flex items-center gap-2">
+                <Button className="h-12 px-6 rounded-xl bg-primary hover:bg-blue-700 text-white font-black text-sm shadow-xl flex items-center gap-2 cursor-pointer">
                   <span>Explore SabiRight Platform</span>
                   <ArrowRight className="h-4 w-4" />
                 </Button>
@@ -813,7 +813,7 @@ export default function Home() {
             },
             {
               question: "Can I install SabiRight without Google Play or Apple App Store?",
-              answer: "Yes! SabiRight is an enterprise Progressive Web App (PWA). You can tap 'Install SabiRight App' right from your browser on Android, iPhone, or PC to get the full native experience."
+              answer: "Yes! SabiRight is an official Progressive Web App (PWA). You can tap 'Install SabiRight App' right from your browser on Android, iPhone, or PC to get the full native experience."
             }
           ].map((faq, i) => (
             <div key={i} className="rounded-2xl border border-slate-200 bg-slate-50/70 overflow-hidden transition-all">
@@ -822,7 +822,7 @@ export default function Home() {
                 className="w-full p-5 text-left font-bold flex justify-between items-center hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <span className="text-slate-900 text-sm sm:text-base flex items-center gap-2.5">
-                  <HelpCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <HelpCircle className="h-4 w-4 text-primary shrink-0" />
                   {faq.question}
                 </span>
                 <ChevronDown className={`h-4 w-4 text-slate-500 transform transition-transform duration-200 ${openFaq === i ? "rotate-180" : ""}`} />
@@ -837,10 +837,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Final Action CTA Banner (Clean Gradient Accent on White Page) */}
+      {/* Final Action CTA Banner (Clean Royal Blue Accent on White Page) */}
       <section className="py-16 md:py-24 max-w-6xl mx-auto px-6">
-        <div className="rounded-3xl p-8 sm:p-14 bg-linear-to-br from-slate-900 via-slate-950 to-emerald-950 text-white text-center relative overflow-hidden shadow-2xl">
-          <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="rounded-3xl p-8 sm:p-14 bg-linear-to-br from-slate-900 via-slate-950 to-blue-950 text-white text-center relative overflow-hidden shadow-2xl">
+          <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/15 rounded-full blur-3xl pointer-events-none" />
           
           <h2 className="text-3xl sm:text-5xl font-black tracking-tight mb-4">
             Protect Your Rights with Confidence.
@@ -851,7 +851,7 @@ export default function Home() {
 
           <div className="flex flex-wrap justify-center gap-3.5">
             <Link href="/app">
-              <Button className="h-12 px-7 rounded-xl bg-white text-slate-950 hover:bg-slate-100 font-bold text-sm shadow-lg cursor-pointer">
+              <Button className="h-12 px-7 rounded-xl bg-primary hover:bg-blue-700 text-white font-bold text-sm shadow-lg cursor-pointer">
                 Launch Web App
               </Button>
             </Link>
@@ -871,7 +871,7 @@ export default function Home() {
               className="h-12 px-6 rounded-xl border-slate-700 bg-white/10 hover:bg-white/20 text-white font-bold text-sm flex items-center gap-2 cursor-pointer"
             >
               <Smartphone className="h-4 w-4" />
-              <span>Install Mobile PWA</span>
+              <span>Install Mobile App</span>
             </Button>
           </div>
         </div>
