@@ -26,7 +26,10 @@ import {
   Cloud,
   Check,
   Lock,
-  Download
+  Download,
+  CheckCheck,
+  Play,
+  Volume2
 } from "lucide-react";
 import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
 import { useState, useRef } from "react";
@@ -88,34 +91,79 @@ export default function Home() {
 
   const channelDemos = {
     whatsapp: {
-      title: "WhatsApp Bot Agent",
-      badge: "Meta Cloud API",
+      title: "SabiRight WhatsApp Shield",
+      handle: "+234 · Meta Verified Business",
+      badge: "Meta Cloud API v19",
+      status: "Active · Encrypted",
       userMsg: "Officer say make I unlock my phone for checkpoint. Wetin law talk?",
+      userTime: "10:42 AM",
       botLang: "Nigerian Pidgin · N-ATLAS",
-      botResponse: "Under Section 37 of the 1999 Constitution and Section 49(1) of the Nigeria Police Act 2020, you have the right to privacy. An officer cannot search your phone without a warrant signed by a court or reasonable suspicion of a felony. Stay calm and state: 'Officer, my phone is my private property protected under Section 37.'",
+      citations: ["§ 37 CFRN 1999 (Privacy)", "§ 49(1) Police Act 2020"],
+      botResponse: "Under Section 37 of the 1999 Constitution and Section 49(1) of the Nigeria Police Act 2020, you get full right to privacy. An officer cannot search your phone without a signed court warrant or reasonable suspicion of a felony.",
+      scriptQuote: "“Officer, my phone is my private property protected under Section 37. I am ready to present my valid ID, but I do not consent to unlocking my phone without a warrant.”",
+      hasVoiceNote: true,
+      voiceDuration: "0:18",
+      voiceLang: "Pidgin Audio Note",
       actionText: "Chat on WhatsApp",
-      actionUrl: whatsAppUrl,
-      isExternal: true
+      actionUrl: whatsAppUrl || "https://wa.me/2349000000000",
+      isExternal: true,
+      theme: {
+        accentColor: "emerald",
+        btnGradient: "from-emerald-500 via-emerald-600 to-teal-700 hover:from-emerald-400 hover:to-emerald-500",
+        borderColor: "border-emerald-500/30",
+        tagBg: "bg-emerald-500/15",
+        tagText: "text-emerald-400"
+      }
     },
     telegram: {
-      title: "Telegram Bot Agent",
-      badge: "Telegram Bot API",
-      userMsg: "/rights What are my rights if arrested by law enforcement?",
+      title: "SabiRight Sovereign Bot",
+      handle: "@SabiRightBot · MTProto 2.0",
+      badge: "Telegram Bot API 7.2",
+      status: "Encrypted · Instant",
+      userMsg: "/rights What are my constitutional rights if arrested by law enforcement?",
+      userTime: "10:43 AM",
       botLang: "Statutory Legal Engine",
-      botResponse: "Under Section 35(2) of the 1999 Constitution and Section 6 of ACJA 2015: 1. You have the right to remain silent until consulting a lawyer. 2. You must be told the cause of arrest immediately. 3. Free legal aid is guaranteed if indigent.",
+      citations: ["§ 35(2) CFRN 1999 (Silence)", "§ 6 ACJA 2015", "Free Legal Aid"],
+      botResponse: "Under Section 35(2) of the 1999 Constitution and Section 6 of Administration of Criminal Justice Act (ACJA) 2015: 1. You have the right to remain silent until consulting legal counsel. 2. Cause of arrest must be stated immediately. 3. Free legal aid is guaranteed if indigent.",
+      scriptQuote: "“I wish to exercise my constitutional right under Section 35(2) to remain silent until I consult with my lawyer.”",
+      hasVoiceNote: true,
+      voiceDuration: "0:24",
+      voiceLang: "English / Yoruba Audio Note",
       actionText: "Chat on Telegram",
-      actionUrl: telegramUrl,
-      isExternal: true
+      actionUrl: telegramUrl || "https://t.me/SabiRightBot",
+      isExternal: true,
+      theme: {
+        accentColor: "sky",
+        btnGradient: "from-sky-500 via-blue-500 to-indigo-600 hover:from-sky-400 hover:to-blue-500",
+        borderColor: "border-sky-500/30",
+        tagBg: "bg-sky-500/15",
+        tagText: "text-sky-400"
+      }
     },
     web: {
       title: "SabiRight Web Platform & App",
+      handle: "app.sabiright.ng · Sovereign Cloud",
       badge: "Full Sovereign Suite",
+      status: "Direct Secure Gateway",
       userMsg: "Match me with a nearby verified human rights lawyer in Ikeja.",
+      userTime: "10:44 AM",
       botLang: "Proximity Directory & SOS",
-      botResponse: "Found 3 verified NBA-accredited legal professionals within 4.2 km. Dispatching alert to counsel on standby. Proximity routing active.",
+      citations: ["3 NBA-Accredited Counsel (≤ 4.2km)", "GPS Geo-Fence Active"],
+      botResponse: "Found 3 verified NBA-accredited legal professionals within 4.2 km in Ikeja, Lagos. Dispatch alert transmitted to on-call counsel with encrypted coordinates.",
+      scriptQuote: "“Proximity match verified: Adv. Babatunde & Partners on standby. Turn-by-turn navigation and direct phone dispatch enabled.”",
+      hasVoiceNote: false,
+      voiceDuration: "",
+      voiceLang: "",
       actionText: "Launch Web App",
       actionUrl: "/app",
-      isExternal: false
+      isExternal: false,
+      theme: {
+        accentColor: "blue",
+        btnGradient: "from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500",
+        borderColor: "border-blue-500/30",
+        tagBg: "bg-blue-500/15",
+        tagText: "text-blue-400"
+      }
     }
   };
 
@@ -235,112 +283,247 @@ export default function Home() {
               </div>
             </motion.div>
 
-            {/* Right Column: Omnichannel Live Terminal Simulator */}
+            {/* Right Column: Omnichannel Live Terminal Simulator (Solid HD Hyper-Realistic Card) */}
             <motion.div 
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0, scale: 0.96, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.15 }}
-              className="lg:col-span-5"
+              className="lg:col-span-5 relative"
             >
-              <div className="relative rounded-3xl p-1.5 bg-linear-to-b from-slate-200 via-slate-100 to-white shadow-2xl border border-slate-200">
-                {/* Header Switcher Buttons */}
-                <div className="bg-slate-900 p-2.5 rounded-t-2xl flex items-center justify-between gap-1 text-white">
-                  <div className="flex items-center gap-1.5 w-full">
+              {/* Dynamic Ambient Backlight Glow */}
+              <div 
+                className="absolute -inset-2 sm:-inset-4 rounded-[2.5rem] opacity-60 blur-2xl transition-all duration-700 pointer-events-none -z-10"
+                style={{
+                  background: activeChannelTab === 'whatsapp'
+                    ? 'radial-gradient(circle at 50% 40%, rgba(16, 185, 129, 0.4), transparent 70%)'
+                    : activeChannelTab === 'telegram'
+                    ? 'radial-gradient(circle at 50% 40%, rgba(14, 165, 233, 0.4), transparent 70%)'
+                    : 'radial-gradient(circle at 50% 40%, rgba(37, 99, 235, 0.45), transparent 70%)'
+                }}
+              />
+
+              {/* Hardware Device Chassis Frame */}
+              <div className="relative rounded-[2rem] sm:rounded-[2.25rem] p-2 sm:p-2.5 bg-gradient-to-b from-slate-800 via-slate-900 to-slate-950 border border-slate-700/80 shadow-[0_30px_70px_-15px_rgba(15,23,42,0.85),0_0_1px_1px_rgba(255,255,255,0.12)_inset]">
+                {/* Physical Glass Reflection Highlight Sheen */}
+                <div className="absolute top-0 inset-x-12 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none" />
+
+                {/* Hardware Status Header (Mac/Terminal Micro-LEDs + System Status) */}
+                <div className="px-3.5 py-2.5 flex items-center justify-between text-[11px] text-slate-400 border-b border-white/5 bg-slate-950/70 rounded-t-[1.6rem]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500/90 border border-rose-400/40 shadow-[0_0_6px_rgba(244,63,94,0.5)]" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500/90 border border-amber-400/40 shadow-[0_0_6px_rgba(245,158,11,0.5)]" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/90 border border-emerald-400/40 shadow-[0_0_6px_rgba(16,185,129,0.5)]" />
+                  </div>
+                  
+                  <div className="flex items-center gap-2 font-mono text-[10px] text-slate-300">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="tracking-wider uppercase font-bold text-slate-200">
+                      N-ATLAS RELAY · ONLINE
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
+                    <Lock className="w-3 h-3 text-emerald-400" />
+                    <span className="text-slate-300 font-semibold">TLS 1.3</span>
+                  </div>
+                </div>
+
+                {/* Tactile Frosted Channel Switcher Dock */}
+                <div className="p-2 sm:p-2.5 bg-slate-950/40">
+                  <div className="p-1 rounded-2xl bg-slate-950/90 border border-white/10 shadow-inner flex items-center gap-1">
+                    {/* WhatsApp Button */}
                     <button
                       onClick={() => setActiveChannelTab('whatsapp')}
                       aria-pressed={activeChannelTab === 'whatsapp'}
-                      className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      className={`flex-1 py-2 sm:py-2.5 px-2 rounded-xl text-xs font-bold transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer relative ${
                         activeChannelTab === 'whatsapp'
-                          ? 'bg-emerald-600 text-white shadow-md'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                          ? 'bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-700 text-white shadow-[0_4px_16px_rgba(16,185,129,0.4)] border-t border-white/30'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
-                      <MessageSquare className="h-3.5 w-3.5" />
+                      <MessageSquare className="h-3.5 w-3.5 shrink-0" />
                       <span>WhatsApp</span>
+                      {activeChannelTab === 'whatsapp' && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white shadow-xs" />
+                      )}
                     </button>
 
+                    {/* Telegram Button */}
                     <button
                       onClick={() => setActiveChannelTab('telegram')}
                       aria-pressed={activeChannelTab === 'telegram'}
-                      className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      className={`flex-1 py-2 sm:py-2.5 px-2 rounded-xl text-xs font-bold transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer relative ${
                         activeChannelTab === 'telegram'
-                          ? 'bg-sky-500 text-white shadow-md'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                          ? 'bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-600 text-white shadow-[0_4px_16px_rgba(14,165,233,0.4)] border-t border-white/30'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
-                      <Send className="h-3.5 w-3.5" />
+                      <Send className="h-3.5 w-3.5 shrink-0" />
                       <span>Telegram</span>
+                      {activeChannelTab === 'telegram' && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white shadow-xs" />
+                      )}
                     </button>
 
+                    {/* Web & App Button */}
                     <button
                       onClick={() => setActiveChannelTab('web')}
                       aria-pressed={activeChannelTab === 'web'}
-                      className={`flex-1 py-2 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      className={`flex-1 py-2 sm:py-2.5 px-2 rounded-xl text-xs font-bold transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer relative ${
                         activeChannelTab === 'web'
-                          ? 'bg-primary text-white shadow-md'
-                          : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                          ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white shadow-[0_4px_16px_rgba(37,99,235,0.4)] border-t border-white/30'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
-                      <Bot className="h-3.5 w-3.5" />
+                      <Smartphone className="h-3.5 w-3.5 shrink-0" />
                       <span>Web & App</span>
+                      {activeChannelTab === 'web' && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-white shadow-xs" />
+                      )}
                     </button>
                   </div>
                 </div>
 
-                {/* Simulated Conversation Body */}
-                <div className="bg-slate-950 p-5 space-y-4 rounded-b-2xl min-h-[380px] flex flex-col justify-between text-slate-100">
+                {/* Simulated Conversation Body Screen */}
+                <div className="bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900/95 p-4 sm:p-5 space-y-4 rounded-b-[1.75rem] border-t border-white/5 min-h-[420px] flex flex-col justify-between text-slate-100">
                   <div className="space-y-4">
-                    {/* Channel Header Bar */}
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-800 text-[11px]">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
-                        <span className="font-bold text-slate-200">{channelDemos[activeChannelTab].title}</span>
+                    {/* Active Channel Identity Bar */}
+                    <div className="flex items-center justify-between pb-3.5 border-b border-white/10 text-xs">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shadow-md relative ${
+                          activeChannelTab === 'whatsapp'
+                            ? 'bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white'
+                            : activeChannelTab === 'telegram'
+                            ? 'bg-gradient-to-tr from-sky-500 to-blue-500 text-white'
+                            : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white'
+                        }`}>
+                          {activeChannelTab === 'whatsapp' ? (
+                            <MessageSquare className="w-4 h-4" />
+                          ) : activeChannelTab === 'telegram' ? (
+                            <Send className="w-4 h-4" />
+                          ) : (
+                            <ShieldCheck className="w-4 h-4" />
+                          )}
+                          <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-slate-950" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-extrabold text-slate-100 text-[13px] tracking-tight">
+                              {channelDemos[activeChannelTab].title}
+                            </span>
+                            <CheckCircle2 className="w-3.5 h-3.5 text-blue-400 fill-blue-400/20" />
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-medium block">
+                            {channelDemos[activeChannelTab].handle}
+                          </span>
+                        </div>
                       </div>
-                      <span className="px-2 py-0.5 rounded bg-slate-800 text-blue-400 text-[10px] font-mono font-semibold">
-                        {channelDemos[activeChannelTab].badge}
-                      </span>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2.5 py-1 rounded-full bg-slate-900 border border-white/10 text-[10px] font-mono font-semibold text-slate-300 shadow-inner flex items-center gap-1.5">
+                          <Radio className="w-2.5 h-2.5 text-emerald-400 animate-pulse" />
+                          {channelDemos[activeChannelTab].badge}
+                        </span>
+                      </div>
                     </div>
 
                     {/* User Query Bubble */}
                     <motion.div 
                       key={`user-${activeChannelTab}`}
-                      initial={{ opacity: 0, x: 10 }}
-                      animate={{ opacity: 1, x: 0 }}
+                      initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ duration: 0.25 }}
                       className="flex justify-end"
                     >
-                      <div className="bg-slate-800 text-white text-xs px-4 py-3 rounded-2xl rounded-tr-xs max-w-[88%] leading-relaxed border border-slate-700">
-                        {channelDemos[activeChannelTab].userMsg}
+                      <div className="bg-gradient-to-br from-slate-800 to-slate-800/90 text-white text-xs sm:text-[12.5px] px-4 py-3 rounded-2xl rounded-tr-xs max-w-[88%] leading-relaxed border border-slate-700/80 shadow-lg space-y-1.5">
+                        <p className="text-slate-100 font-medium">{channelDemos[activeChannelTab].userMsg}</p>
+                        <div className="flex items-center justify-end gap-1.5 text-[10px] text-slate-400 font-mono">
+                          <span>{channelDemos[activeChannelTab].userTime}</span>
+                          <CheckCheck className="w-3.5 h-3.5 text-sky-400" />
+                        </div>
                       </div>
                     </motion.div>
 
-                    {/* AI Bot Response Bubble */}
+                    {/* AI Statutory Response Bubble */}
                     <motion.div 
                       key={`bot-${activeChannelTab}`}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
+                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ duration: 0.35, delay: 0.1 }}
                       className="flex justify-start"
                     >
-                      <div className="bg-slate-900 border border-blue-500/30 text-slate-100 text-xs p-4 rounded-2xl rounded-tl-xs max-w-[95%] space-y-2 shadow-xl">
-                        <div className="flex items-center justify-between text-[10px] font-bold text-blue-400">
-                          <span className="flex items-center gap-1.5">
-                            <Bot className="h-3.5 w-3.5" />
-                            <span>SabiRight Civic Shield</span>
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-mono">
+                      <div className={`bg-gradient-to-b from-slate-900/95 via-slate-900 to-slate-950 border text-slate-100 text-xs sm:text-[12px] p-4 rounded-2xl rounded-tl-xs max-w-[96%] space-y-3 shadow-2xl backdrop-blur-xl ${channelDemos[activeChannelTab].theme.borderColor}`}>
+                        {/* Header within Bot Response */}
+                        <div className="flex items-center justify-between text-[10px] font-bold border-b border-white/5 pb-2">
+                          <div className="flex items-center gap-1.5 text-blue-400">
+                            <Bot className="h-3.5 w-3.5 text-primary" />
+                            <span className="text-slate-200 font-extrabold">SabiRight Civic Shield</span>
+                            <span className="px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 text-[9px] font-mono">VERIFIED</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono font-medium">
                             {channelDemos[activeChannelTab].botLang}
                           </span>
                         </div>
-                        <p className="text-slate-300 leading-relaxed text-[11.5px]">
+
+                        {/* Statutory Citations Badges */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {channelDemos[activeChannelTab].citations.map((cite, i) => (
+                            <span 
+                              key={i} 
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold border ${channelDemos[activeChannelTab].theme.tagBg} ${channelDemos[activeChannelTab].theme.tagText} border-white/10`}
+                            >
+                              {cite}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Statutory Guidance */}
+                        <p className="text-slate-300 leading-relaxed text-[11.5px] sm:text-[12px]">
                           {channelDemos[activeChannelTab].botResponse}
                         </p>
+
+                        {/* De-escalation Script Box */}
+                        {channelDemos[activeChannelTab].scriptQuote && (
+                          <div className="p-2.5 rounded-xl bg-slate-950/80 border-l-2 border-primary border-slate-800 text-[11px] text-blue-200 font-medium leading-relaxed italic">
+                            <span className="not-italic text-[9px] font-mono uppercase tracking-wider text-slate-400 block mb-0.5 font-bold">
+                              Citizens De-escalation Script:
+                            </span>
+                            {channelDemos[activeChannelTab].scriptQuote}
+                          </div>
+                        )}
+
+                        {/* Voice Note Preview Bar (if applicable) */}
+                        {channelDemos[activeChannelTab].hasVoiceNote && (
+                          <div className="flex items-center justify-between p-2 rounded-xl bg-slate-950/90 border border-white/5 text-[11px]">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                                <Play className="w-3 h-3 fill-current ml-0.5" />
+                              </div>
+                              <div className="flex items-center gap-1 h-3">
+                                {[40, 75, 50, 100, 60, 85, 45, 90, 70, 30].map((h, i) => (
+                                  <span 
+                                    key={i} 
+                                    className="w-0.5 bg-emerald-400/80 rounded-full animate-pulse"
+                                    style={{ height: `${h}%`, animationDelay: `${i * 100}ms` }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 font-mono text-[10px] text-slate-400">
+                              <span className="text-slate-300 font-semibold">{channelDemos[activeChannelTab].voiceLang}</span>
+                              <span className="text-emerald-400 font-bold">{channelDemos[activeChannelTab].voiceDuration}</span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   </div>
 
-                  {/* Channel Action Trigger Button */}
-                  <div className="pt-3 border-t border-slate-800/80">
+                  {/* Channel Action Trigger Button & Trust Reassurance */}
+                  <div className="pt-3 border-t border-white/10 space-y-2">
                     {channelDemos[activeChannelTab].isExternal && channelDemos[activeChannelTab].actionUrl ? (
                       <a 
                         href={channelDemos[activeChannelTab].actionUrl} 
@@ -349,33 +532,34 @@ export default function Home() {
                         className="w-full block"
                       >
                         <Button 
-                          className={`w-full h-11 rounded-xl font-bold text-xs flex items-center justify-center gap-2 ${
-                            activeChannelTab === 'whatsapp' 
-                              ? 'bg-emerald-600 hover:bg-emerald-500 text-white' 
-                              : 'bg-sky-500 hover:bg-sky-400 text-white'
-                          }`}
+                          className={`w-full h-11 sm:h-12 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 text-white shadow-lg transition-all duration-300 cursor-pointer bg-gradient-to-r ${channelDemos[activeChannelTab].theme.btnGradient} border-t border-white/25`}
                         >
                           <span>{channelDemos[activeChannelTab].actionText}</span>
-                          <ExternalLink className="h-3.5 w-3.5" />
+                          <ExternalLink className="h-4 w-4" />
                         </Button>
                       </a>
                     ) : channelDemos[activeChannelTab].isExternal ? (
                       <Button 
                         onClick={triggerPwaInstall}
                         variant="outline"
-                        className="w-full h-11 rounded-xl font-bold text-xs border-slate-700 bg-slate-900 text-slate-300 hover:text-white flex items-center justify-center gap-2"
+                        className="w-full h-11 sm:h-12 rounded-xl font-bold text-xs sm:text-sm border-slate-700 bg-slate-900 text-slate-200 hover:text-white hover:bg-slate-800 flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
                       >
-                        <span>Access via Web App</span>
-                        <ArrowRight className="h-3.5 w-3.5" />
+                        <span>{channelDemos[activeChannelTab].actionText}</span>
+                        <ArrowRight className="h-4 w-4" />
                       </Button>
                     ) : (
                       <Link href="/app" className="w-full block">
-                        <Button className="w-full h-11 rounded-xl bg-primary hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-2">
-                          <span>Launch Web App</span>
-                          <ArrowRight className="h-3.5 w-3.5" />
+                        <Button className={`w-full h-11 sm:h-12 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 text-white shadow-lg transition-all duration-300 cursor-pointer bg-gradient-to-r ${channelDemos[activeChannelTab].theme.btnGradient} border-t border-white/25`}>
+                          <span>{channelDemos[activeChannelTab].actionText}</span>
+                          <ArrowRight className="h-4 w-4" />
                         </Button>
                       </Link>
                     )}
+
+                    <div className="flex items-center justify-center gap-2 text-[10px] text-slate-400 font-medium">
+                      <Lock className="w-3 h-3 text-emerald-400" />
+                      <span>Zero Sign-Up Required to Ask · End-to-End Encrypted</span>
+                    </div>
                   </div>
                 </div>
               </div>
