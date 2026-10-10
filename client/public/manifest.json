@@ -1,0 +1,63 @@
+{
+  "id": "/",
+  "name": "SabiRight",
+  "short_name": "SabiRight",
+  "description": "Civic guidance, statutory legal protection, and citizen services for Nigeria.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#020617",
+  "theme_color": "#2563eb",
+  "categories": ["lifestyle", "utilities", "government"],
+  "icons": [
+    {
+      "src": "/assets/sabiright-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/sabiright-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/assets/sabiright-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/sabiright-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "SabiGuard Civic AI",
+      "short_name": "Civic AI",
+      "description": "Instant statutory legal guidance and scripts",
+      "url": "/app/civic",
+      "icons": [{ "src": "/assets/sabiright-icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "SabiMove Traffic",
+      "short_name": "Traffic",
+      "description": "Live traffic and checkpoint safety shield",
+      "url": "/app/traffic",
+      "icons": [{ "src": "/assets/sabiright-icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Verified Pro Directory",
+      "short_name": "Directory",
+      "description": "Connect with accredited Nigerian lawyers",
+      "url": "/app/marketplace",
+      "icons": [{ "src": "/assets/sabiright-icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
