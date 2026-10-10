@@ -19,12 +19,23 @@ interface InstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+let deferredInstallPrompt: InstallPromptEvent | null = null;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event as InstallPromptEvent;
+    window.dispatchEvent(new Event('sabiright-install-prompt-available'));
+  });
+}
+
 export function PwaInstallPrompt() {
-  const [installEvent, setInstallEvent] = useState<InstallPromptEvent | null>(null);
+  const [installEvent, setInstallEvent] = useState<InstallPromptEvent | null>(() => deferredInstallPrompt);
   const [isOpen, setIsOpen] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIos, setIsIos] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
+  const [showBrowserInstructions, setShowBrowserInstructions] = useState(false);
 
   useEffect(() => {
     // Check if already in standalone PWA mode
@@ -42,13 +53,14 @@ export function PwaInstallPrompt() {
     const isIosDevice = /iphone|ipad|ipod/.test(ua) && !(window as any).MSStream;
     setIsIos(isIosDevice);
 
-    const onBeforeInstall = (event: Event) => {
-      event.preventDefault();
-      setInstallEvent(event as InstallPromptEvent);
+    const syncInstallPrompt = () => {
+      setInstallEvent(deferredInstallPrompt);
+      if (deferredInstallPrompt) setShowBrowserInstructions(false);
     };
 
     const onInstalled = () => {
       setIsInstalled(true);
+      deferredInstallPrompt = null;
       setInstallEvent(null);
       setIsOpen(false);
     };
@@ -58,7 +70,7 @@ export function PwaInstallPrompt() {
       setIsOpen(true);
     };
 
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('sabiright-install-prompt-available', syncInstallPrompt);
     window.addEventListener('appinstalled', onInstalled);
     window.addEventListener('open-pwa-install', handleOpenModal);
 
@@ -69,25 +81,35 @@ export function PwaInstallPrompt() {
     }
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('sabiright-install-prompt-available', syncInstallPrompt);
       window.removeEventListener('appinstalled', onInstalled);
       window.removeEventListener('open-pwa-install', handleOpenModal);
     };
   }, []);
 
   const handleInstallClick = async () => {
-    if (installEvent) {
-      await installEvent.prompt();
-      const choice = await installEvent.userChoice;
+    const promptEvent = installEvent || deferredInstallPrompt;
+    if (!promptEvent) {
+      setShowBrowserInstructions(true);
+      return;
+    }
+
+    deferredInstallPrompt = null;
+    setInstallEvent(null);
+    try {
+      await promptEvent.prompt();
+      const choice = await promptEvent.userChoice;
       if (choice.outcome === 'accepted') {
         setIsInstalled(true);
         setIsOpen(false);
+      } else {
+        setShowBrowserInstructions(true);
       }
+    } catch (error) {
+      console.error('[PwaInstallPrompt] Native install prompt failed:', error);
+      setShowBrowserInstructions(true);
+    } finally {
       setInstallEvent(null);
-    } else if (isIos) {
-      setIsOpen(true);
-    } else {
-      setIsOpen(true);
     }
   };
 
@@ -167,7 +189,7 @@ export function PwaInstallPrompt() {
                       SabiRight Citizen App
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      Official Progressive Web App · Android, iOS & Desktop
+                      Installable web app · Android, iOS & Desktop
                     </p>
                   </div>
                 </div>
@@ -209,9 +231,9 @@ export function PwaInstallPrompt() {
 
                   <div className="p-3.5 rounded-2xl bg-slate-100/80 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/30">
                     <Sparkles className="h-5 w-5 text-slate-700 dark:text-slate-300 mb-1.5" />
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">Offline Ready</h4>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">Home-screen access</h4>
                     <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
-                      Access cached rights & emergency hotlines offline.
+                      Launch SabiRight from your device with an app-like layout.
                     </p>
                   </div>
                 </div>
@@ -242,11 +264,29 @@ export function PwaInstallPrompt() {
                       className="w-full h-12 rounded-2xl bg-primary hover:bg-blue-700 text-white font-bold text-sm shadow-xl shadow-primary/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Download className="h-4 w-4" />
-                      <span>{installEvent ? "Install SabiRight Now" : "Install App on Device"}</span>
+                      <span>{installEvent ? "Install SabiRight Now" : "How to install"}</span>
                       <ArrowRight className="h-4 w-4" />
                     </Button>
+                    {showBrowserInstructions && (
+                      <div
+                        className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-left dark:border-blue-900 dark:bg-blue-950/40"
+                        role="status"
+                        aria-live="polite"
+                      >
+                        <p className="text-xs font-bold text-slate-900 dark:text-white">
+                          Install from your browser menu
+                        </p>
+                        <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                          <li>Open the browser menu (⋮) or the install icon in the address bar.</li>
+                          <li>Choose “Install app” or “Add to Home screen”.</li>
+                        </ol>
+                        <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                          If neither option appears, open this HTTPS page in Chrome or Edge and try again.
+                        </p>
+                      </div>
+                    )}
                     <p className="text-[11px] text-slate-400">
-                      Installed directly from your browser. Uses less than 5MB of storage.
+                      Adds SabiRight to your home screen without an app-store download.
                     </p>
                   </div>
                 )}

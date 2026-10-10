@@ -38,7 +38,7 @@ export function CookieConsent() {
               <div className="space-y-1">
                 <h3 className="font-bold text-slate-900 text-lg">We value your privacy</h3>
                 <p className="text-slate-500 text-sm max-w-2xl">
-                  We use cookies to enhance your experience, analyze site usage, and ensure the security of your data in compliance with NDPC guidelines. By continuing to use SabiRight, you consent to our use of cookies.
+                  This site may use cookies or browser storage for core features and preferences. Read our Privacy Policy and Cookie Policy for details.
                 </p>
                 <div className="flex gap-4 pt-2">
                   <Link href="/privacy">

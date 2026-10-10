@@ -6,7 +6,7 @@ export function registerSW() {
           // console.log('SW registered: ', registration);
         })
         .catch((registrationError) => {
-          // console.log('SW registration failed: ', registrationError);
+          console.error('[PWA] Service worker registration failed:', registrationError);
         });
     };
 

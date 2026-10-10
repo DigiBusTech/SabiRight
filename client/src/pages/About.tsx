@@ -22,6 +22,7 @@ import {
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { TrustMarks } from "@/components/TrustMarks";
 
 export default function About() {
   const { data: settings = [] } = useQuery<any[]>({
@@ -206,9 +207,9 @@ export default function About() {
                 <div className="h-12 w-12 rounded-2xl bg-slate-200 text-slate-800 flex items-center justify-center">
                   <Lock className="h-6 w-6" />
                 </div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">NDPC Audited Privacy</h3>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Privacy & data handling</h3>
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Built to the highest data protection standards under the Nigeria Data Protection Act. We never sell, monetize, or exploit user data.
+                  Review our Privacy Policy for information about how account and service data are handled.
                 </p>
               </div>
             </div>
@@ -224,7 +225,7 @@ export default function About() {
                 SabiRight restores human dignity by giving ordinary people the confidence to stand tall. Knowing your statutory rights keeps your dignity intact, and knowing you can summon verified legal backup during an encounter eliminates paralyzing fear.
               </p>
               <p className="text-slate-600 dark:text-slate-300 text-base leading-relaxed text-justify">
-                We tackle abusive power dynamics by bridging the gap between vulnerable youth and authority figures. Social responsibility is at our foundation: we secured our National Startup Label and maintain strict compliance with the National Data Protection Commission (NDPC) to protect every citizen's privacy.
+                We tackle abusive power dynamics by bridging the gap between vulnerable youth and authority figures. We aim to handle personal information responsibly and explain our data practices in the Privacy Policy.
               </p>
             </motion.div>
 
@@ -241,34 +242,7 @@ export default function About() {
             </motion.div>
           </div>
 
-          {/* Compliance & Regulatory Badges */}
-          <section className="mb-24 py-12 px-8 rounded-3xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center">
-            <h3 className="text-xs font-black tracking-[0.2em] text-slate-400 uppercase mb-8">
-              RECOGNITION, GOVERNANCE & AUDIT COMPLIANCE
-            </h3>
-            <div className="flex flex-wrap justify-center items-center gap-6 md:gap-10">
-              <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-                <span className="text-base">🇳🇬</span>
-                <span className="text-xs font-bold text-slate-800 dark:text-white">NITDA · NCAIR Innovation Challenge</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-                <Shield className="h-4 w-4 text-teal-600" />
-                <span className="text-xs font-bold text-slate-800 dark:text-white">NDPC Data Privacy Audited</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-                <Scale className="h-4 w-4 text-primary" />
-                <span className="text-xs font-bold text-slate-800 dark:text-white">CAC Registered Entity</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-                <Award className="h-4 w-4 text-indigo-600" />
-                <span className="text-xs font-bold text-slate-800 dark:text-white">Startup Nigeria Label</span>
-              </div>
-              <div className="flex items-center gap-2 bg-white dark:bg-slate-800 px-4 py-2 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-xs">
-                <Lock className="h-4 w-4 text-slate-600" />
-                <span className="text-xs font-bold text-slate-800 dark:text-white">SCUML Audited Integrity</span>
-              </div>
-            </div>
-          </section>
+          <TrustMarks className="mb-24 rounded-3xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900" />
 
           {/* CTA Banner */}
           <section className="text-center py-16 px-8 rounded-3xl bg-slate-900 text-white relative overflow-hidden shadow-2xl">

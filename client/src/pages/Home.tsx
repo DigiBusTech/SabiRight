@@ -33,6 +33,7 @@ import { useState, useRef } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { getYouTubeEmbedUrl } from "@/lib/utils";
+import { TrustMarks } from "@/components/TrustMarks";
 
 export default function Home() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -242,7 +243,7 @@ export default function Home() {
                   >
                     <Smartphone className="h-4 w-4 text-primary" />
                     <div className="text-left leading-none">
-                      <p className="text-[9px] uppercase font-semibold text-slate-500">Android APK / Web App</p>
+                      <p className="text-[9px] uppercase font-semibold text-slate-500">Mobile web app</p>
                       <p className="text-xs font-bold text-slate-900">Install SabiRight</p>
                     </div>
                   </button>
@@ -439,107 +440,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* RESTORED: Compliance, Regulatory & Partner Audit Logos Section */}
-      <section className="py-12 bg-slate-50 border-y border-slate-200">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="text-center mb-8">
-            <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">
-              COMPLIANCE, REGULATORY & INFRASTRUCTURE PARTNERS
-            </p>
-          </div>
-
-          <div className="flex flex-wrap justify-center items-center gap-4 sm:gap-6 md:gap-8">
-            {/* NITDA / NCAIR Badge */}
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-blue-300 transition-all">
-              <div className="w-7 h-7 rounded-xl bg-blue-100 text-primary flex items-center justify-center font-black text-xs">
-                🇳🇬
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] font-black text-slate-900 uppercase leading-none">NITDA · NCAIR</p>
-                <p className="text-[10px] font-semibold text-primary leading-tight">National AI Innovation Challenge</p>
-              </div>
-            </div>
-
-            {/* NDPC Audited Badge */}
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-teal-300 transition-all">
-              <Shield className="h-6 w-6 text-teal-600 shrink-0" />
-              <div className="text-left">
-                <p className="text-[10px] font-black text-slate-900 uppercase leading-none">NDPC AUDITED</p>
-                <p className="text-[10px] font-semibold text-teal-700 leading-tight">Data Privacy Compliant</p>
-              </div>
-            </div>
-
-            {/* CAC Registered Badge */}
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-blue-300 transition-all">
-              <Scale className="h-6 w-6 text-primary shrink-0" />
-              <div className="text-left">
-                <p className="text-[10px] font-black text-slate-900 uppercase leading-none">CAC REGISTERED</p>
-                <p className="text-[10px] font-semibold text-blue-700 leading-tight">Corporate Affairs Commission</p>
-              </div>
-            </div>
-
-            {/* STARTUP NIGERIA Badge */}
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-indigo-300 transition-all">
-              <Award className="h-6 w-6 text-indigo-600 shrink-0" />
-              <div className="text-left">
-                <p className="text-[10px] font-black text-slate-900 uppercase leading-none">STARTUP NIGERIA</p>
-                <p className="text-[10px] font-semibold text-indigo-700 leading-tight">National Startup Label</p>
-              </div>
-            </div>
-
-            {/* N-ATLAS Indigenous AI Badge */}
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-purple-300 transition-all">
-              <div className="w-7 h-7 rounded-xl bg-purple-100 text-purple-800 flex items-center justify-center font-black text-xs">
-                AI
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] font-black text-slate-900 uppercase leading-none">N-ATLAS LLM</p>
-                <p className="text-[10px] font-semibold text-purple-700 leading-tight">Multilingual Voice & NLP</p>
-              </div>
-            </div>
-
-            {/* SUPABASE Badge */}
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-blue-300 transition-all">
-              <Database className="h-6 w-6 text-blue-600 shrink-0" />
-              <div className="text-left">
-                <p className="text-[10px] font-black text-slate-900 uppercase leading-none">SUPABASE</p>
-                <p className="text-[10px] font-semibold text-blue-700 leading-tight">PostgreSQL & Vector Storage</p>
-              </div>
-            </div>
-
-            {/* VERCEL Edge Badge */}
-            <div className="flex items-center gap-2.5 bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-slate-400 transition-all">
-              <svg className="h-5 w-5 fill-slate-900 shrink-0" viewBox="0 0 24 24">
-                <path d="M24 22.525H0l12-21.05 12 21.05z" />
-              </svg>
-              <div className="text-left">
-                <p className="text-[10px] font-black text-slate-900 uppercase leading-none">VERCEL</p>
-                <p className="text-[10px] font-semibold text-slate-600 leading-tight">Global Edge Deployment</p>
-              </div>
-            </div>
-
-            {/* SDG 10 Reduced Inequalities Badge */}
-            <div className="flex items-center gap-2.5 bg-orange-50 border border-orange-200 px-4 py-2.5 rounded-2xl shadow-xs hover:border-orange-300 transition-all">
-              <div className="w-7 h-7 rounded-xl bg-orange-600 text-white flex items-center justify-center font-black text-xs">
-                =
-              </div>
-              <div className="text-left">
-                <p className="text-[10px] font-black text-orange-950 uppercase leading-none">SDG 10 TARGET</p>
-                <p className="text-[10px] font-bold text-orange-700 leading-tight">Reduced Inequalities</p>
-              </div>
-            </div>
-
-            {/* SCUML Civic Integrity Badge */}
-            <div className="flex items-center gap-2.5 bg-slate-100 border border-slate-300 px-4 py-2.5 rounded-2xl shadow-xs hover:border-slate-400 transition-all">
-              <Lock className="h-5 w-5 text-slate-700 shrink-0" />
-              <div className="text-left">
-                <p className="text-[10px] font-black text-slate-900 uppercase leading-none">SCUML AUDITED</p>
-                <p className="text-[10px] font-bold text-slate-700 leading-tight">Civic Integrity Verified</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <TrustMarks className="border-y border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950" />
 
       {/* High-Level Software Solutions Bento Grid (Concise & Structured) */}
       <section className="py-20 md:py-28 max-w-7xl mx-auto px-6 bg-white">
@@ -804,8 +705,8 @@ export default function Home() {
               answer: "SabiRight is anchored in the 1999 Constitution of Nigeria, the Nigeria Police Act 2020, the Administration of Criminal Justice Act (ACJA 2015), the Cybercrimes Act, and authoritative state tenancy laws."
             },
             {
-              question: "Is my personal data protected and NDPC audited?",
-              answer: "Yes. SabiRight is designed in strict compliance with the Nigeria Data Protection Act 2023 and the National Data Protection Commission (NDPC) standards. We do not store or monetize sensitive identity documents."
+              question: "How does SabiRight handle personal data?",
+              answer: "Please review our Privacy Policy for details about the personal data used to provide SabiRight services. Avoid sharing unnecessary sensitive information in general inquiries or chats."
             },
             {
               question: "How can I connect with a verified human lawyer?",
@@ -813,7 +714,7 @@ export default function Home() {
             },
             {
               question: "Can I install SabiRight without Google Play or Apple App Store?",
-              answer: "Yes! SabiRight is an official Progressive Web App (PWA). You can tap 'Install SabiRight App' right from your browser on Android, iPhone, or PC to get the full native experience."
+              answer: "SabiRight can be added to the home screen from supported browsers. On Android and desktop, use the browser's Install app or Add to Home screen option. On iPhone and iPad, open SabiRight in Safari, tap Share, then Add to Home Screen."
             }
           ].map((faq, i) => (
             <div key={i} className="rounded-2xl border border-slate-200 bg-slate-50/70 overflow-hidden transition-all">

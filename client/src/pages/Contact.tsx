@@ -346,9 +346,9 @@ export default function Contact() {
                   <div className="flex items-start gap-3">
                     <ShieldCheck className="h-5 w-5 text-teal-400 shrink-0 mt-0.5" />
                     <div>
-                      <p className="font-bold text-white text-sm">Data Privacy & NDPC Audited</p>
+                      <p className="font-bold text-white text-sm">Privacy & data handling</p>
                       <p className="text-slate-400 mt-0.5">
-                        Inquiries are treated under strict attorney-client and data privacy rules in accordance with NDPA 2023.
+                        Please avoid sending sensitive details in general inquiries. See our Privacy Policy for information about contact data.
                       </p>
                     </div>
                   </div>
