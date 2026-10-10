@@ -2689,6 +2689,41 @@ export default function AdminDashboard() {
 
                                 <Card>
                                   <CardHeader>
+                                    <CardTitle>Mobile App Store Downloads</CardTitle>
+                                    <p className="text-sm text-slate-500">Manage iOS App Store and Google Play Store download links displayed on the homepage.</p>
+                                  </CardHeader>
+                                  <CardContent className="space-y-4">
+                                    <div className="space-y-2">
+                                      <Label htmlFor="play_store_url">Google Play Store URL</Label>
+                                      <Input
+                                        id="play_store_url"
+                                        placeholder="https://play.google.com/store/apps/details?id=com.sabiright.app"
+                                        value={localSettings['play_store_url'] ?? getSetting('play_store_url')}
+                                        onChange={(e) => handleSettingChange('play_store_url', e.target.value)}
+                                      />
+                                      <p className="text-[10px] text-slate-500">Leave blank if the Android app is not yet published.</p>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label htmlFor="app_store_url">Apple iOS App Store URL</Label>
+                                      <Input
+                                        id="app_store_url"
+                                        placeholder="https://apps.apple.com/app/sabiright/id123456789"
+                                        value={localSettings['app_store_url'] ?? getSetting('app_store_url')}
+                                        onChange={(e) => handleSettingChange('app_store_url', e.target.value)}
+                                      />
+                                      <p className="text-[10px] text-slate-500">Leave blank if the iOS app is not yet published.</p>
+                                    </div>
+                                    <Button size="sm" onClick={() => {
+                                      handleSaveSetting('play_store_url', 'homepage');
+                                      handleSaveSetting('app_store_url', 'homepage');
+                                    }}>
+                                      <Save className="h-4 w-4 mr-2" /> Save App Store Links
+                                    </Button>
+                                  </CardContent>
+                                </Card>
+
+                                <Card>
+                                  <CardHeader>
                                     <CardTitle>SEO Management</CardTitle>
                                     <p className="text-sm text-slate-500">Configure global SEO settings for the public website.</p>
                                   </CardHeader>
@@ -2992,7 +3027,7 @@ export default function AdminDashboard() {
                 </CardHeader>
                 <CardContent className="p-6 space-y-8 bg-slate-50/30">
                   {/* Dual-Mode AI Architecture Banner (NITDA NAIC Sovereign Model vs Multi-Model Grid) */}
-                  <div className="p-5 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/80 rounded-2xl shadow-sm space-y-4">
+                  <div className="p-5 bg-linear-to-r from-emerald-50 via-teal-50 to-blue-50 border border-emerald-200/80 rounded-2xl shadow-sm space-y-4">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="flex items-start gap-3">
                         <div className="h-10 w-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white text-xl font-bold shadow-sm">

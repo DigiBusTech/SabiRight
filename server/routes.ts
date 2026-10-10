@@ -390,6 +390,9 @@ export async function registerRoutes(
         'hero_title', 'hero_subtitle', 'video_demo_url', 'seo_title', 
         'privacy_policy', 'terms_of_service', 'cookie_policy',
         'frontend_page_content', 'frontend_page_content_about', 'frontend_page_content_contact', 'frontend_page_content_footer',
+        'about_content', 'contact_content', 'footer_about', 'footer_phone', 'footer_address',
+        'app_store_url', 'play_store_url',
+        'social_facebook', 'social_twitter', 'social_instagram', 'social_linkedin', 'social_youtube', 'social_whatsapp',
         'credit_reward_referral', 'referral_reward_credits', 'active_languages',
         'whatsapp_bot_url', 'telegram_bot_url'
       ];
@@ -420,6 +423,9 @@ export async function registerRoutes(
         'hero_title', 'hero_subtitle', 'video_demo_url', 'seo_title', 
         'privacy_policy', 'terms_of_service', 'cookie_policy',
         'frontend_page_content', 'frontend_page_content_about', 'frontend_page_content_contact', 'frontend_page_content_footer',
+        'about_content', 'contact_content', 'footer_about', 'footer_phone', 'footer_address',
+        'app_store_url', 'play_store_url',
+        'social_facebook', 'social_twitter', 'social_instagram', 'social_linkedin', 'social_youtube', 'social_whatsapp',
         'credit_reward_referral', 'referral_reward_credits', 'active_languages',
         'whatsapp_bot_url', 'telegram_bot_url'
       ];

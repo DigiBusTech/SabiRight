@@ -172,11 +172,33 @@ export default function AppLayout({ children }: AppLayoutProps) {
             <NotificationBell />
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto bg-slate-50/30 dark:bg-transparent">
+        <div className="flex-1 overflow-y-auto bg-slate-50/30 dark:bg-transparent pb-16 md:pb-0">
           <div className="p-4 md:p-6 max-w-7xl mx-auto h-full">
             {children}
           </div>
         </div>
+
+        {/* Mobile & PWA Native-Style Bottom Navigation Bar */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-slate-950/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 z-40 px-2 py-1 flex items-center justify-around">
+          {[
+            { icon: LayoutDashboard, label: "Home", href: "/app" },
+            { icon: Scale, label: "Civic AI", href: "/app/civic" },
+            { icon: Store, label: "Directory", href: "/app/marketplace" },
+            { icon: AlertTriangle, label: "Traffic", href: "/app/traffic" },
+            { icon: Settings, label: "Settings", href: "/app/settings" },
+          ].map((item) => {
+            const isActive = location === item.href;
+            const Icon = item.icon;
+            return (
+              <Link key={item.href} href={item.href} className="flex-1 py-1.5 flex flex-col items-center justify-center text-center">
+                <Icon className={cn("h-5 w-5 transition-colors", isActive ? "text-primary dark:text-emerald-400" : "text-slate-400 dark:text-slate-500")} />
+                <span className={cn("text-[10px] font-semibold mt-0.5 transition-colors", isActive ? "text-primary dark:text-emerald-400" : "text-slate-500 dark:text-slate-400")}>
+                  {item.label}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
       </main>
     </div>
   );
