@@ -13,6 +13,15 @@
     <link rel="apple-touch-icon" href="/assets/sabiright-icon.png" />
     <meta name="application-name" content="SabiRight" />
 
+    <script>
+      window.__sabirightInstallPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.__sabirightInstallPrompt = e;
+        window.dispatchEvent(new Event('sabiright-install-prompt-available'));
+      });
+    </script>
+
     <title>SabiRight - AI Civic Super-App</title>
     <meta property="og:title" content="SabiRight | Know the Law. Beat the Traffic. Get the Job." />
     <meta property="og:description" content="SabiRight is an AI-powered Civic Super-App for emerging markets. Legal First Aid, Smart Traffic routing, AI-powered Jobs, and a Verified Marketplace." />

@@ -1,6 +1,7 @@
-const CACHE_NAME = 'sabiright-v2';
+const CACHE_NAME = 'sabiright-v3';
 const ASSETS_TO_CACHE = [
   '/',
+  '/?source=pwa',
   '/index.html',
   '/manifest.json',
   '/assets/sabiright-icon.png',

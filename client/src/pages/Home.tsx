@@ -34,6 +34,7 @@ import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { getYouTubeEmbedUrl } from "@/lib/utils";
 import { TrustMarks } from "@/components/TrustMarks";
+import { AppStoreButtons } from "@/components/common/AppStoreButtons";
 
 export default function Home() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -218,65 +219,9 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Mobile Store Badges (Managed dynamically in Admin) */}
-              <div className="pt-3 flex flex-wrap items-center gap-3">
-                {/* Google Play Store Badge */}
-                {playStoreUrl ? (
-                  <a 
-                    href={playStoreUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-sm"
-                  >
-                    <svg className="h-5 w-5 fill-current text-white" viewBox="0 0 24 24">
-                      <path d="M3.609 1.814L13.793 12 3.61 22.186a1.99 1.99 0 0 1-.61-1.419V3.233c0-.53.22-1.04.609-1.419zm11.605 11.606l2.36 2.36-11.442 6.505 9.082-8.865zm0-2.84L6.132 1.715l11.442 6.505-2.36 2.36zm1.42 1.42l3.498 1.988a1.5 1.5 0 0 1 0 2.624L16.634 16.6l-2.008-2.007 2.008-2.008z"/>
-                    </svg>
-                    <div className="text-left leading-none">
-                      <p className="text-[9px] uppercase font-semibold text-slate-400">Get it on</p>
-                      <p className="text-xs font-black tracking-tight">Google Play</p>
-                    </div>
-                  </a>
-                ) : (
-                  <button 
-                    onClick={triggerPwaInstall}
-                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all border border-slate-200 cursor-pointer"
-                  >
-                    <Smartphone className="h-4 w-4 text-primary" />
-                    <div className="text-left leading-none">
-                      <p className="text-[9px] uppercase font-semibold text-slate-500">Mobile web app</p>
-                      <p className="text-xs font-bold text-slate-900">Install SabiRight</p>
-                    </div>
-                  </button>
-                )}
-
-                {/* Apple App Store Badge */}
-                {appStoreUrl ? (
-                  <a 
-                    href={appStoreUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-sm"
-                  >
-                    <svg className="h-5 w-5 fill-current text-white" viewBox="0 0 24 24">
-                      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.4c.67-.82 1.13-1.96 1-3.1-.98.04-2.17.65-2.87 1.47-.61.71-1.15 1.87-1.01 2.98 1.1.09 2.22-.53 2.88-1.35z"/>
-                    </svg>
-                    <div className="text-left leading-none">
-                      <p className="text-[9px] uppercase font-semibold text-slate-400">Download on the</p>
-                      <p className="text-xs font-black tracking-tight">App Store</p>
-                    </div>
-                  </a>
-                ) : (
-                  <button 
-                    onClick={triggerPwaInstall}
-                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all border border-slate-200 cursor-pointer"
-                  >
-                    <Globe2 className="h-4 w-4 text-primary" />
-                    <div className="text-left leading-none">
-                      <p className="text-[9px] uppercase font-semibold text-slate-500">iOS Safari App</p>
-                      <p className="text-xs font-bold text-slate-900">Add to Home Screen</p>
-                    </div>
-                  </button>
-                )}
+              {/* App Store & Google Play Store Buttons (Styled as OuiPay, managed dynamically in Admin) */}
+              <div className="pt-2">
+                <AppStoreButtons size="default" variant="dark" />
               </div>
 
               {/* Statutory Legal Disclaimer */}
@@ -774,6 +719,11 @@ export default function Home() {
               <Smartphone className="h-4 w-4" />
               <span>Install Mobile App</span>
             </Button>
+          </div>
+
+          <div className="pt-6 flex flex-col items-center gap-2.5">
+            <span className="text-[11px] uppercase font-bold tracking-wider text-slate-400">Available on Mobile &amp; Desktop</span>
+            <AppStoreButtons size="sm" variant="glass" />
           </div>
         </div>
       </section>
