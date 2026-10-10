@@ -19,6 +19,9 @@ interface InstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+const ANDROID_ARM64_APK_URL = 'https://github.com/DigiBusTech/SabiRight/releases/download/mobile-build-6-1/app-arm64-v8a-release.apk';
+const ANDROID_ARMV7_APK_URL = 'https://github.com/DigiBusTech/SabiRight/releases/download/mobile-build-6-1/app-armeabi-v7a-release.apk';
+
 let deferredInstallPrompt: InstallPromptEvent | null = null;
 
 if (typeof window !== 'undefined') {
@@ -34,8 +37,10 @@ export function PwaInstallPrompt() {
   const [isOpen, setIsOpen] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIos, setIsIos] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
-  const [showBrowserInstructions, setShowBrowserInstructions] = useState(false);
+  const [apkDownloadStarted, setApkDownloadStarted] = useState(false);
+  const [androidApkUrl, setAndroidApkUrl] = useState(ANDROID_ARM64_APK_URL);
 
   useEffect(() => {
     // Check if already in standalone PWA mode
@@ -51,11 +56,29 @@ export function PwaInstallPrompt() {
     // Check iOS Safari
     const ua = window.navigator.userAgent.toLowerCase();
     const isIosDevice = /iphone|ipad|ipod/.test(ua) && !(window as any).MSStream;
+    const isAndroidDevice = /android/.test(ua);
     setIsIos(isIosDevice);
+    setIsAndroid(isAndroidDevice);
+
+    const userAgentData = (window.navigator as Navigator & {
+      userAgentData?: {
+        getHighEntropyValues(hints: string[]): Promise<{ architecture?: string; bitness?: string }>;
+      };
+    }).userAgentData;
+    if (isAndroidDevice && userAgentData) {
+      userAgentData.getHighEntropyValues(['architecture', 'bitness'])
+        .then(({ architecture, bitness }) => {
+          setAndroidApkUrl(architecture === 'arm' && bitness === '32'
+            ? ANDROID_ARMV7_APK_URL
+            : ANDROID_ARM64_APK_URL);
+        })
+        .catch((error) => {
+          console.warn('[PwaInstallPrompt] Could not detect Android APK architecture; using ARM64:', error);
+        });
+    }
 
     const syncInstallPrompt = () => {
       setInstallEvent(deferredInstallPrompt);
-      if (deferredInstallPrompt) setShowBrowserInstructions(false);
     };
 
     const onInstalled = () => {
@@ -89,8 +112,9 @@ export function PwaInstallPrompt() {
 
   const handleInstallClick = async () => {
     const promptEvent = installEvent || deferredInstallPrompt;
-    if (!promptEvent) {
-      setShowBrowserInstructions(true);
+    if (isAndroid || !promptEvent) {
+      setApkDownloadStarted(true);
+      window.location.assign(androidApkUrl);
       return;
     }
 
@@ -102,12 +126,11 @@ export function PwaInstallPrompt() {
       if (choice.outcome === 'accepted') {
         setIsInstalled(true);
         setIsOpen(false);
-      } else {
-        setShowBrowserInstructions(true);
       }
     } catch (error) {
       console.error('[PwaInstallPrompt] Native install prompt failed:', error);
-      setShowBrowserInstructions(true);
+      setApkDownloadStarted(true);
+      window.location.assign(androidApkUrl);
     } finally {
       setInstallEvent(null);
     }
@@ -264,29 +287,34 @@ export function PwaInstallPrompt() {
                       className="w-full h-12 rounded-2xl bg-primary hover:bg-blue-700 text-white font-bold text-sm shadow-xl shadow-primary/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Download className="h-4 w-4" />
-                      <span>{installEvent ? "Install SabiRight Now" : "How to install"}</span>
+                      <span>{installEvent && !isAndroid ? "Install SabiRight Now" : "Download Android APK"}</span>
                       <ArrowRight className="h-4 w-4" />
                     </Button>
-                    {showBrowserInstructions && (
+                    {apkDownloadStarted && (
                       <div
                         className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-left dark:border-blue-900 dark:bg-blue-950/40"
                         role="status"
                         aria-live="polite"
                       >
                         <p className="text-xs font-bold text-slate-900 dark:text-white">
-                          Install from your browser menu
-                        </p>
-                        <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
-                          <li>Open the browser menu (⋮) or the install icon in the address bar.</li>
-                          <li>Choose “Install app” or “Add to Home screen”.</li>
-                        </ol>
-                        <p className="mt-2 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
-                          If neither option appears, open this HTTPS page in Chrome or Edge and try again.
+                          Your Android APK download is starting. Open the downloaded file and confirm installation when prompted.
                         </p>
                       </div>
                     )}
+                    {!isIos && (
+                      <a
+                        href={ANDROID_ARMV7_APK_URL}
+                        className="text-[11px] font-semibold text-primary underline underline-offset-2"
+                      >
+                        Need the 32-bit Android APK?
+                      </a>
+                    )}
                     <p className="text-[11px] text-slate-400">
-                      Adds SabiRight to your home screen without an app-store download.
+                      {isAndroid
+                        ? "Download the Android app, then approve installation on your device."
+                        : installEvent
+                          ? "Install the web app directly through your browser."
+                          : "Download the Android APK or install SabiRight from a supported phone."}
                     </p>
                   </div>
                 )}
