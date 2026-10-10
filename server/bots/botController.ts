@@ -315,6 +315,11 @@ async function searchNearbyProfessionals(
 }
 
 const LINK_COMMAND = /^\/?link\s+([A-Za-z0-9]{6,10})$/i;
+const BOT_GREETING = /^(?:hi|hello|hey|hiya|yo|howfa|how\s+far|how\s+far\s+are\s+you|wetin\s+dey|good\s+morning|good\s+afternoon|good\s+evening)[\s.!?,]*$/i;
+
+function isBotGreeting(text: string): boolean {
+  return BOT_GREETING.test(text.trim());
+}
 
 function getAccountLinkInstructions(isLinked: boolean, channel: IncomingBotMessage['channel']): string {
   if (isLinked) {
@@ -323,11 +328,9 @@ function getAccountLinkInstructions(isLinked: boolean, channel: IncomingBotMessa
 
   const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
   return [
-    '🔗 Connect this Telegram chat to SabiRight',
-    `New to SabiRight? Create an account here: ${appUrl}/auth/login?mode=register`,
-    `Already have an account? Sign in here: ${appUrl}/auth/login, then open ${appUrl}/app/settings.`,
-    'In Settings, generate a WhatsApp / Telegram link code, then send this bot: link CODE (replace CODE with your one-time code).',
-    'You can keep using this bot without linking; linking shares your web-account credits and history.'
+    `🔗 Connect this ${channel} chat to SabiRight`,
+    `Sign in or register at ${appUrl}/auth/login, then generate a code in ${appUrl}/app/settings.`,
+    'Send the code here as: link CODE. Each code links one bot; generate another to connect your other channel.'
   ].join('\n\n');
 }
 
@@ -340,8 +343,10 @@ async function handleLinkCommand(msg: IncomingBotMessage, code: string): Promise
     p_guest_user_id: currentProfile?.is_guest ? msg.channelUserId : null
   });
   if (error) {
-    console.error('[BotController] transactional channel linking failed:', error);
-    return { text: '⚠️ I could not link your account right now. Please try again shortly.' };
+    console.error(`[BotController] transactional channel linking failed event=${msg.eventId || 'unknown'}:`, error);
+    return {
+      text: `⚠️ I could not reach the account-linking service just now. Your code was not confirmed as used. Please wait a moment and send \`link CODE\` again. If this keeps happening, contact SabiRight support with reference ${msg.eventId || 'unavailable'}.`
+    };
   }
   if (!result?.success) {
     return { text: '⚠️ That code is invalid or expired, or it belongs to a different account. Generate a new code in SabiRight settings and try again.' };
@@ -511,12 +516,13 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   if (!profile && payload === 'ACTION_CONTINUE_GUEST') {
     profile = await createBotGuestProfile(msg);
   }
+  if (!profile && !payload) {
+    profile = await createBotGuestProfile(msg);
+  }
   if (!profile) {
     const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
     return {
-      text: `Welcome to SabiRight. Before we start, choose how you want to continue:\n\n` +
-        `• Register or sign in to connect a full account and keep your history across devices.\n` +
-        `• Continue as a guest to use this chat without creating a web account. You can link later with \`link CODE\`.`,
+      text: `To register or sign in, open ${appUrl}/auth/login?mode=register. You can also continue as a guest using the option below.`,
       quickActions: [
         { id: 'register', title: 'Register / Sign in', payload: 'ACTION_REGISTER', url: `${appUrl}/auth/login?mode=register` },
         { id: 'guest', title: 'Continue as Guest', payload: 'ACTION_CONTINUE_GUEST' }
@@ -1030,8 +1036,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
 
   if (
     rawText.toLowerCase() === '/start' ||
-    rawText.toLowerCase() === 'hi' ||
-    rawText.toLowerCase() === 'hello' ||
+    isBotGreeting(rawText) ||
     payload === 'ACTION_START' ||
     payload === 'ACTION_CONTINUE_GUEST'
   ) {
@@ -1044,21 +1049,13 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
         `• Or continue directly as a guest with free introductory access below.`;
 
     return {
-      text: `⚖️ *Welcome to SabiRight Civic Assistant*\n\n` +
-        `Hello ${profile.display_name || msg.userName || 'Citizen'}! I am your AI Civic and Legal First-Aid guide for Nigeria.\n\n` +
-        `${accountStatusText}\n\n` +
-        `*What I can do for you:*\n` +
-        `• Instant rights guidance during police stops (Police Act 2020)\n` +
-        `• Clarify fundamental rights (1999 Constitution Chapter IV)\n` +
-        `• Tenancy, land, and debt dispute guidance\n` +
-        `• Connecting you directly with verified Nigerian lawyers\n\n` +
-        `Ask your question below or select an option:`,
+      text: `👋 Hello ${profile.display_name || msg.userName || 'Citizen'}! I'm Sabi, your Nigerian civic and legal first-aid assistant.\n\n` +
+        `${isLinked ? '✅ Your SabiRight account is connected.' : `You are using guest chat. To sync account credits and history, open ${appUrl}/app/settings and send the generated code here as: link CODE.`}\n\n` +
+        `Ask a question or choose an option:`,
       quickActions: [
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
-        { id: 'bookings', title: '📋 My Bookings', payload: 'ACTION_BOOKINGS' },
         { id: 'balance', title: '💳 Credits', payload: 'ACTION_BALANCE' },
-        { id: 'lang', title: '🌐 Language', payload: 'ACTION_LANG' },
         { id: 'link', title: isLinked ? '🔗 Account Info' : '🔗 Link Account', payload: 'ACTION_LINK' }
       ]
     };
@@ -1118,10 +1115,16 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
       .map(h => `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content.slice(0, 400)}`)
       .join('\n');
 
-    let fallbackInstruction = `You are the "SabiRight AI Agent", a general civic information responder for Nigerians communicating via ${msg.channel.toUpperCase()}. Be clear and cautious; you are not a substitute for advice from a qualified Nigerian lawyer.
+    let fallbackInstruction = `You are Sabi, SabiRight's friendly, helpful, empathetic civic-tech guide for Nigerians communicating via ${msg.channel.toUpperCase()}. Be clear and cautious; you are not a substitute for advice from a qualified Nigerian lawyer.
+
+PERSONA AND LOCALIZATION:
+- You are Sabi, SabiRight's friendly, helpful, empathetic civic-tech guide for Nigeria.
+- Understand Nigerian English and common Pidgin expressions such as "Howfa?" Respond naturally in the user's language or selected bot language; do not force slang.
+- Acknowledge frustration or distress briefly and respectfully. Use occasional professional emojis only when they improve the tone.
+- Format for chat screens with short paragraphs, bold key phrases, and brief bullets. Avoid long walls of text.
 
 STRICT OPERATING RULES:
-1. NO GREETING: Answer the citizen's enquiry directly and immediately.
+1. GREETINGS: Respond warmly to a greeting. For all other messages, answer the enquiry directly without repeating the introduction.
 2. CIVIC GUIDE & DE-ESCALATION: For physical encounters, prioritize immediate safety and offer only general, non-confrontational steps. Do not guarantee safety or outcomes.
 3. SOURCE-BASED LEGAL INFORMATION: Cite a statute, section, quotation, or case only when relevant reference material explicitly supports it. Never guess or fabricate legal citations, statutory wording, legal rights, or outcomes. Reference material may be incomplete or unverified.
 4. UNCERTAINTY: If reliable supporting material is unavailable or unclear, say that you cannot verify the legal point; do not fill the gap from memory or present a guess as fact. Recommend checking a current authoritative source or consulting qualified Nigerian counsel.

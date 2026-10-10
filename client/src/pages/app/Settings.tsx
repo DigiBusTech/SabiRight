@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -96,20 +96,46 @@ export default function Settings() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isGeneratingReferral, setIsGeneratingReferral] = useState(false);
   const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [linkCodeExpiresAt, setLinkCodeExpiresAt] = useState<number | null>(null);
+  const [linkedChannelsBeforeCode, setLinkedChannelsBeforeCode] = useState<Record<string, string>>({});
   const [isGeneratingLinkCode, setIsGeneratingLinkCode] = useState(false);
 
-  const { data: linkedChannels = [], refetch: refetchChannels } = useQuery<{ channel: string; linked_at: string }[]>({
+  const { data: linkedChannels = [], refetch: refetchChannels, isLoading: areChannelsLoading } = useQuery<{ channel: string; linked_at: string }[]>({
     queryKey: ['channel-links', user?.uid],
     queryFn: async () => {
       const token = await user?.getIdToken?.();
       const res = await fetch('/api/channels/links', {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error(`Could not load linked channels (HTTP ${res.status})`);
       return res.json();
     },
-    enabled: !!user
+    enabled: !!user,
+    refetchInterval: linkCode ? 3_000 : false
   });
+
+  useEffect(() => {
+    if (!linkCodeExpiresAt) return;
+    const timeout = window.setTimeout(() => {
+      setLinkCode(null);
+      setLinkCodeExpiresAt(null);
+    }, Math.max(0, linkCodeExpiresAt - Date.now()));
+    return () => window.clearTimeout(timeout);
+  }, [linkCodeExpiresAt]);
+
+  useEffect(() => {
+    if (!linkCode) return;
+    const newlyLinked = linkedChannels.find(channel =>
+      linkedChannelsBeforeCode[channel.channel] !== channel.linked_at
+    );
+    if (!newlyLinked) return;
+    setLinkCode(null);
+    setLinkCodeExpiresAt(null);
+    toast({
+      title: `${newlyLinked.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'} connected`,
+      description: "Your bot now shares your SabiRight account credits and chat history."
+    });
+  }, [linkCode, linkedChannels, linkedChannelsBeforeCode, toast]);
 
   const handleGenerateLinkCode = async () => {
     setIsGeneratingLinkCode(true);
@@ -119,8 +145,13 @@ export default function Settings() {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
-      if (!res.ok) throw new Error('Failed to generate link code');
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || `Failed to generate link code (HTTP ${res.status})`);
+      }
       const data = await res.json();
+      setLinkedChannelsBeforeCode(Object.fromEntries(linkedChannels.map(channel => [channel.channel, channel.linked_at])));
+      setLinkCodeExpiresAt(Date.now() + 10 * 60 * 1000);
       setLinkCode(data.code);
       toast({
         title: "Link Code Generated",
@@ -183,9 +214,17 @@ export default function Settings() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast({ title: "Copied!", description: "Link copied to clipboard" });
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: "Copied!", description: "Link copied to clipboard" });
+    } catch {
+      toast({
+        title: "Could not copy",
+        description: "Please select and copy the link command manually.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleSaveChanges = async () => {
@@ -419,7 +458,7 @@ export default function Settings() {
             ) : (
               <Button 
                 onClick={handleGenerateLinkCode} 
-                disabled={isGeneratingLinkCode}
+                disabled={isGeneratingLinkCode || areChannelsLoading}
                 variant="outline"
                 className="w-full font-bold"
               >

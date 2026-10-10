@@ -59,7 +59,11 @@ export function SplashScreenPreloader({ onFinish, autoHideDuration = 2200 }: Pro
           <View style={styles.ringWrapper}>
             <Animated.View style={[styles.pulseHalo, { transform: [{ scale: pulseRing }], opacity: pulseOpacity }]} />
             <Animated.View style={[styles.emblemBox, { transform: [{ scale: logoScale }], opacity: logoOpacity }]}>
-              <Image source={require('../assets/sabiright-icon.png')} style={styles.emblemImage} resizeMode="contain" />
+              <Image
+                source={require('../assets/sabiright-icon.png')}
+                style={[styles.emblemImage, { tintColor: '#ffffff' }]}
+                resizeMode="contain"
+              />
             </Animated.View>
           </View>
 
@@ -70,10 +74,10 @@ export function SplashScreenPreloader({ onFinish, autoHideDuration = 2200 }: Pro
 
           <BrandLogo height={42} />
 
-          <Text style={styles.subtitle}>Instant Nigerian Civic First-Aid & Statutory Grounding</Text>
+          <Text style={styles.subtitle}>Know your rights. Take the next step.</Text>
 
           <View style={styles.statutoryBox}>
-            <Text style={styles.statutoryText}>⚖️ 1999 Constitution • ACJA 2015 • Police Act 2020</Text>
+            <Text style={styles.statutoryText}>Grounded in Nigerian law</Text>
           </View>
         </TouchableOpacity>
       </View>

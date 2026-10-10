@@ -35,7 +35,7 @@ export function EmergencyDeEscalationCard({ card, width, initialExpanded = false
           <View style={styles.titleCol}>
             <View style={styles.metaRow}>
               <Text style={[styles.sectionBadge, { color: colors.primary }]}>{card.section}</Text>
-              <Text style={[styles.statuteText, { color: colors.textMuted }]} numberOfLines={1}>{card.statute}</Text>
+              <Text style={[styles.statuteText, { color: colors.textMuted }]} numberOfLines={1} adjustsFontSizeToFit>{card.statute}</Text>
             </View>
             <Text style={[styles.cardTitle, { color: colors.textPrimary }]} numberOfLines={expanded ? undefined : 2}>
               {card.title}
@@ -104,6 +104,7 @@ const styles = StyleSheet.create({
   },
   titleCol: {
     flex: 1,
+    minWidth: 0,
   },
   metaRow: {
     flexDirection: 'row',
@@ -120,12 +121,15 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
   },
   cardTitle: {
     fontSize: 15,
     fontWeight: '700',
     marginTop: 2,
     lineHeight: 20,
+    flexShrink: 1,
   },
   chevronBox: {
     paddingLeft: 4,
@@ -158,4 +162,3 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
-

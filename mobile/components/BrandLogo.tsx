@@ -3,13 +3,13 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
 export function BrandLogo({ height = 36 }: { height?: number }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
 
   return (
     <View style={[styles.row, { height }]}>
       <Image
         source={require('../assets/sabiright-icon.png')}
-        style={{ width: height, height }}
+        style={{ width: height, height, tintColor: isDark ? colors.textPrimary : undefined }}
         resizeMode="contain"
         accessibilityLabel="SabiRight icon"
       />

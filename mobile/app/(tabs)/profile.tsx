@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, Switch, Share, Modal, ActivityIndicator, Linking, RefreshControl, TextInput } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -73,6 +73,8 @@ export default function ProfileScreen() {
   const { available, total, used, planCredits, planName, renewalDate, isLoading: creditsLoading, refresh: refreshCredits } = useCredits();
   const { data: storage } = useChatStorage();
   const [linkingLoading, setLinkingLoading] = useState(false);
+  const [pendingLinkExpiresAt, setPendingLinkExpiresAt] = useState<number | null>(null);
+  const [linkedChannelsBeforeCode, setLinkedChannelsBeforeCode] = useState<Record<string, string>>({});
   const [showPackagesModal, setShowPackagesModal] = useState(false);
   const [showPlansModal, setShowPlansModal] = useState(false);
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
@@ -85,15 +87,35 @@ export default function ProfileScreen() {
   const [showManualPaymentModal, setShowManualPaymentModal] = useState(false);
 
   // Fetch linked channels
-  const { data: linkedChannels = [], refetch: refetchLinks } = useQuery<{ channel: string; linked_at: string }[]>({
+  const { data: linkedChannels = [], refetch: refetchLinks, isLoading: linkedChannelsLoading } = useQuery<{ channel: string; linked_at: string }[]>({
     queryKey: ['channel-links', user?.id],
     enabled: !!user?.id,
     queryFn: async () => {
       const res = await apiFetch('/api/channels/links');
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error(`Could not load linked channels (HTTP ${res.status})`);
       return res.json();
-    }
+    },
+    refetchInterval: pendingLinkExpiresAt ? 3_000 : false
   });
+
+  useEffect(() => {
+    if (!pendingLinkExpiresAt) return;
+    const timeout = setTimeout(() => setPendingLinkExpiresAt(null), Math.max(0, pendingLinkExpiresAt - Date.now()));
+    return () => clearTimeout(timeout);
+  }, [pendingLinkExpiresAt]);
+
+  useEffect(() => {
+    if (!pendingLinkExpiresAt) return;
+    const newlyLinked = linkedChannels.find(link =>
+      linkedChannelsBeforeCode[link.channel] !== link.linked_at
+    );
+    if (!newlyLinked) return;
+    setPendingLinkExpiresAt(null);
+    Alert.alert(
+      `${newlyLinked.channel === 'whatsapp' ? 'WhatsApp' : 'Telegram'} connected`,
+      'Your bot now shares your SabiRight account credits and chat history.'
+    );
+  }, [linkedChannels, linkedChannelsBeforeCode, pendingLinkExpiresAt]);
 
   // Fetch credit packages
   const { data: creditPackages = [], isLoading: packagesLoading, error: packagesError } = useQuery<CreditPackage[]>({
@@ -359,10 +381,16 @@ export default function ProfileScreen() {
     }
     setLinkingLoading(true);
     try {
+      const existingLinks = linkedChannels;
       const res = await apiFetch('/api/channels/link-code', { method: 'POST' });
-      if (!res.ok) throw new Error('failed');
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || `Could not create link code (HTTP ${res.status})`);
+      }
       const data = await res.json();
       const code = data.code;
+      setLinkedChannelsBeforeCode(Object.fromEntries(existingLinks.map(link => [link.channel, link.linked_at])));
+      setPendingLinkExpiresAt(data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 10 * 60 * 1000);
       const message = `link ${code}`;
 
       Alert.alert(
@@ -378,13 +406,15 @@ export default function ProfileScreen() {
                   message: `link ${code}`,
                   title: 'Link SabiRight Bot'
                 });
-              } catch {}
+              } catch {
+                Alert.alert('Could not open share sheet', `Your link command is: ${message}`);
+              }
             }
           }
         ]
       );
-    } catch {
-      Alert.alert('Could not create link code', 'Please check your connection and try again.');
+    } catch (error) {
+      Alert.alert('Could not create link code', error instanceof Error ? error.message : 'Please check your connection and try again.');
     } finally {
       setLinkingLoading(false);
     }
@@ -507,11 +537,18 @@ export default function ProfileScreen() {
 
           {user && storage && (
             <View style={[styles.creditsRow, { backgroundColor: colors.surface, borderColor: colors.surfaceBorder, marginTop: 10 }]}>
-              <View>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[styles.creditsLabel, { color: colors.textPrimary }]}>Chat Storage</Text>
-                <Text style={[styles.creditsSub, { color: colors.textMuted }]}>Encrypted local & cloud legal moat</Text>
+                <Text style={[styles.creditsSub, { color: colors.textMuted }]} numberOfLines={1}>Saved chat history</Text>
               </View>
-              <Text style={[styles.creditsValue, { color: colors.textPrimary }]}>{formatBytes(storage.used)} / {formatBytes(storage.limit)}</Text>
+              <Text
+                style={[styles.creditsValue, { color: colors.textPrimary, flexShrink: 1, textAlign: 'right' }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
+              >
+                {formatBytes(storage.used)} / {formatBytes(storage.limit)}
+              </Text>
             </View>
           )}
         </View>
@@ -562,9 +599,15 @@ export default function ProfileScreen() {
               </View>
             )}
 
+            {pendingLinkExpiresAt && (
+              <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 10 }}>
+                Waiting for you to send the link command to the bot. This code expires in 10 minutes.
+              </Text>
+            )}
+
             <TouchableOpacity
               onPress={handleLinkChannels}
-              disabled={linkingLoading}
+              disabled={linkingLoading || linkedChannelsLoading || !!pendingLinkExpiresAt}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -579,7 +622,7 @@ export default function ProfileScreen() {
             >
               <MessageSquare size={16} color={colors.primary} />
               <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>
-                {linkingLoading ? 'Generating Code...' : 'Get Link Code for WhatsApp / Telegram'}
+                {linkingLoading ? 'Generating Code...' : pendingLinkExpiresAt ? 'Waiting for Bot Connection...' : 'Get Link Code for WhatsApp / Telegram'}
               </Text>
             </TouchableOpacity>
           </View>

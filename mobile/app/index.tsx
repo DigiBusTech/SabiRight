@@ -273,7 +273,9 @@ export default function WelcomeScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
-    {showPreloader && <SplashScreenPreloader onFinish={() => setShowPreloader(false)} />}
+    {showPreloader && !loading && !user && (
+      <SplashScreenPreloader autoHideDuration={900} onFinish={() => setShowPreloader(false)} />
+    )}
     </View>
   );
 }
@@ -401,4 +403,3 @@ const styles = StyleSheet.create({
     height: 12,
   },
 });
-

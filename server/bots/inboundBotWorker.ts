@@ -6,12 +6,12 @@ import { transcribeAudio } from "../aiService.js";
 import {
   answerTelegramCallback,
   downloadTelegramAudio,
-  sendTelegramChatAction,
+  startTelegramTypingIndicator,
   sendTelegramMessage
 } from "./telegram/telegramService.js";
 import {
   downloadWhatsAppAudio,
-  markWhatsAppAsRead,
+  startWhatsAppTypingIndicator,
   sendWhatsAppMessage
 } from "./whatsapp/whatsappService.js";
 
@@ -40,7 +40,6 @@ interface WhatsAppEvent {
   contact?: any;
 }
 
-const MAX_PROCESS_ATTEMPTS = 5;
 const MAX_DELIVERY_ATTEMPTS = 8;
 const MAX_BACKOFF_MS = 15 * 60 * 1000;
 const MAX_INBOUND_WORKER_CONCURRENCY = 3;
@@ -134,9 +133,12 @@ async function scheduleRetry(row: InboundBotRow, error: unknown): Promise<void> 
   }
 }
 
-function userSafeFailureResponse(): BotResponse {
+function userSafeFailureResponse(error?: unknown): BotResponse {
+  const isTranscriptionFailure = /N-ATLAS|transcrib|speech recognition|audio/i.test(errorMessage(error));
   return {
-    text: "⚠️ I couldn't complete that response. Please try again shortly, or type /urgent if you are in an emergency.",
+    text: isTranscriptionFailure
+      ? "⚠️ I couldn't transcribe that voice note. Please try a shorter recording or type your question instead."
+      : "⚠️ I couldn't complete that response. Please try again shortly, or type /urgent if you are in an emergency.",
     quickActions: [
       { id: "urgent", title: "🚨 Urgent Mode", payload: "ACTION_URGENT" },
       { id: "start", title: "🏠 Main Menu", payload: "ACTION_START" }
@@ -305,23 +307,25 @@ async function buildWhatsAppMessage(
 async function buildResponse(row: InboundBotRow): Promise<{ recipient: string | number; response: BotResponse; callbackQueryId?: string }> {
   const event = row.provider_payload as TelegramEvent | WhatsAppEvent;
   if (row.channel === "telegram") {
-    const { chatId, callbackQueryId, incoming } = await buildTelegramMessage(row, event as TelegramEvent);
+    const chatId = event.kind === "telegram_callback"
+      ? event.callbackQuery?.message?.chat?.id
+      : event.message?.chat?.id;
+    if (chatId === undefined || chatId === null) throw new Error("Telegram update is missing its chat ID");
+    const { chatId: responseChatId, callbackQueryId, incoming } = await buildTelegramMessage(row, event as TelegramEvent);
     if (!incoming.text && !incoming.actionPayload && !incoming.location) {
       return {
-        recipient: chatId,
+        recipient: responseChatId,
         callbackQueryId,
         response: { text: "I can read text and audio messages. Please send a voice note, supported audio file, or type your question." }
       };
     }
-    await sendTelegramChatAction(chatId, "typing");
     return {
-      recipient: chatId,
+      recipient: responseChatId,
       callbackQueryId,
       response: await processBotMessage(incoming)
     };
   }
 
-  await markWhatsAppAsRead(row.provider_event_id, true);
   const { recipient, incoming, immediateResponse } = await buildWhatsAppMessage(row, event as WhatsAppEvent);
   if (immediateResponse) return { recipient, response: immediateResponse };
   if (!incoming) throw new Error("WhatsApp event did not produce a message");
@@ -355,6 +359,17 @@ async function processClaimedRow(row: InboundBotRow): Promise<boolean> {
   const receivedAt = row.received_at ? Date.parse(row.received_at) : Number.NaN;
   const queueWaitMs = Number.isFinite(receivedAt) ? Math.max(0, startedAt - receivedAt) : undefined;
   let responseGenerationMs: number | undefined;
+  let responseGenerationError: string | null = null;
+  let stopTyping = () => {};
+  const event = row.provider_payload as TelegramEvent | WhatsAppEvent;
+  if (row.channel === "telegram") {
+    const chatId = event.kind === "telegram_callback"
+      ? event.callbackQuery?.message?.chat?.id
+      : event.message?.chat?.id;
+    if (chatId !== undefined && chatId !== null) stopTyping = startTelegramTypingIndicator(chatId);
+  } else {
+    stopTyping = startWhatsAppTypingIndicator(row.provider_event_id);
+  }
 
   try {
     if (!response) {
@@ -366,15 +381,15 @@ async function processClaimedRow(row: InboundBotRow): Promise<boolean> {
         callbackQueryId = generated.callbackQueryId;
         response = generated.response;
       } catch (error) {
-        if (row.retry_count < MAX_PROCESS_ATTEMPTS) throw error;
-        console.error(`[BotInbox] Processing ${row.provider_event_id} failed after ${row.retry_count} attempts: ${errorMessage(error)}`);
-        response = userSafeFailureResponse();
+        responseGenerationError = errorMessage(error).slice(0, 2000);
+        console.error(`[BotInbox] Processing ${row.provider_event_id} failed; sending safe fallback: ${responseGenerationError}`);
+        response = userSafeFailureResponse(error);
       }
 
       await updateClaimedRow(row, {
         response,
         processed_at: new Date().toISOString(),
-        error: null
+        error: responseGenerationError
       });
       row.response = response;
     }
@@ -416,6 +431,8 @@ async function processClaimedRow(row: InboundBotRow): Promise<boolean> {
     );
     await scheduleRetry(row, error);
     return false;
+  } finally {
+    stopTyping();
   }
 }
 

@@ -62,12 +62,15 @@ telegramRouter.post("/webhook", async (req: Request, res: Response) => {
       providerPayload,
       sender
     );
+    console.info(`[TelegramWebhook] event=tg_update_${update.update_id} duplicate=${queued.duplicate}`);
 
-    res.status(200).json({ ok: true });
-    if (!queued.duplicate) {
-      const result = await drainInboundBotQueue(1);
-      if (result.failed > 0) console.warn(`[TelegramWebhook] ${result.failed} queued message(s) will be retried`);
+    const result = await drainInboundBotQueue(3);
+    console.info(`[TelegramWebhook] drain claimed=${result.claimed} delivered=${result.delivered} failed=${result.failed}`);
+    if (result.failed > 0) {
+      console.warn(`[TelegramWebhook] ${result.failed} queued message(s) failed delivery; requesting Telegram retry`);
+      return res.sendStatus(503);
     }
+    res.sendStatus(200);
   } catch (err) {
     console.error("[TelegramWebhook] Error handling update:", err);
     if (!res.headersSent) res.sendStatus(503);

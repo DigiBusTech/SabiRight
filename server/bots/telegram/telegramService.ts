@@ -63,18 +63,32 @@ export async function downloadTelegramAudio(
 }
 
 export async function sendTelegramChatAction(chatId: string | number, action: string = 'typing'): Promise<void> {
-  const token = await getTelegramToken();
-  if (!token) return;
-
   try {
+    const token = await getTelegramToken();
+    if (!token) return;
     await fetch(`https://api.telegram.org/bot${token}/sendChatAction`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, action })
+      body: JSON.stringify({ chat_id: chatId, action }),
+      signal: AbortSignal.timeout(4_000)
     });
   } catch (e) {
     console.error('[TelegramService] sendChatAction error:', e);
   }
+}
+
+export function startTelegramTypingIndicator(chatId: string | number): () => void {
+  let requestPending = false;
+  const sendTyping = () => {
+    if (requestPending) return;
+    requestPending = true;
+    void sendTelegramChatAction(chatId, 'typing').finally(() => {
+      requestPending = false;
+    });
+  };
+  sendTyping();
+  const timer = setInterval(sendTyping, 4_000);
+  return () => clearInterval(timer);
 }
 
 export async function getTelegramWebhookSecret(): Promise<string | null> {
@@ -101,7 +115,8 @@ async function sendOne(token: string, payload: any): Promise<any> {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(p)
+      body: JSON.stringify(p),
+      signal: AbortSignal.timeout(10_000)
     });
     return await res.json() as any;
   };
@@ -115,7 +130,13 @@ async function sendOne(token: string, payload: any): Promise<any> {
 }
 
 export async function sendTelegramMessage(chatId: string | number, response: BotResponse): Promise<any> {
-  const token = await getTelegramToken();
+  let token: string | null;
+  try {
+    token = await getTelegramToken();
+  } catch (error) {
+    console.error('[TelegramService] Could not load bot token:', error);
+    return null;
+  }
   if (!token) {
     console.warn('[TelegramService] Telegram Bot Token not configured in Admin Settings or ENV');
     return null;

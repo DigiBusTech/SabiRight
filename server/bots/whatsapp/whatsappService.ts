@@ -56,16 +56,16 @@ export async function downloadWhatsAppAudio(mediaId: string): Promise<{ audio: B
 }
 
 export async function markWhatsAppAsRead(messageId: string, showTypingIndicator = false): Promise<void> {
-  const creds = await getWhatsAppCredentials();
-  if (!creds) return;
-
   try {
+    const creds = await getWhatsAppCredentials();
+    if (!creds || !messageId) return;
     const response = await fetch(`https://graph.facebook.com/v21.0/${creds.phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${creds.accessToken}`,
         'Content-Type': 'application/json'
       },
+      signal: AbortSignal.timeout(3_000),
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         status: 'read',
@@ -82,11 +82,22 @@ export async function markWhatsAppAsRead(messageId: string, showTypingIndicator 
   }
 }
 
+export function startWhatsAppTypingIndicator(messageId: string): () => void {
+  if (!messageId) return () => {};
+  const refresh = () => {
+    void markWhatsAppAsRead(messageId, true);
+  };
+  refresh();
+  const timer = setInterval(refresh, 20_000);
+  return () => clearInterval(timer);
+}
+
 async function postMessage(creds: WhatsAppCredentials, payload: any): Promise<any> {
   const res = await fetch(`https://graph.facebook.com/v21.0/${creds.phoneNumberId}/messages`, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${creds.accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(8_000)
   });
   return await res.json();
 }
@@ -109,22 +120,28 @@ export async function sendWhatsAppMessage(to: string, response: BotResponse): Pr
   }
   const last = chunks[chunks.length - 1];
   const actions = response.quickActions || [];
+  const replyActions = actions.filter(action => !action.url);
+  const urlActions = actions.filter(action => action.url);
+  const messageBody = [
+    last,
+    ...urlActions.map(action => `${action.title}: ${action.url}`)
+  ].join('\n\n');
 
   try {
     let interactive: any = null;
-    if (actions.length > 0 && actions.length <= 3 && last.length <= 1024 && actions.every(action => !action.url)) {
+    if (replyActions.length > 0 && replyActions.length <= 3 && messageBody.length <= 1024) {
       interactive = {
         type: 'button',
-        body: { text: last },
-        action: { buttons: actions.map(a => ({ type: 'reply', reply: { id: a.payload.slice(0, 256), title: a.title.slice(0, 20) } })) }
+        body: { text: messageBody },
+        action: { buttons: replyActions.map(a => ({ type: 'reply', reply: { id: a.payload.slice(0, 256), title: a.title.slice(0, 20) } })) }
       };
-    } else if (actions.length > 3 && last.length <= 1024 && actions.every(action => !action.url)) {
+    } else if (replyActions.length > 3 && messageBody.length <= 1024) {
       interactive = {
         type: 'list',
-        body: { text: last },
+        body: { text: messageBody },
         action: {
           button: 'Options',
-          sections: [{ title: 'Choose', rows: actions.slice(0, 10).map(a => ({ id: a.payload.slice(0, 200), title: a.title.slice(0, 24) })) }]
+          sections: [{ title: 'Choose', rows: replyActions.slice(0, 10).map(a => ({ id: a.payload.slice(0, 200), title: a.title.slice(0, 24) })) }]
         }
       };
     }
@@ -137,10 +154,7 @@ export async function sendWhatsAppMessage(to: string, response: BotResponse): Pr
     console.error('[WhatsAppService] Interactive message error:', e);
   }
 
-  const menu = actions.length
-    ? '\n\n' + actions.map(a => `? ${a.title}${a.url ? `: ${a.url}` : ''}`).join('\n')
-    : '';
-  return await sendWhatsAppPlainText(cleanTo, last + (actions.length ? menu : ''), creds);
+  return await sendWhatsAppPlainText(cleanTo, messageBody, creds);
 }
 
 async function sendWhatsAppPlainText(to: string, text: string, creds: WhatsAppCredentials): Promise<any> {
@@ -162,7 +176,8 @@ async function sendWhatsAppPlainText(to: string, text: string, creds: WhatsAppCr
         'Authorization': `Bearer ${creds.accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8_000)
     });
     const data = await res.json();
     if (!res.ok || data.error) {

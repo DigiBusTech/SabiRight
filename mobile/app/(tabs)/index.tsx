@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, FlatList, StyleSheet, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, FlatList, StyleSheet, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent, RefreshControl } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
@@ -19,6 +19,8 @@ export default function DashboardScreen() {
   const { width } = useWindowDimensions();
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const cardWidth = Math.min(width - 32, 500);
+  const snapInterval = cardWidth + 12;
 
   const refreshDashboard = async () => {
     setRefreshing(true);
@@ -29,13 +31,8 @@ export default function DashboardScreen() {
     }
   };
 
-  // Cards width so the next card peeks in from the right edge
-  const cardWidth = Math.min(width * 0.82, 340);
-  const snapInterval = cardWidth + 12;
-
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / snapInterval);
+    const index = Math.round(event.nativeEvent.contentOffset.x / snapInterval);
     if (index !== activeCardIndex && index >= 0 && index < OFFLINE_LEGAL_MOAT.length) {
       setActiveCardIndex(index);
     }
@@ -56,7 +53,7 @@ export default function DashboardScreen() {
           <View>
             <BrandLogo height={34} />
             <Text style={[styles.welcomeSubtitle, { color: colors.textMuted }]}>
-              Welcome, {profile?.displayName || 'Citizen'} ({profile?.city || 'Lagos'})
+              {profile?.displayName ? `Hi, ${profile.displayName.split(' ')[0]}` : 'Your rights, made clear'}
             </Text>
           </View>
           <TouchableOpacity 
@@ -86,7 +83,7 @@ export default function DashboardScreen() {
               Stopped at a checkpoint?
             </Text>
             <Text style={styles.emergencyDesc}>
-              Get calm, clear steps and a respectful way to resolve it.
+              Clear, practical next steps.
             </Text>
           </View>
           <View style={styles.emergencyArrow}>
@@ -105,7 +102,7 @@ export default function DashboardScreen() {
               <Sparkles size={20} color={colors.primary} />
             </View>
             <Text style={[styles.quickTitle, { color: colors.textPrimary }]}>Ask SabiRight AI</Text>
-            <Text style={[styles.quickSubtitle, { color: colors.textMuted }]}>Grounded rights advisor</Text>
+            <Text style={[styles.quickSubtitle, { color: colors.textMuted }]}>Ask a question</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -117,27 +114,15 @@ export default function DashboardScreen() {
               <Users size={20} color="#c084fc" />
             </View>
             <Text style={[styles.quickTitle, { color: colors.textPrimary }]}>Find a Lawyer</Text>
-            <Text style={[styles.quickSubtitle, { color: colors.textMuted }]}>Verified local advocates</Text>
+            <Text style={[styles.quickSubtitle, { color: colors.textMuted }]}>Find local help</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Offline Statutory Grounding Cards - Horizontal Carousel */}
         <View style={styles.statutorySection}>
           <View style={styles.sectionHeaderRow}>
-            <View>
-              <Text style={[styles.sectionHeaderTitle, { color: colors.textMuted }]}>
-                OFFLINE CHECKPOINT CARDS (GUARANTEED)
-              </Text>
-              <Text style={[styles.sectionHeaderSub, { color: colors.textSecondary }]}>
-                Swipe cards to review statutory shields
-              </Text>
-            </View>
-            <View style={[styles.statuteBadge, { backgroundColor: colors.primarySoft }]}>
-              <Text style={[styles.sectionHeaderTag, { color: colors.primary }]}>1999 Constitution</Text>
-            </View>
+            <Text style={[styles.sectionHeaderTitle, { color: colors.textPrimary }]}>Offline rights guide</Text>
+            <Text style={[styles.sectionHeaderSub, { color: colors.textMuted }]}>Works offline</Text>
           </View>
-
-          {/* Horizontal Sliding Carousel */}
           <FlatList
             data={OFFLINE_LEGAL_MOAT}
             keyExtractor={(_, index) => `legal-card-${index}`}
@@ -149,24 +134,17 @@ export default function DashboardScreen() {
             scrollEventThrottle={16}
             contentContainerStyle={styles.carouselContainer}
             renderItem={({ item }) => (
-              <EmergencyDeEscalationCard 
-                card={item} 
-                width={cardWidth} 
-                initialExpanded={false}
-              />
+              <EmergencyDeEscalationCard card={item} width={cardWidth} initialExpanded={false} />
             )}
           />
-
-          {/* Carousel Slide Indicators */}
           <View style={styles.paginationRow}>
-            {OFFLINE_LEGAL_MOAT.map((_, i) => (
+            {OFFLINE_LEGAL_MOAT.map((_, index) => (
               <View
-                key={i}
+                key={index}
                 style={[
                   styles.dotIndicator,
-                  activeCardIndex === i 
-                    ? [styles.dotActive, { backgroundColor: colors.primary, width: 22 }] 
-                    : [styles.dotInactive, { backgroundColor: colors.surfaceBorder }]
+                  { backgroundColor: index === activeCardIndex ? colors.primary : colors.surfaceBorder },
+                  index === activeCardIndex && styles.dotActive
                 ]}
               />
             ))}
@@ -311,27 +289,17 @@ const styles = StyleSheet.create({
   },
   sectionHeaderRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    alignItems: 'center',
+    marginBottom: 10,
   },
   sectionHeaderTitle: {
-    fontSize: 11,
+    fontSize: 15,
     fontWeight: '800',
-    letterSpacing: 0.8,
   },
   sectionHeaderSub: {
     fontSize: 11,
-    marginTop: 2,
-  },
-  statuteBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  sectionHeaderTag: {
-    fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   carouselContainer: {
     paddingRight: 16,
@@ -342,16 +310,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: 10,
+    marginTop: 8,
   },
   dotIndicator: {
+    width: 6,
     height: 6,
     borderRadius: 3,
   },
   dotActive: {
     width: 22,
-  },
-  dotInactive: {
-    width: 6,
   },
 });

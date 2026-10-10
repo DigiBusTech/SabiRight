@@ -36,7 +36,7 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 9,
           fontWeight: '700',
           marginTop: 2,
         },
@@ -45,35 +45,35 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
+          title: 'Home',
           tabBarIcon: ({ color }: { color: any }) => <Shield size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="civic"
         options={{
-          title: 'SabiRight AI',
+          title: 'Ask',
           tabBarIcon: ({ color }: { color: any }) => <MessageSquare size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="marketplace"
         options={{
-          title: 'Advocates',
+          title: 'Pros',
           tabBarIcon: ({ color }: { color: any }) => <Users size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="traffic"
         options={{
-          title: 'SabiMove',
+          title: 'Move',
           tabBarIcon: ({ color }: { color: any }) => <AlertTriangle size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="bookings"
         options={{
-          title: 'Bookings',
+          title: 'Cases',
           tabBarIcon: ({ color }: { color: any }) => <Briefcase size={22} color={color} />,
         }}
       />
