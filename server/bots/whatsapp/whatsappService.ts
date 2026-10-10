@@ -55,12 +55,12 @@ export async function downloadWhatsAppAudio(mediaId: string): Promise<{ audio: B
   return { audio, mimeType: metadata.mime_type };
 }
 
-export async function markWhatsAppAsRead(messageId: string): Promise<void> {
+export async function markWhatsAppAsRead(messageId: string, showTypingIndicator = false): Promise<void> {
   const creds = await getWhatsAppCredentials();
   if (!creds) return;
 
   try {
-    await fetch(`https://graph.facebook.com/v21.0/${creds.phoneNumberId}/messages`, {
+    const response = await fetch(`https://graph.facebook.com/v21.0/${creds.phoneNumberId}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${creds.accessToken}`,
@@ -69,9 +69,14 @@ export async function markWhatsAppAsRead(messageId: string): Promise<void> {
       body: JSON.stringify({
         messaging_product: 'whatsapp',
         status: 'read',
-        message_id: messageId
+        message_id: messageId,
+        ...(showTypingIndicator ? { typing_indicator: { type: 'text' } } : {})
       })
     });
+    if (!response.ok) {
+      const error = await response.text();
+      console.error(`[WhatsAppService] markAsRead request failed (${response.status}): ${error}`);
+    }
   } catch (e) {
     console.error('[WhatsAppService] markAsRead error:', e);
   }

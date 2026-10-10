@@ -321,10 +321,10 @@ async function buildResponse(row: InboundBotRow): Promise<{ recipient: string | 
     };
   }
 
+  await markWhatsAppAsRead(row.provider_event_id, true);
   const { recipient, incoming, immediateResponse } = await buildWhatsAppMessage(row, event as WhatsAppEvent);
   if (immediateResponse) return { recipient, response: immediateResponse };
   if (!incoming) throw new Error("WhatsApp event did not produce a message");
-  await markWhatsAppAsRead(String(incoming.rawSenderId));
   return { recipient, response: await processBotMessage(incoming) };
 }
 
