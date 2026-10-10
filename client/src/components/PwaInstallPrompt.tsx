@@ -19,9 +19,6 @@ interface InstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
-const ANDROID_ARM64_APK_URL = 'https://github.com/DigiBusTech/SabiRight/releases/download/mobile-build-6-1/app-arm64-v8a-release.apk';
-const ANDROID_ARMV7_APK_URL = 'https://github.com/DigiBusTech/SabiRight/releases/download/mobile-build-6-1/app-armeabi-v7a-release.apk';
-
 let deferredInstallPrompt: InstallPromptEvent | null = null;
 
 if (typeof window !== 'undefined') {
@@ -37,10 +34,8 @@ export function PwaInstallPrompt() {
   const [isOpen, setIsOpen] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
   const [isIos, setIsIos] = useState(false);
-  const [isAndroid, setIsAndroid] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
-  const [apkDownloadStarted, setApkDownloadStarted] = useState(false);
-  const [androidApkUrl, setAndroidApkUrl] = useState(ANDROID_ARM64_APK_URL);
+  const [showBrowserInstructions, setShowBrowserInstructions] = useState(false);
 
   useEffect(() => {
     // Check if already in standalone PWA mode
@@ -56,26 +51,7 @@ export function PwaInstallPrompt() {
     // Check iOS Safari
     const ua = window.navigator.userAgent.toLowerCase();
     const isIosDevice = /iphone|ipad|ipod/.test(ua) && !(window as any).MSStream;
-    const isAndroidDevice = /android/.test(ua);
     setIsIos(isIosDevice);
-    setIsAndroid(isAndroidDevice);
-
-    const userAgentData = (window.navigator as Navigator & {
-      userAgentData?: {
-        getHighEntropyValues(hints: string[]): Promise<{ architecture?: string; bitness?: string }>;
-      };
-    }).userAgentData;
-    if (isAndroidDevice && userAgentData) {
-      userAgentData.getHighEntropyValues(['architecture', 'bitness'])
-        .then(({ architecture, bitness }) => {
-          setAndroidApkUrl(architecture === 'arm' && bitness === '32'
-            ? ANDROID_ARMV7_APK_URL
-            : ANDROID_ARM64_APK_URL);
-        })
-        .catch((error) => {
-          console.warn('[PwaInstallPrompt] Could not detect Android APK architecture; using ARM64:', error);
-        });
-    }
 
     const syncInstallPrompt = () => {
       setInstallEvent(deferredInstallPrompt);
@@ -112,9 +88,8 @@ export function PwaInstallPrompt() {
 
   const handleInstallClick = async () => {
     const promptEvent = installEvent || deferredInstallPrompt;
-    if (isAndroid || !promptEvent) {
-      setApkDownloadStarted(true);
-      window.location.assign(androidApkUrl);
+    if (!promptEvent) {
+      setShowBrowserInstructions(true);
       return;
     }
 
@@ -126,11 +101,12 @@ export function PwaInstallPrompt() {
       if (choice.outcome === 'accepted') {
         setIsInstalled(true);
         setIsOpen(false);
+      } else {
+        setShowBrowserInstructions(true);
       }
     } catch (error) {
       console.error('[PwaInstallPrompt] Native install prompt failed:', error);
-      setApkDownloadStarted(true);
-      window.location.assign(androidApkUrl);
+      setShowBrowserInstructions(true);
     } finally {
       setInstallEvent(null);
     }
@@ -287,34 +263,22 @@ export function PwaInstallPrompt() {
                       className="w-full h-12 rounded-2xl bg-primary hover:bg-blue-700 text-white font-bold text-sm shadow-xl shadow-primary/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Download className="h-4 w-4" />
-                      <span>{installEvent && !isAndroid ? "Install SabiRight Now" : "Download Android APK"}</span>
+                      <span>Install SabiRight</span>
                       <ArrowRight className="h-4 w-4" />
                     </Button>
-                    {apkDownloadStarted && (
+                    {showBrowserInstructions && (
                       <div
                         className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-left dark:border-blue-900 dark:bg-blue-950/40"
                         role="status"
                         aria-live="polite"
                       >
                         <p className="text-xs font-bold text-slate-900 dark:text-white">
-                          Your Android APK download is starting. Open the downloaded file and confirm installation when prompted.
+                          This browser did not provide a direct PWA install prompt. Open SabiRight in a supported browser and use its install option.
                         </p>
                       </div>
                     )}
-                    {!isIos && (
-                      <a
-                        href={ANDROID_ARMV7_APK_URL}
-                        className="text-[11px] font-semibold text-primary underline underline-offset-2"
-                      >
-                        Need the 32-bit Android APK?
-                      </a>
-                    )}
                     <p className="text-[11px] text-slate-400">
-                      {isAndroid
-                        ? "Download the Android app, then approve installation on your device."
-                        : installEvent
-                          ? "Install the web app directly through your browser."
-                          : "Download the Android APK or install SabiRight from a supported phone."}
+                      Installs the lightweight web app through your browser. No APK is downloaded.
                     </p>
                   </div>
                 )}
