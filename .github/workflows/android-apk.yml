@@ -10,7 +10,7 @@ on:
       - ".github/workflows/android-apk.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -62,3 +62,12 @@ jobs:
           path: mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Publish APK release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mobile-build-${{ github.run_number }}-${{ github.run_attempt }}
+          name: SabiRight Android APK (Build ${{ github.run_number }})
+          body: Android APK built from commit ${{ github.sha }}.
+          prerelease: true
+          files: mobile/android/app/build/outputs/apk/release/*.apk
