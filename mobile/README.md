@@ -20,7 +20,11 @@ A fully native mobile application for SabiRight built using **Expo SDK 57**, **R
    - One-tap direct **WhatsApp Chat** (`https://wa.me/...`) or **Phone Call**.
    - Real-time consultation chat room with pinned Pre-Case Brief.
 
-4. **Biometric & Secure Session Persistence**:
+4. **Bookings, Plans & Payments**:
+   - Review professional bookings, subscription plans, credit allocations, and storage benefits in the mobile app.
+   - Pay through active hosted gateways or submit admin-configured manual payment details and receipts for approval.
+
+5. **Biometric & Secure Session Persistence**:
    - Supabase session management powered by **`expo-secure-store`**.
 
 ---
@@ -56,7 +60,7 @@ npx eas-cli init
 npx eas-cli build --platform android --profile preview
 ```
 
-Before building, add `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, and `EXPO_PUBLIC_API_URL` to the EAS `preview` environment. Do not commit local `.env` values. Install the resulting APK on an Android device to test native features such as microphone access and notifications.
+Before building, add `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_API_URL`, and `EXPO_PUBLIC_EAS_PROJECT_ID` to the EAS `preview` environment. The EAS project ID must belong to this app; create/link the EAS project with `npx eas-cli init` before configuring it. Add the same ID as the `EXPO_PUBLIC_EAS_PROJECT_ID` GitHub Actions secret for APK builds. Do not commit local `.env` values. Install the resulting APK on an Android device to test native features such as microphone access and notifications.
 
 ---
 

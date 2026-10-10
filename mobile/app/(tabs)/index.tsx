@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, FlatList, StyleSheet, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, FlatList, StyleSheet, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent, RefreshControl } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
@@ -8,15 +8,26 @@ import { useTheme } from '../../context/ThemeContext';
 import { ShieldAlert, Sparkles, Users, ArrowRight, Coins } from 'lucide-react-native';
 import { OFFLINE_LEGAL_MOAT } from '../../lib/offlineStorage';
 import { EmergencyDeEscalationCard } from '../../components/EmergencyDeEscalationCard';
+import { BrandLogo } from '../../components/BrandLogo';
 
 export default function DashboardScreen() {
   const router = useRouter();
   const { profile } = useAuth();
-  const { available } = useCredits();
+  const { available, refresh: refreshCredits } = useCredits();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refreshDashboard = async () => {
+    setRefreshing(true);
+    try {
+      await refreshCredits();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Cards width so the next card peeks in from the right edge
   const cardWidth = Math.min(width * 0.82, 340);
@@ -38,15 +49,12 @@ export default function DashboardScreen() {
           { paddingBottom: insets.bottom + 90 }
         ]} 
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshDashboard} tintColor={colors.primary} />}
       >
         {/* Header */}
         <View style={styles.headerRow}>
           <View>
-            <Image
-              source={require('../../assets/sabiright-logo.png')}
-              style={styles.headerLogo}
-              resizeMode="contain"
-            />
+            <BrandLogo height={34} />
             <Text style={[styles.welcomeSubtitle, { color: colors.textMuted }]}>
               Welcome, {profile?.displayName || 'Citizen'} ({profile?.city || 'Lagos'})
             </Text>

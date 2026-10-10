@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image, Animated, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import { BrandLogo } from './BrandLogo';
 
 interface Props {
   onFinish?: () => void;
@@ -67,7 +68,7 @@ export function SplashScreenPreloader({ onFinish, autoHideDuration = 2200 }: Pro
             <Text style={styles.badgeText}>AI CIVIC SUPER-APP</Text>
           </View>
 
-          <Image source={require('../assets/sabiright-logo.png')} style={styles.brandLogo} resizeMode="contain" />
+          <BrandLogo height={42} />
 
           <Text style={styles.subtitle}>Instant Nigerian Civic First-Aid & Statutory Grounding</Text>
 
@@ -91,7 +92,6 @@ const styles = StyleSheet.create({
   badgePill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(56, 189, 248, 0.12)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(56, 189, 248, 0.3)', marginBottom: 10 },
   greenDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' },
   badgeText: { color: '#38bdf8', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
-  brandLogo: { width: 200, height: 46, marginBottom: 8 },
   subtitle: { color: '#94a3b8', fontSize: 12, textAlign: 'center', lineHeight: 17, maxWidth: 280, marginBottom: 14 },
   statutoryBox: { backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#1e293b', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12 },
   statutoryText: { color: '#cbd5e1', fontSize: 10, fontWeight: '600' },

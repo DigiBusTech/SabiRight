@@ -11,20 +11,22 @@ function getProjectId(): string | undefined {
     || Constants.expoConfig?.extra?.eas?.projectId;
 }
 
+export function hasMobilePushProjectId(): boolean {
+  return !!getProjectId();
+}
+
 export async function isMobilePushRegistered(userId: string): Promise<boolean> {
   return !!(await AsyncStorage.getItem(`sabiright_expo_push:${userId}`));
 }
 
 export async function registerMobilePush(userId: string, requestPermission = false): Promise<void> {
   if (!Device.isDevice) {
-    console.info('[MobilePush] Push notifications require a physical device.');
-    return;
+    throw new Error('Native push notifications require a physical device.');
   }
 
   const projectId = getProjectId();
   if (!projectId) {
-    console.warn('[MobilePush] Set EXPO_PUBLIC_EAS_PROJECT_ID to enable native push notifications.');
-    return;
+    throw new Error('Native push is not configured for this build. Set EXPO_PUBLIC_EAS_PROJECT_ID and rebuild the app.');
   }
 
   if (Platform.OS === 'android') {
@@ -41,7 +43,9 @@ export async function registerMobilePush(userId: string, requestPermission = fal
     permission = await Notifications.requestPermissionsAsync();
   }
   if (permission.status !== 'granted') {
-    console.info('[MobilePush] Notification permission was not granted.');
+    if (requestPermission) {
+      throw new Error('Notification permission was not granted. Enable notifications in your device settings.');
+    }
     return;
   }
 

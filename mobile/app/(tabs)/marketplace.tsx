@@ -1,42 +1,154 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Linking, TextInput, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Linking, TextInput, StyleSheet, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../../context/ThemeContext';
 import { apiFetch } from '../../lib/api';
+import { useAuth } from '../../context/AuthContext';
 import { Search, MapPin, Star, ShieldCheck, MessageCircle, ArrowRight, Scale } from 'lucide-react-native';
 
 const SORTS = [{ k: 'top', label: 'Top rated' }, { k: 'verified', label: 'Verified first' }, { k: 'az', label: 'A-Z' }];
 const CITIES = ['All', 'Lagos', 'Abuja', 'Port Harcourt', 'Kano', 'Ibadan'];
 
+interface DirectoryEntry {
+  id: string;
+  name: string;
+  type: string;
+  specialization: string;
+  description?: string;
+  location: string;
+  city: string;
+  contactPhone?: string;
+  verified: boolean;
+  rating?: number;
+  serviceId?: string;
+  vendorId?: string;
+}
+
 export default function MarketplaceScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [selectedCity, setSelectedCity] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('top');
+  const [bookingId, setBookingId] = useState<string | null>(null);
 
-  const { data: services = [] } = useQuery({
-    queryKey: ['marketplace-services', selectedCity],
+  const { data: professionals = [], isLoading, isError, error, refetch, isRefetching } = useQuery<DirectoryEntry[]>({
+    queryKey: ['marketplace-professionals'],
     queryFn: async () => {
-      const cityQuery = selectedCity !== 'All' ? `?city=${encodeURIComponent(selectedCity)}` : '';
-      const res = await apiFetch(`/api/services${cityQuery}`);
-      if (!res.ok) return [];
-      return res.json();
+      const [professionalsResponse, servicesResponse] = await Promise.all([
+        apiFetch('/api/professionals?status=active&verified=true'),
+        apiFetch('/api/professional-services')
+      ]);
+      if (!professionalsResponse.ok) {
+        throw new Error(`Could not load professionals (HTTP ${professionalsResponse.status})`);
+      }
+      if (!servicesResponse.ok) {
+        throw new Error(`Could not load professional services (HTTP ${servicesResponse.status})`);
+      }
+
+      const profiles = await professionalsResponse.json();
+      const services = await servicesResponse.json();
+      if (!Array.isArray(profiles) || !Array.isArray(services)) {
+        throw new Error('The professional directory returned an invalid response.');
+      }
+
+      const entries: DirectoryEntry[] = profiles.map((professional: any) => {
+        const service = services.find((item: any) =>
+          item.verified &&
+          (item.professionalId === professional.id || item.vendorId === professional.userId)
+        );
+        const city = professional.location?.city || professional.location?.state || '';
+        return {
+          id: professional.id,
+          name: professional.displayName || 'Verified Professional',
+          type: professional.role || service?.type || 'professional',
+          specialization: (professional.specializations || []).join(', ') || service?.specialization || '',
+          description: professional.publicProfile?.bio || service?.description || '',
+          location: [professional.location?.city, professional.location?.state].filter(Boolean).join(', ') || service?.location || 'Nigeria',
+          city: city || service?.location || '',
+          contactPhone: professional.phoneNumber || service?.contactPhone,
+          verified: professional.verified === true,
+          rating: professional.rating,
+          serviceId: service?.id,
+          vendorId: service?.vendorId || service?.professionalId
+        };
+      });
+
+      const profileIds = new Set(profiles.map((professional: any) => professional.id));
+      const standaloneServices = services
+        .filter((service: any) =>
+          service.verified &&
+          !profileIds.has(service.professionalId) &&
+          /law|legal|advocat/i.test(`${service.type || ''} ${service.specialization || ''}`)
+        )
+        .map((service: any): DirectoryEntry => ({
+          id: service.id,
+          name: service.name || 'Verified Legal Service',
+          type: service.type || 'legal',
+          specialization: service.specialization || service.type || 'Legal services',
+          description: service.description || '',
+          location: service.location || 'Nigeria',
+          city: service.location || '',
+          contactPhone: service.contactPhone,
+          verified: true,
+          rating: Number(service.rating) || undefined,
+          serviceId: service.id,
+          vendorId: service.vendorId || service.professionalId
+        }));
+      return [...entries, ...standaloneServices];
     }
   });
 
-  const filtered = services.filter((s: any) => {
+  const filtered = professionals.filter(pro => {
+    if (selectedCity !== 'All' && !`${pro.city} ${pro.location}`.toLowerCase().includes(selectedCity.toLowerCase())) {
+      return false;
+    }
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
-    return s.name?.toLowerCase().includes(q) || s.specialization?.toLowerCase().includes(q);
-  }).sort((a: any, b: any) => {
-    if (sortBy === 'az') return (a.name || '').localeCompare(b.name || '');
-    if (sortBy === 'verified') return Number(!!b.verified) - Number(!!a.verified) || Number(b.rating || 0) - Number(a.rating || 0);
+    return `${pro.name} ${pro.specialization} ${pro.type} ${pro.city}`.toLowerCase().includes(q);
+  }).sort((a, b) => {
+    if (sortBy === 'az') return a.name.localeCompare(b.name);
+    if (sortBy === 'verified') return Number(b.verified) - Number(a.verified) || Number(b.rating || 0) - Number(a.rating || 0);
     return Number(b.rating || 0) - Number(a.rating || 0);
   });
+
+  const handleConsult = async (professional: DirectoryEntry) => {
+    if (!user) {
+      Alert.alert('Sign in required', 'Sign in to request a consultation.');
+      router.push('/(auth)/login');
+      return;
+    }
+    if (!professional.serviceId || !professional.vendorId) {
+      Alert.alert('Booking unavailable', 'This professional has not listed a bookable service yet. Use WhatsApp to contact them directly.');
+      return;
+    }
+
+    setBookingId(professional.id);
+    try {
+      const response = await apiFetch('/api/bookings', {
+        method: 'POST',
+        body: JSON.stringify({
+          serviceId: professional.serviceId,
+          vendorId: professional.vendorId,
+          description: `Consultation request for ${professional.name}`
+        })
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || `Could not create booking (HTTP ${response.status})`);
+      }
+      const booking = await response.json();
+      router.push({ pathname: '/booking/[id]', params: { id: booking.id, name: professional.name } });
+    } catch (error) {
+      Alert.alert('Could not start consultation', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setBookingId(null);
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -44,7 +156,7 @@ export default function MarketplaceScreen() {
       <View style={[styles.header, { backgroundColor: colors.surfaceCard, borderBottomColor: colors.surfaceBorder }]}>
         <View style={styles.titleRow}>
           <Scale size={20} color={colors.primary} />
-          <Text style={[styles.titleText, { color: colors.textPrimary }]}>Verified Legal Advocates</Text>
+          <Text numberOfLines={1} style={[styles.titleText, { color: colors.textPrimary }]}>Verified Professionals</Text>
         </View>
         <Text style={[styles.subtitleText, { color: colors.textMuted }]}>Find verified advocates near you</Text>
 
@@ -81,7 +193,7 @@ export default function MarketplaceScreen() {
             </TouchableOpacity>
           ))}
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginTop: 10, gap: 6 }}>
           <Text style={{ fontSize: 11, fontWeight: '700', color: colors.textMuted }}>SORT</Text>
           {SORTS.map(s => (
             <TouchableOpacity key={s.k} onPress={() => setSortBy(s.k)} style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: sortBy === s.k ? colors.primary : colors.surface, borderWidth: 1, borderColor: colors.surfaceBorder }}>
@@ -89,7 +201,9 @@ export default function MarketplaceScreen() {
             </TouchableOpacity>
           ))}
         </View>
-        <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 8 }}>{filtered.length} advocate{filtered.length === 1 ? '' : 's'}</Text>
+        <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 8 }}>
+          {filtered.length} professional{filtered.length === 1 ? '' : 's'}
+        </Text>
       </View>
 
       {/* Advocates List */}
@@ -100,20 +214,34 @@ export default function MarketplaceScreen() {
           { paddingBottom: insets.bottom + 90 }
         ]} 
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
       >
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 36 }} />
+        ) : isError ? (
           <View style={styles.emptyBox}>
-            <Text style={[styles.emptyText, { color: colors.textMuted }]}>No advocates found matching criteria.</Text>
+            <Text style={[styles.emptyText, { color: colors.danger }]}>
+              {error instanceof Error ? error.message : 'The directory could not be loaded.'}
+            </Text>
+            <TouchableOpacity onPress={() => refetch()} style={[styles.consultBtn, { backgroundColor: colors.primary, marginTop: 14 }]}>
+              <Text style={styles.consultBtnText}>Try again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : filtered.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+              {professionals.length === 0 ? 'No verified professionals are listed yet.' : 'No professionals match those filters.'}
+            </Text>
           </View>
         ) : (
-          filtered.map((pro: any, idx: number) => {
+          filtered.map((pro, idx) => {
             const cleanPhone = (pro.contactPhone || '').replace(/[^0-9]/g, '');
             return (
               <View key={`${pro.id}-${idx}`} style={[styles.proCard, { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceBorder }]}>
                 <View style={styles.proCardTop}>
                   <View style={styles.proInfoCol}>
                     <View style={styles.proNameRow}>
-                      <Text style={[styles.proName, { color: colors.textPrimary }]}>{pro.name}</Text>
+                      <Text numberOfLines={2} style={[styles.proName, { color: colors.textPrimary }]}>{pro.name}</Text>
                       {pro.verified && <ShieldCheck size={16} color={colors.primary} />}
                     </View>
                     <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
@@ -123,13 +251,13 @@ export default function MarketplaceScreen() {
                     <Text style={[styles.proSpecialty, { color: colors.primary }]}>{pro.specialization || pro.type}</Text>
                     <View style={styles.proLocationRow}>
                       <MapPin size={12} color={colors.textMuted} />
-                      <Text style={[styles.proLocationText, { color: colors.textSecondary }]}>{pro.location}</Text>
+                      <Text numberOfLines={1} style={[styles.proLocationText, { color: colors.textSecondary }]}>{pro.location}</Text>
                     </View>
                   </View>
 
                   <View style={styles.ratingBadge}>
                     <Star size={12} color="#f59e0b" fill="#f59e0b" />
-                    <Text style={styles.ratingText}>{pro.rating || '5.0'}</Text>
+                    <Text style={styles.ratingText}>{pro.rating ? Number(pro.rating).toFixed(1) : 'New'}</Text>
                   </View>
                 </View>
 
@@ -152,13 +280,18 @@ export default function MarketplaceScreen() {
                     )}
                   </View>
 
-                  <TouchableOpacity
-                    onPress={() => router.push({ pathname: '/booking/[id]', params: { id: pro.id, name: pro.name } })}
-                    style={[styles.consultBtn, { backgroundColor: colors.primary }]}
-                  >
-                    <Text style={styles.consultBtnText}>Consult</Text>
-                    <ArrowRight size={14} color="#ffffff" />
-                  </TouchableOpacity>
+                  {(pro.serviceId && pro.vendorId) && (
+                    <TouchableOpacity
+                      onPress={() => handleConsult(pro)}
+                      disabled={bookingId !== null}
+                      style={[styles.consultBtn, { backgroundColor: colors.primary }]}
+                    >
+                      {bookingId === pro.id
+                        ? <ActivityIndicator size="small" color="#ffffff" />
+                        : <Text style={styles.consultBtnText}>Book</Text>}
+                      <ArrowRight size={14} color="#ffffff" />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             );
@@ -188,6 +321,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   titleText: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 18,
     fontWeight: '800',
     color: '#ffffff',
@@ -278,6 +413,7 @@ const styles = StyleSheet.create({
   },
   proInfoCol: {
     flex: 1,
+    minWidth: 0,
     paddingRight: 8,
   },
   proNameRow: {
@@ -286,6 +422,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   proName: {
+    flexShrink: 1,
     fontSize: 16,
     fontWeight: '800',
     color: '#ffffff',
@@ -374,4 +511,3 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 });
-

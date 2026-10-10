@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, Switch, Share, Modal, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, Switch, Share, Modal, ActivityIndicator, Linking, RefreshControl, TextInput } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { apiFetch } from '../../lib/api';
@@ -23,6 +24,7 @@ import {
   CheckCircle2,
   MessageSquare,
   CreditCard,
+  Bell,
   X,
   ArrowUpRight,
   Sparkles
@@ -38,6 +40,30 @@ interface CreditPackage {
   description?: string;
 }
 
+interface PaymentMethod {
+  id: string;
+  name: string;
+  type: string;
+  active: boolean;
+  instructions?: string;
+  description?: string;
+  fields?: { name: string; label?: string; type?: string; required?: boolean }[];
+}
+
+interface MobilePlan {
+  id: string;
+  name: string;
+  type: string;
+  userType: string;
+  price: number;
+  credits: number;
+  monthlyCredits?: number;
+  storageMb?: number;
+  billingCycle?: string;
+  description?: string;
+  features?: string[];
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, profile, signOut } = useAuth();
@@ -48,7 +74,15 @@ export default function ProfileScreen() {
   const { data: storage } = useChatStorage();
   const [linkingLoading, setLinkingLoading] = useState(false);
   const [showPackagesModal, setShowPackagesModal] = useState(false);
+  const [showPlansModal, setShowPlansModal] = useState(false);
   const [purchasingId, setPurchasingId] = useState<string | null>(null);
+  const [selectedPaymentProvider, setSelectedPaymentProvider] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [manualPaymentMethod, setManualPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [manualPaymentData, setManualPaymentData] = useState<Record<string, any> | null>(null);
+  const [manualFieldValues, setManualFieldValues] = useState<Record<string, string>>({});
+  const [manualFiles, setManualFiles] = useState<Record<string, DocumentPicker.DocumentPickerAsset>>({});
+  const [showManualPaymentModal, setShowManualPaymentModal] = useState(false);
 
   // Fetch linked channels
   const { data: linkedChannels = [], refetch: refetchLinks } = useQuery<{ channel: string; linked_at: string }[]>({
@@ -62,20 +96,51 @@ export default function ProfileScreen() {
   });
 
   // Fetch credit packages
-  const { data: creditPackages = [], isLoading: packagesLoading } = useQuery<CreditPackage[]>({
+  const { data: creditPackages = [], isLoading: packagesLoading, error: packagesError } = useQuery<CreditPackage[]>({
     queryKey: ['credit-packages'],
     queryFn: async () => {
       const res = await apiFetch('/api/credit-packages');
-      if (!res.ok) {
-        return [
-          { id: 'cp-starter', name: 'Starter Civic Pack', credits: 50, price: 500, bonus: 0 },
-          { id: 'cp-standard', name: 'Standard Citizen Pack', credits: 200, price: 1800, bonus: 20 },
-          { id: 'cp-pro', name: 'Pro Legal Pack', credits: 500, price: 4000, bonus: 50 }
-        ];
-      }
-      return res.json();
+      if (!res.ok) throw new Error(`Could not load credit packages (HTTP ${res.status})`);
+      const packages = await res.json();
+      if (!Array.isArray(packages)) throw new Error('The credit package response was invalid.');
+      return packages;
     }
   });
+
+  const { data: paymentMethods = [], isLoading: paymentMethodsLoading, error: paymentMethodsError } = useQuery<PaymentMethod[]>({
+    queryKey: ['payment-methods'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/payment-methods');
+      if (!res.ok) throw new Error(`Could not load payment methods (HTTP ${res.status})`);
+      const methods = await res.json();
+      if (!Array.isArray(methods)) throw new Error('The payment method response was invalid.');
+      return methods;
+    }
+  });
+
+  const { data: plans = [], isLoading: plansLoading, error: plansError } = useQuery<MobilePlan[]>({
+    queryKey: ['mobile-plans'],
+    queryFn: async () => {
+      const res = await apiFetch('/api/plans');
+      if (!res.ok) throw new Error(`Could not load plans (HTTP ${res.status})`);
+      const allPlans = await res.json();
+      if (!Array.isArray(allPlans)) throw new Error('The plan response was invalid.');
+      return allPlans.filter((plan: MobilePlan) => plan.userType === 'user');
+    }
+  });
+
+  const onlineProviderTypes = ['paystack', 'flutterwave', 'bachs'];
+  const availablePaymentMethods = paymentMethods.filter((method, index, allMethods) =>
+    method.active &&
+    onlineProviderTypes.includes(method.type) &&
+    allMethods.findIndex(candidate => candidate.active && candidate.type === method.type) === index
+  );
+  const manualPaymentMethods = paymentMethods.filter(method =>
+    method.active && !onlineProviderTypes.includes(method.type) && method.type !== 'stripe'
+  );
+  const selectablePaymentMethods = [...availablePaymentMethods, ...manualPaymentMethods];
+  const selectedMethod = selectablePaymentMethods.find(method => method.id === selectedPaymentProvider)
+    || selectablePaymentMethods[0];
 
   const referralCode = profile?.referralCode || `SABI${(user?.id || 'CITIZEN').substring(0, 6).toUpperCase()}`;
 
@@ -84,21 +149,35 @@ export default function ProfileScreen() {
       Alert.alert('Sign In Required', 'Please sign in to purchase credits.');
       return;
     }
+    if (!selectedMethod) {
+      Alert.alert('Payment unavailable', 'No supported active payment provider is configured.');
+      return;
+    }
+
+    const paymentData = {
+      type: 'credit_purchase',
+      amount: pkg.price,
+      currency: 'NGN',
+      description: `Purchase ${pkg.name} (${pkg.credits} credits)`,
+      metadata: { packageId: pkg.id, credits: pkg.credits + (pkg.bonus || 0) }
+    };
+    if (manualPaymentMethods.some(method => method.id === selectedMethod.id)) {
+      setManualPaymentMethod(selectedMethod);
+      setManualPaymentData(paymentData);
+      setManualFieldValues({});
+      setManualFiles({});
+      setShowPackagesModal(false);
+      setShowManualPaymentModal(true);
+      return;
+    }
 
     setPurchasingId(pkg.id);
     try {
       const res = await apiFetch('/api/payments/initiate', {
         method: 'POST',
         body: JSON.stringify({
-          provider: 'paystack',
-          type: 'credit_purchase',
-          amount: pkg.price,
-          currency: 'NGN',
-          description: `Purchase ${pkg.name} (${pkg.credits} credits)`,
-          metadata: {
-            packageId: pkg.id,
-            credits: pkg.credits + (pkg.bonus || 0)
-          }
+          provider: selectedMethod.type,
+          ...paymentData
         })
       });
 
@@ -120,6 +199,156 @@ export default function ProfileScreen() {
       Alert.alert('Payment Error', err.message || 'Could not start payment. Please try again.');
     } finally {
       setPurchasingId(null);
+    }
+  };
+
+  const handlePurchasePlan = async (plan: MobilePlan) => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in to select a plan.');
+      return;
+    }
+    if (plan.price <= 0) {
+      Alert.alert('Free plan', 'Your current free allowance is available on this account.');
+      return;
+    }
+    if (!selectedMethod) {
+      Alert.alert('Payment unavailable', 'No supported active payment provider is configured.');
+      return;
+    }
+
+    const paymentData = {
+      type: 'subscription',
+      currency: 'NGN',
+      description: `${plan.name} plan`,
+      metadata: { planId: plan.id }
+    };
+    if (manualPaymentMethods.some(method => method.id === selectedMethod.id)) {
+      setManualPaymentMethod(selectedMethod);
+      setManualPaymentData(paymentData);
+      setManualFieldValues({});
+      setManualFiles({});
+      setShowPlansModal(false);
+      setShowManualPaymentModal(true);
+      return;
+    }
+
+    setPurchasingId(`plan:${plan.id}`);
+    try {
+      const response = await apiFetch('/api/payments/initiate', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: selectedMethod.type,
+          ...paymentData
+        })
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `Could not start checkout (HTTP ${response.status})`);
+      }
+      const checkout = await response.json();
+      const checkoutUrl = checkout.authorizationUrl || checkout.redirectUrl;
+      if (!checkoutUrl) throw new Error('The payment provider did not return a checkout link.');
+      setShowPlansModal(false);
+      await Linking.openURL(checkoutUrl);
+    } catch (error) {
+      Alert.alert('Plan checkout error', error instanceof Error ? error.message : 'Could not start checkout.');
+    } finally {
+      setPurchasingId(null);
+    }
+  };
+
+  const pickManualPaymentFile = async (fieldName: string) => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+      if (!result.canceled && result.assets[0]) {
+        setManualFiles(current => ({ ...current, [fieldName]: result.assets[0] }));
+      }
+    } catch (error) {
+      Alert.alert('File selection failed', error instanceof Error ? error.message : 'Could not select a file.');
+    }
+  };
+
+  const submitManualPayment = async () => {
+    if (!manualPaymentMethod || !manualPaymentData) return;
+    const fields = manualPaymentMethod.fields || [];
+    if (!fields.length && !manualPaymentMethod.instructions?.trim()) {
+      Alert.alert('Payment method unavailable', 'This manual payment method has no instructions configured. Please contact support.');
+      return;
+    }
+    const missingField = fields.find(field => {
+      if (!field.required) return false;
+      return field.type === 'file'
+        ? !manualFiles[field.name]
+        : !manualFieldValues[field.name]?.trim();
+    });
+    if (missingField) {
+      Alert.alert('Required information', `Please complete ${missingField.label || missingField.name}.`);
+      return;
+    }
+
+    setPurchasingId('manual-payment');
+    try {
+      const submittedFields = await Promise.all(fields.map(async field => {
+        let value = manualFieldValues[field.name] || '';
+        const file = manualFiles[field.name];
+        if (file) {
+          const form = new FormData();
+          form.append('file', {
+            uri: file.uri,
+            name: file.name,
+            type: file.mimeType || 'application/octet-stream'
+          } as any);
+          const uploadResponse = await apiFetch('/api/upload', { method: 'POST', body: form });
+          if (!uploadResponse.ok) throw new Error(`Could not upload ${file.name}.`);
+          const uploaded = await uploadResponse.json();
+          value = uploaded.url;
+        }
+        return {
+          name: field.name,
+          type: field.type || 'text',
+          required: !!field.required,
+          value
+        };
+      }));
+
+      const response = await apiFetch('/api/payments/initiate', {
+        method: 'POST',
+        body: JSON.stringify({
+          provider: manualPaymentMethod.id,
+          ...manualPaymentData,
+          metadata: { ...manualPaymentData.metadata, manualFields: submittedFields }
+        })
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Could not submit payment for approval.');
+      }
+
+      setShowManualPaymentModal(false);
+      setManualPaymentMethod(null);
+      setManualPaymentData(null);
+      Alert.alert('Payment submitted', 'Your payment details were sent for review. Your plan or credits will update after approval.', [
+        { text: 'OK', onPress: () => queryClient.invalidateQueries({ queryKey: ['pending-payments'] }) }
+      ]);
+    } catch (error) {
+      Alert.alert('Payment error', error instanceof Error ? error.message : 'Could not submit payment.');
+    } finally {
+      setPurchasingId(null);
+    }
+  };
+
+  const refreshProfile = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['credit-packages'] }),
+        queryClient.invalidateQueries({ queryKey: ['payment-methods'] }),
+        queryClient.invalidateQueries({ queryKey: ['mobile-plans'] }),
+        refetchLinks(),
+        refreshCredits()
+      ]);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -208,6 +437,7 @@ export default function ProfileScreen() {
           { paddingBottom: insets.bottom + 90 }
         ]} 
         showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshProfile} tintColor={colors.primary} />}
       >
         {/* Profile Card */}
         <View style={[styles.profileCard, { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceBorder }]}>
@@ -257,24 +487,22 @@ export default function ProfileScreen() {
 
           {/* Top Up Credits Button */}
           {user && (
-            <TouchableOpacity
-              onPress={() => setShowPackagesModal(true)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                backgroundColor: colors.primary,
-                borderRadius: 10,
-                paddingVertical: 10,
-                marginTop: 10
-              }}
-            >
-              <Coins size={15} color="#ffffff" />
-              <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 13 }}>
-                Top Up Credits
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.purchaseActions}>
+              <TouchableOpacity
+                onPress={() => setShowPackagesModal(true)}
+                style={[styles.purchaseAction, { backgroundColor: colors.primary }]}
+              >
+                <Coins size={15} color="#ffffff" />
+                <Text style={styles.purchaseActionText}>Top up</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setShowPlansModal(true)}
+                style={[styles.purchaseAction, { backgroundColor: colors.primarySoft, borderColor: colors.primary, borderWidth: 1 }]}
+              >
+                <Sparkles size={15} color={colors.primary} />
+                <Text style={[styles.purchaseActionText, { color: colors.primary }]}>View plans</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           {user && storage && (
@@ -372,6 +600,17 @@ export default function ProfileScreen() {
             />
           </View>
 
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/notifications')}
+            style={[styles.settingItem, { borderBottomColor: colors.surfaceBorder }]}
+          >
+            <View style={styles.settingItemLeft}>
+              <Bell size={18} color={colors.primary} />
+              <Text style={[styles.settingItemLabel, { color: colors.textPrimary }]}>Notifications</Text>
+            </View>
+            <Text style={[styles.settingItemValue, { color: colors.primary }]}>Manage</Text>
+          </TouchableOpacity>
+
           <View style={[styles.settingItem, { borderBottomColor: colors.surfaceBorder }]}>
             <View style={styles.settingItemLeft}>
               <Globe size={18} color={colors.textMuted} />
@@ -388,15 +627,6 @@ export default function ProfileScreen() {
             <Text style={[styles.statutoryBadge, { color: colors.success }]}>Constitution Verified</Text>
           </View>
         </View>
-
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => router.push('/bookings')}
-          style={[styles.settingsCard, { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceBorder, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 }]}
-        >
-          <Text style={[styles.settingItemLabel, { color: colors.textPrimary }]}>My Consultations & Booking History</Text>
-          <Text style={{ color: colors.primary, fontWeight: '800' }}>View</Text>
-        </TouchableOpacity>
 
         {/* Referral Card */}
         <View style={[styles.referralCard, { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceBorder }]}>
@@ -455,6 +685,45 @@ export default function ProfileScreen() {
               <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: 32 }} />
             ) : (
               <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
+                <Text style={[styles.paymentLabel, { color: colors.textMuted }]}>PAY WITH</Text>
+                {paymentMethodsLoading ? (
+                  <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: 12 }} />
+                ) : paymentMethodsError ? (
+                  <Text style={[styles.emptyMessage, { color: colors.danger }]}>
+                    {paymentMethodsError instanceof Error ? paymentMethodsError.message : 'Payment methods are unavailable.'}
+                  </Text>
+                ) : selectablePaymentMethods.length === 0 ? (
+                  <Text style={[styles.emptyMessage, { color: colors.textMuted }]}>
+                    No active payment methods are configured. Please contact support.
+                  </Text>
+                ) : (
+                  <View style={styles.providerOptions}>
+                    {selectablePaymentMethods.map(method => (
+                      <TouchableOpacity
+                        key={method.id}
+                        onPress={() => setSelectedPaymentProvider(method.id)}
+                        style={[
+                          styles.providerOption,
+                          {
+                            backgroundColor: selectedMethod?.id === method.id ? colors.primarySoft : colors.surface,
+                            borderColor: selectedMethod?.id === method.id ? colors.primary : colors.surfaceBorder
+                          }
+                        ]}
+                      >
+                        <Text style={{ color: selectedMethod?.id === method.id ? colors.primary : colors.textSecondary, fontSize: 12, fontWeight: '700' }}>
+                          {method.name}{manualPaymentMethods.some(item => item.id === method.id) ? ' · Manual' : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {creditPackages.length === 0 && (
+                  <Text style={[styles.emptyMessage, { color: packagesError ? colors.danger : colors.textMuted }]}>
+                    {packagesError instanceof Error
+                      ? packagesError.message
+                      : 'No credit packages are currently available.'}
+                  </Text>
+                )}
                 {creditPackages.map((pkg) => {
                   const isBusy = purchasingId === pkg.id;
                   const totalPackageCredits = pkg.credits + (pkg.bonus || 0);
@@ -463,35 +732,35 @@ export default function ProfileScreen() {
                     <TouchableOpacity
                       key={pkg.id}
                       activeOpacity={0.8}
-                      disabled={purchasingId !== null}
+                      disabled={purchasingId !== null || !selectedMethod}
                       onPress={() => handlePurchasePackage(pkg)}
                       style={[
                         styles.packageCard,
                         { backgroundColor: colors.surface, borderColor: colors.surfaceBorder }
                       ]}
                     >
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <Text style={[styles.packageName, { color: colors.textPrimary }]}>{pkg.name}</Text>
                           {pkg.bonus ? (
                             <View style={[styles.bonusBadge, { backgroundColor: colors.successSoft }]}>
-                              <Text style={[styles.bonusBadgeText, { color: colors.success }]}>+{pkg.bonus} Free</Text>
+                              <Text style={[styles.bonusBadgeText, { color: colors.success }]}>+{pkg.bonus} bonus</Text>
                             </View>
                           ) : null}
                         </View>
                         <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '800', marginTop: 2 }}>
-                          {totalPackageCredits} AI Credits
+                          {totalPackageCredits} credits
                         </Text>
                         {pkg.description ? (
-                          <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>{pkg.description}</Text>
+                          <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }} numberOfLines={2}>{pkg.description}</Text>
                         ) : null}
                       </View>
 
-                      <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                      <View style={{ alignItems: 'flex-end', justifyContent: 'center', marginLeft: 10 }}>
                         <Text style={[styles.packagePrice, { color: colors.textPrimary }]}>
                           ₦{pkg.price.toLocaleString()}
                         </Text>
-                        <View style={[styles.buyBtn, { backgroundColor: colors.primary }]}>
+                        <View style={[styles.buyBtn, { backgroundColor: selectedMethod ? colors.primary : colors.textMuted }]}>
                           {isBusy ? (
                             <ActivityIndicator size="small" color="#ffffff" />
                           ) : (
@@ -510,9 +779,186 @@ export default function ProfileScreen() {
 
             <View style={{ marginTop: 12, alignItems: 'center' }}>
               <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center' }}>
-                Secured by Paystack. Credits are instantly credited to your unified SabiRight account.
+                Checkout is secured by your selected provider. Credits are added after payment confirmation.
               </Text>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showPlansModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPlansModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceBorder }]}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>Plans</Text>
+                <Text style={{ fontSize: 12, color: colors.textMuted }}>Compare credits, storage and benefits</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowPlansModal(false)} style={styles.modalCloseBtn}>
+                <X size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            {plansLoading ? (
+              <ActivityIndicator size="large" color={colors.primary} style={{ marginVertical: 32 }} />
+            ) : plansError ? (
+              <Text style={[styles.emptyMessage, { color: colors.danger }]}>
+                {plansError instanceof Error ? plansError.message : 'Plans are unavailable.'}
+              </Text>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 460 }}>
+                {plans.map(plan => {
+                  const isBusy = purchasingId === `plan:${plan.id}`;
+                  const monthlyCredits = plan.monthlyCredits ?? plan.credits;
+                  return (
+                    <View key={plan.id} style={[styles.planCard, { backgroundColor: colors.surface, borderColor: colors.surfaceBorder }]}>
+                      <View style={styles.planHeading}>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[styles.packageName, { color: colors.textPrimary }]}>{plan.name}</Text>
+                          <Text style={[styles.planAllocation, { color: colors.primary }]}>
+                            {monthlyCredits} credits · {plan.storageMb ?? 0.5} MB storage
+                          </Text>
+                        </View>
+                        <Text style={[styles.packagePrice, { color: colors.textPrimary }]}>
+                          {plan.price > 0 ? `₦${plan.price.toLocaleString()}` : 'Free'}
+                        </Text>
+                      </View>
+                      {plan.description ? (
+                        <Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6 }}>{plan.description}</Text>
+                      ) : null}
+                      {!!plan.features?.length && (
+                        <View style={styles.planFeatures}>
+                          {plan.features.slice(0, 4).map((feature, index) => (
+                            <Text key={`${plan.id}-feature-${index}`} style={{ color: colors.textSecondary, fontSize: 12, lineHeight: 17 }}>
+                              • {feature}
+                            </Text>
+                          ))}
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        onPress={() => handlePurchasePlan(plan)}
+                        disabled={purchasingId !== null || (plan.price > 0 && !selectedMethod)}
+                        style={[styles.planButton, { backgroundColor: plan.price > 0 && selectedMethod ? colors.primary : colors.primarySoft }]}
+                      >
+                        {isBusy ? <ActivityIndicator size="small" color="#ffffff" /> : (
+                          <Text style={{ color: plan.price > 0 && selectedMethod ? '#ffffff' : colors.primary, fontSize: 12, fontWeight: '800' }}>
+                            {plan.price > 0 ? 'Choose plan' : 'Free plan'}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+                {plans.length === 0 && (
+                  <Text style={[styles.emptyMessage, { color: colors.textMuted }]}>No citizen plans are currently available.</Text>
+                )}
+                {selectablePaymentMethods.length > 0 && (
+                  <View style={{ marginTop: 6 }}>
+                    <Text style={[styles.paymentLabel, { color: colors.textMuted }]}>PAY WITH</Text>
+                    <View style={styles.providerOptions}>
+                      {selectablePaymentMethods.map(method => (
+                        <TouchableOpacity
+                          key={method.id}
+                          onPress={() => setSelectedPaymentProvider(method.id)}
+                          style={[
+                            styles.providerOption,
+                            {
+                              backgroundColor: selectedMethod?.id === method.id ? colors.primarySoft : colors.surface,
+                              borderColor: selectedMethod?.id === method.id ? colors.primary : colors.surfaceBorder
+                            }
+                          ]}
+                        >
+                          <Text style={{ color: selectedMethod?.id === method.id ? colors.primary : colors.textSecondary, fontSize: 12, fontWeight: '700' }}>
+                            {method.name}{manualPaymentMethods.some(item => item.id === method.id) ? ' · Manual' : ''}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showManualPaymentModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowManualPaymentModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceBorder }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>{manualPaymentMethod?.name || 'Manual payment'}</Text>
+                <Text style={{ fontSize: 12, color: colors.textMuted }}>Follow the instructions, then submit your payment details.</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowManualPaymentModal(false)} style={styles.modalCloseBtn}>
+                <X size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }}>
+              {manualPaymentMethod?.instructions ? (
+                <Text style={[styles.manualInstructions, { color: colors.textSecondary, backgroundColor: colors.surface }]}>
+                  {manualPaymentMethod.instructions}
+                </Text>
+              ) : null}
+              {manualPaymentMethod?.description ? (
+                <Text style={{ color: colors.textMuted, fontSize: 12, lineHeight: 18, marginBottom: 12 }}>
+                  {manualPaymentMethod.description}
+                </Text>
+              ) : null}
+              {(manualPaymentMethod?.fields || []).map(field => (
+                <View key={field.name} style={{ marginBottom: 12 }}>
+                  <Text style={[styles.paymentLabel, { color: colors.textSecondary }]}>
+                    {field.label || field.name}{field.required ? ' *' : ''}
+                  </Text>
+                  {field.type === 'file' ? (
+                    <TouchableOpacity
+                      onPress={() => pickManualPaymentFile(field.name)}
+                      style={[styles.manualField, { borderColor: colors.surfaceBorder, backgroundColor: colors.surface }]}
+                    >
+                      <Text numberOfLines={1} style={{ color: manualFiles[field.name] ? colors.textPrimary : colors.textMuted, fontSize: 13 }}>
+                        {manualFiles[field.name]?.name || 'Choose receipt or supporting file'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TextInput
+                      value={manualFieldValues[field.name] || ''}
+                      onChangeText={value => setManualFieldValues(current => ({ ...current, [field.name]: value }))}
+                      placeholder={field.label || field.name}
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType={field.type === 'number' ? 'numeric' : field.type === 'email' ? 'email-address' : 'default'}
+                      multiline={field.type === 'textarea'}
+                      style={[
+                        styles.manualField,
+                        { borderColor: colors.surfaceBorder, backgroundColor: colors.surface, color: colors.textPrimary }
+                      ]}
+                    />
+                  )}
+                </View>
+              ))}
+              {!manualPaymentMethod?.fields?.length && !manualPaymentMethod?.instructions && (
+                <Text style={[styles.emptyMessage, { color: colors.textMuted }]}>
+                  This payment method has no payment instructions configured. Please contact support.
+                </Text>
+              )}
+              <TouchableOpacity
+                disabled={purchasingId === 'manual-payment'}
+                onPress={submitManualPayment}
+                style={[styles.planButton, { backgroundColor: colors.primary, marginTop: 4 }]}
+              >
+                {purchasingId === 'manual-payment'
+                  ? <ActivityIndicator size="small" color="#ffffff" />
+                  : <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '800' }}>Submit for review</Text>}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -592,6 +1038,26 @@ const styles = StyleSheet.create({
   creditsValue: {
     fontSize: 16,
     fontWeight: '900',
+  },
+  purchaseActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  purchaseAction: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  purchaseActionText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: 13,
   },
   settingsCard: {
     borderRadius: 16,
@@ -719,6 +1185,73 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: 10,
+  },
+  paymentLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 7,
+  },
+  providerOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  providerOption: {
+    maxWidth: '100%',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  emptyMessage: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    paddingVertical: 18,
+  },
+  planCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+  },
+  planHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  planAllocation: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  planFeatures: {
+    gap: 4,
+    marginTop: 8,
+  },
+  manualInstructions: {
+    fontSize: 13,
+    lineHeight: 20,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  manualField: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+  },
+  planButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
+    borderRadius: 9,
+    marginTop: 10,
   },
   packageName: {
     fontSize: 14,

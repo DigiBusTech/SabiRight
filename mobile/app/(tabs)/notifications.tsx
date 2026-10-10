@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bell, Check, RefreshCw } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
@@ -70,7 +70,7 @@ export default function NotificationsScreen() {
           registered ? 'Notifications enabled' : 'Notifications not enabled',
           registered
             ? 'This device can now receive SabiRight push alerts.'
-            : 'Allow notifications and configure the EAS project ID to enable alerts.'
+            : 'Notifications are not enabled. Check device permission and the app push configuration.'
         );
       }
     } catch (error) {
@@ -106,7 +106,10 @@ export default function NotificationsScreen() {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadNotifications} tintColor={colors.primary} />}
+      >
         <View style={styles.heading}>
           <View style={styles.headingText}>
             <Text style={[styles.title, { color: colors.textPrimary }]}>Notifications</Text>

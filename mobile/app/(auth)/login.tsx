@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Image, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { Mail, Lock, User, ArrowLeft } from 'lucide-react-native';
+import { Mail, Lock, User, ArrowLeft, CheckSquare, Square } from 'lucide-react-native';
 import { useTheme } from '../../context/ThemeContext';
+import { BrandLogo } from '../../components/BrandLogo';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -14,11 +15,17 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [acceptedDisclaimer, setAcceptedDisclaimer] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleAuth = async () => {
     if (!email || !password) {
       Alert.alert('Required Fields', 'Please enter your email and password.');
+      return;
+    }
+    if (!isLogin && (!acceptedTerms || !acceptedDisclaimer)) {
+      Alert.alert('Agreement Required', 'Accept the Terms and Conditions and legal guidance disclaimer to create an account.');
       return;
     }
 
@@ -33,7 +40,13 @@ export default function LoginScreen() {
           email,
           password,
           options: {
-            data: { full_name: fullName, phone_number: phoneNumber }
+            data: {
+              full_name: fullName,
+              phone_number: phoneNumber,
+              terms_accepted: true,
+              legal_disclaimer_accepted: true,
+              legal_acceptance_at: new Date().toISOString()
+            }
           }
         });
         if (error) throw error;
@@ -58,11 +71,7 @@ export default function LoginScreen() {
 
         <View style={styles.headerBox}>
           <View style={styles.brandRow}>
-            <Image
-              source={require('../../assets/sabiright-logo.png')}
-              style={styles.brandLogoImage}
-              resizeMode="contain"
-            />
+            <BrandLogo height={40} />
           </View>
           <Text style={[styles.authTitle, { color: colors.textPrimary }]}>
             {isLogin ? 'Sign In to Your Account' : 'Create Free Account'}
@@ -86,6 +95,43 @@ export default function LoginScreen() {
                   style={[styles.textInput, { color: colors.textPrimary }]}
                 />
               </View>
+            </View>
+          )}
+
+          {!isLogin && (
+            <View style={styles.legalGroup}>
+              <TouchableOpacity
+                onPress={() => setAcceptedTerms(value => !value)}
+                style={styles.legalRow}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: acceptedTerms }}
+              >
+                {acceptedTerms
+                  ? <CheckSquare size={20} color={colors.primary} />
+                  : <Square size={20} color={colors.textMuted} />}
+                <Text style={[styles.legalText, { color: colors.textSecondary }]}>
+                  I accept the{' '}
+                  <Text
+                    style={{ color: colors.primary, fontWeight: '700', textDecorationLine: 'underline' }}
+                    onPress={() => Linking.openURL('https://www.sabiright.ng/terms')}
+                  >
+                    Terms and Conditions
+                  </Text>
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setAcceptedDisclaimer(value => !value)}
+                style={styles.legalRow}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: acceptedDisclaimer }}
+              >
+                {acceptedDisclaimer
+                  ? <CheckSquare size={20} color={colors.primary} />
+                  : <Square size={20} color={colors.textMuted} />}
+                <Text style={[styles.legalText, { color: colors.textSecondary }]}>
+                  I understand SabiRight provides guidance, not legal representation.
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -136,7 +182,11 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity 
-            onPress={() => setIsLogin(!isLogin)}
+            onPress={() => {
+              setIsLogin(!isLogin);
+              setAcceptedTerms(false);
+              setAcceptedDisclaimer(false);
+            }}
             style={styles.toggleRow}
           >
             <Text style={[styles.toggleText, { color: colors.textMuted }]}>
@@ -196,6 +246,20 @@ const styles = StyleSheet.create({
   },
   formCard: {
     gap: 16,
+  },
+  legalGroup: {
+    gap: 12,
+    marginTop: 2,
+  },
+  legalRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  legalText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
   },
   fieldGroup: {
     gap: 6,

@@ -3704,6 +3704,7 @@ AI:`;
       const { currency, provider, type, description, email, captchaToken } = req.body;
       const userId = (req as any).userId;
       let metadata: any = { ...(req.body.metadata || {}) };
+      const submittedManualFields = req.body.metadata?.manualFields;
       let amount = Number(req.body.amount);
 
       if (!userId || !provider || !type) {
@@ -3746,6 +3747,68 @@ AI:`;
         }
       }
 
+      const activeMethod = (await storage.getActivePaymentMethods())
+        .find((method: any) => method.id === provider || method.type === provider);
+      if (!activeMethod) {
+        return res.status(400).json({ error: 'The selected payment provider is inactive or unavailable.' });
+      }
+
+      if (!['paystack', 'flutterwave', 'bachs', 'stripe'].includes(provider)) {
+        const configuredFields = Array.isArray(activeMethod.fields) ? activeMethod.fields : [];
+        const submittedFields = Array.isArray(submittedManualFields) ? submittedManualFields : [];
+        const missingRequiredField = configuredFields.find((field: any) => {
+          if (!field.required) return false;
+          const submitted = submittedFields.find((item: any) => item?.name === field.name);
+          return typeof submitted?.value !== 'string' || !submitted.value.trim();
+        });
+        if (missingRequiredField) {
+          return res.status(400).json({
+            error: `Please provide the required field: ${missingRequiredField.label || missingRequiredField.name}`
+          });
+        }
+        const normalizedFields = configuredFields.map((field: any) => {
+          const submitted = submittedFields.find((item: any) => item?.name === field.name);
+          const value = typeof submitted?.value === 'string' ? submitted.value.trim() : '';
+          return {
+            name: field.name,
+            type: field.type || 'text',
+            required: !!field.required,
+            value
+          };
+        });
+        metadata = { ...metadata, manualFields: normalizedFields };
+        const payment = await storage.createPayment({
+          userId, amount, currency: currency || 'NGN', provider, type, description, metadata
+        });
+        return res.status(201).json({ ...payment, manual: true, pendingApproval: true });
+      }
+
+      let paystackPublicKey = '';
+      let paystackSecretKey = '';
+      if (provider === 'paystack') {
+        const [publicKeySetting, secretKeySetting] = await Promise.all([
+          storage.getAdminSetting('paystack_public_key'),
+          storage.getAdminSetting('paystack_secret_key')
+        ]);
+        paystackPublicKey = activeMethod.publicKey || publicKeySetting?.value || '';
+        paystackSecretKey = activeMethod.secretKey || secretKeySetting?.value || '';
+        if (!paystackPublicKey || !paystackSecretKey) {
+          return res.status(503).json({ error: 'Paystack is active but its API keys are not configured.' });
+        }
+      } else if (provider === 'flutterwave') {
+        if (!activeMethod.secretKey && !process.env.FLUTTERWAVE_SECRET_KEY) {
+          return res.status(503).json({ error: 'Flutterwave is active but its secret key is not configured.' });
+        }
+      } else if (provider === 'bachs') {
+        if (!activeMethod.secretKey && !process.env.BACHS_SECRET_KEY) {
+          return res.status(503).json({ error: 'Bachs is active but its secret key is not configured.' });
+        }
+      } else if (provider === 'stripe') {
+        return res.status(503).json({ error: 'Stripe checkout is temporarily disabled.' });
+      } else {
+        return res.status(400).json({ error: 'This payment provider is not supported for online checkout.' });
+      }
+
       // Create payment record
       const payment = await storage.createPayment({
         userId, amount, currency: currency || 'NGN', provider, type, description, metadata
@@ -3757,18 +3820,10 @@ AI:`;
       let accessCode = '';
       
       if (provider === 'paystack') {
-        // Get Paystack settings
-        const paystackPublicKey = await storage.getAdminSetting('paystack_public_key');
-        const paystackSecretKey = await storage.getAdminSetting('paystack_secret_key');
-        
-        if (!paystackSecretKey?.value || !paystackPublicKey?.value) {
-          return res.status(503).json({ error: 'Paystack not configured. Please set up API keys in admin settings.' });
-        }
-
         // Initialize Paystack service
         const paystack = new PaystackService({
-          secretKey: paystackSecretKey.value,
-          publicKey: paystackPublicKey.value
+          secretKey: paystackSecretKey,
+          publicKey: paystackPublicKey
         });
 
         // Initialize payment with Paystack
@@ -3806,9 +3861,7 @@ AI:`;
         // Stripe is temporarily disabled due to dependency issues
         return res.status(503).json({ error: 'Stripe is temporarily disabled. Please use Paystack or Flutterwave.' });
       } else if (provider === 'flutterwave') {
-        const paymentMethods = await storage.getPaymentMethods();
-        const fw: any = paymentMethods.find((m: any) => m.type === 'flutterwave' && m.active);
-        const fwSecretKey = fw?.secretKey || process.env.FLUTTERWAVE_SECRET_KEY;
+        const fwSecretKey = activeMethod.secretKey || process.env.FLUTTERWAVE_SECRET_KEY;
         const txRef = ((payment.metadata as any)?.reference) || `PAY-${payment.id}`;
 
         if (fwSecretKey) {
@@ -3862,8 +3915,7 @@ AI:`;
           }
         }
       } else if (provider === 'bachs') {
-        const paymentMethods = await storage.getPaymentMethods();
-        const bachsMethod: any = paymentMethods.find((m: any) => m.type === 'bachs' && m.active);
+        const bachsMethod: any = activeMethod;
         const bachsSecretKey = bachsMethod?.secretKey || process.env.BACHS_SECRET_KEY;
         if (!bachsSecretKey) {
           return res.status(503).json({ error: 'Bachs payment gateway is not configured or inactive.' });
@@ -3955,14 +4007,20 @@ AI:`;
   async function settlePaystackReference(reference: string, expectedUserId?: string): Promise<{ ok: boolean; status: string; error?: string; code?: number }> {
     const paymentMethods = await storage.getPaymentMethods();
     const paystackMethod: any = paymentMethods.find((m: any) => m.type === 'paystack' && m.active);
-    if (!paystackMethod?.secretKey) return { ok: false, status: 'failed', error: 'Paystack not configured or inactive', code: 503 };
+    const secretKeySetting = await storage.getAdminSetting('paystack_secret_key');
+    const publicKeySetting = await storage.getAdminSetting('paystack_public_key');
+    const secretKey = paystackMethod?.secretKey || secretKeySetting?.value;
+    if (!secretKey) return { ok: false, status: 'failed', error: 'Paystack not configured or inactive', code: 503 };
 
     const payment: any = await storage.getPaymentByReference(reference);
     if (!payment) return { ok: false, status: 'failed', error: 'Payment not found', code: 404 };
     if (expectedUserId && payment.userId !== expectedUserId) return { ok: false, status: 'failed', error: 'Forbidden', code: 403 };
     if (payment.status === 'completed') return { ok: true, status: 'success' };
 
-    const paystack = new PaystackService({ secretKey: paystackMethod.secretKey, publicKey: paystackMethod.publicKey || '' });
+    const paystack = new PaystackService({
+      secretKey,
+      publicKey: paystackMethod?.publicKey || publicKeySetting?.value || ''
+    });
     const verification = await paystack.verifyPayment(reference);
     if (!verification?.status || verification.data?.status !== 'success') {
       return { ok: false, status: verification?.data?.status || 'failed', error: 'Payment not successful', code: 402 };
@@ -3995,9 +4053,15 @@ AI:`;
 
       const paymentMethods = await storage.getPaymentMethods();
       const paystackMethod: any = paymentMethods.find((m: any) => m.type === 'paystack' && m.active);
-      if (!paystackMethod?.secretKey) return res.status(503).json({ error: 'Paystack not configured or inactive' });
+      const secretKeySetting = await storage.getAdminSetting('paystack_secret_key');
+      const publicKeySetting = await storage.getAdminSetting('paystack_public_key');
+      const secretKey = paystackMethod?.secretKey || secretKeySetting?.value;
+      if (!secretKey) return res.status(503).json({ error: 'Paystack not configured or inactive' });
 
-      const paystack = new PaystackService({ secretKey: paystackMethod.secretKey, publicKey: paystackMethod.publicKey || '' });
+      const paystack = new PaystackService({
+        secretKey,
+        publicKey: paystackMethod?.publicKey || publicKeySetting?.value || ''
+      });
       if (!paystack.verifyWebhookSignature(raw, signature)) {
         return res.status(401).json({ error: 'Invalid signature' });
       }

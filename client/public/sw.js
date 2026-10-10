@@ -2,7 +2,10 @@ const CACHE_NAME = 'sabiright-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
+  '/manifest.json',
   '/assets/sabiright-icon.png',
+  '/assets/sabiright-icon-192.png',
+  '/assets/sabiright-icon-512.png',
   '/assets/sabiright-logo.png',
   '/favicon.png'
 ];
@@ -89,6 +92,13 @@ self.addEventListener('fetch', (event) => {
           // (though for API usually we don't cache, but maybe for some GETs)
           return caches.match(event.request);
         })
+    );
+    return;
+  }
+
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match('/index.html'))
     );
     return;
   }

@@ -9,7 +9,7 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#020617",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/sabiright-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#020617"
     },

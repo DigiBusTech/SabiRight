@@ -736,7 +736,7 @@ export const supabaseStorage: IStorage = {
     if (filters?.verified !== undefined) q = q.eq('verified', filters.verified);
     const { data, error } = await q;
     if (error) throw error;
-    return (data || []).map((p: any) => {
+    const professionals = (data || []).map((p: any) => {
       const loc = p.location || {};
       const lat = p.latitude ?? loc.latitude;
       const lon = p.longitude ?? loc.longitude;
@@ -764,6 +764,12 @@ export const supabaseStorage: IStorage = {
         updatedAt: new Date(p.updated_at)
       };
     });
+    if (!filters?.city) return professionals;
+    const city = filters.city.toLowerCase();
+    return professionals.filter((professional: Professional) =>
+      [professional.location?.city, professional.location?.state, professional.location?.street]
+        .some(value => value?.toLowerCase().includes(city))
+    );
   },
 
   async getProfessionalById(professionalId: string): Promise<Professional | null> {
@@ -844,7 +850,8 @@ export const supabaseStorage: IStorage = {
     let q = supabase.from('vendor_services').select('*');
     if (filters?.vendorId) q = q.eq('professional_id', filters.vendorId);
     if (filters?.type) q = q.eq('type', filters.type);
-    const { data } = await q;
+    const { data, error } = await q;
+    if (error) throw error;
     return (data || []).map((s: any) => ({
       id: s.id,
       professionalId: s.professional_id,

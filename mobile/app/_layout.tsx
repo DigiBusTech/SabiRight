@@ -10,7 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { API_BASE_URL } from '../lib/api';
 import { syncRemoteMoatData } from '../lib/offlineStorage';
-import { registerMobilePush } from '../lib/pushNotifications';
+import { hasMobilePushProjectId, registerMobilePush } from '../lib/pushNotifications';
 
 const queryClient = new QueryClient();
 
@@ -29,7 +29,7 @@ function RootContent() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !hasMobilePushProjectId()) return;
     registerMobilePush(user.id).catch(error => {
       console.error('[MobilePush] Could not register push token:', error);
     });
@@ -52,7 +52,6 @@ function RootContent() {
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="bookings" />
         <Stack.Screen
           name="case-file/[id]"
           options={{

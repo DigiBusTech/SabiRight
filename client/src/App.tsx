@@ -14,6 +14,7 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import { SEO } from "@/components/SEO";
 import { FaviconManager } from "@/components/FaviconManager";
 import { Preloader } from "@/components/ui/Preloader";
+import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import About from "@/pages/About";
@@ -163,6 +164,7 @@ function App() {
                 <SEO />
                 <Router />
                 <Toaster />
+                <PwaInstallPrompt />
               </TooltipProvider>
             </ThemeProvider>
           </AuthProvider>

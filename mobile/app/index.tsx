@@ -8,7 +8,6 @@ import {
   FlatList, 
   StyleSheet, 
   useWindowDimensions, 
-  Alert,
   NativeSyntheticEvent,
   NativeScrollEvent 
 } from 'react-native';
@@ -16,10 +15,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { AlertTriangle, ArrowRight, Shield, Scale, CheckSquare, Square, Lock, Award } from 'lucide-react-native';
+import { AlertTriangle, ArrowRight, Shield, Scale, Award } from 'lucide-react-native';
 import { OFFLINE_LEGAL_MOAT } from '../lib/offlineStorage';
 import { EmergencyDeEscalationCard } from '../components/EmergencyDeEscalationCard';
 import { SplashScreenPreloader } from '../components/SplashScreenPreloader';
+import { BrandLogo } from '../components/BrandLogo';
 
 interface HeroSlide {
   id: string;
@@ -58,8 +58,6 @@ export default function WelcomeScreen() {
 
   const [activeSlideIndex, setActiveSlideIndex] = useState(0);
   const [showPreloader, setShowPreloader] = useState(true);
-  const [acceptedTerms, setAcceptedTerms] = useState(false);
-  const [acceptedDisclaimer, setAcceptedDisclaimer] = useState(false);
   const carouselRef = useRef<FlatList<HeroSlide>>(null);
 
   const carouselWidth = width - 36;
@@ -95,14 +93,6 @@ export default function WelcomeScreen() {
   };
 
   const handleProceedAuth = () => {
-    if (!acceptedTerms || !acceptedDisclaimer) {
-      Alert.alert(
-        'Legal Agreement Required',
-        'Please check both boxes to accept the Terms and Conditions and acknowledge the Legal Disclaimer before proceeding.',
-        [{ text: 'I Understand' }]
-      );
-      return;
-    }
     router.push('/(auth)/login');
   };
 
@@ -120,11 +110,7 @@ export default function WelcomeScreen() {
         {/* Brand Header */}
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <Image 
-              source={require('../assets/sabiright-logo.png')} 
-              style={styles.headerLogo} 
-              resizeMode="contain" 
-            />
+            <BrandLogo height={34} />
             <View style={[styles.statusBadge, { backgroundColor: colors.successSoft, borderColor: colors.success }]}>
               <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
               <Text style={[styles.statusText, { color: colors.success }]}>Works offline</Text>
@@ -247,55 +233,12 @@ export default function WelcomeScreen() {
           )}
         />
 
-        {/* Required Legal Disclaimers Checkboxes */}
-        <View style={[styles.disclaimerContainer, { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceBorder }]}>
-          <View style={styles.disclaimerHeader}>
-            <Lock size={14} color={colors.primary} />
-            <Text style={[styles.disclaimerHeaderText, { color: colors.textPrimary }]}>
-              Before you continue
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => setAcceptedTerms(!acceptedTerms)}
-            style={styles.checkboxRow}
-          >
-            {acceptedTerms ? (
-              <CheckSquare size={20} color={colors.primary} />
-            ) : (
-              <Square size={20} color={colors.textMuted} />
-            )}
-            <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>
-              I accept the <Text style={[styles.linkText, { color: colors.primary }]}>Terms and Conditions</Text>
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => setAcceptedDisclaimer(!acceptedDisclaimer)}
-            style={styles.checkboxRow}
-          >
-            {acceptedDisclaimer ? (
-              <CheckSquare size={20} color={colors.primary} />
-            ) : (
-              <Square size={20} color={colors.textMuted} />
-            )}
-            <Text style={[styles.checkboxText, { color: colors.textSecondary }]}>
-              I understand this is guidance, not legal representation.
-            </Text>
-          </TouchableOpacity>
-        </View>
-
         {/* Action Buttons */}
         <View style={styles.actionsSection}>
           <TouchableOpacity 
             activeOpacity={0.85} 
             onPress={handleProceedAuth} 
-            style={[
-              styles.primaryBtn,
-              (!acceptedTerms || !acceptedDisclaimer) && styles.primaryBtnDisabled
-            ]}
+            style={styles.primaryBtn}
           >
             <Text style={styles.primaryBtnText}>Sign in / Sign up</Text>
             <ArrowRight size={18} color="#ffffff" />
@@ -458,5 +401,4 @@ const styles = StyleSheet.create({
     height: 12,
   },
 });
-
 

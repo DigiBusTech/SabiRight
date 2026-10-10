@@ -26,9 +26,10 @@ export const API_BASE_URL = getApiBaseUrl();
 export async function apiFetch(endpoint: string, options: RequestInit & { timeoutMs?: number } = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   const token = session?.access_token;
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...((options.headers as Record<string, string>) || {})
   };

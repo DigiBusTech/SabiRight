@@ -289,12 +289,27 @@ export default function CivicChatScreen() {
       if (!res.ok) throw new Error('Server offline');
 
       const data = await res.json();
+      const responseText = String(data.response || data.answer || '').trim();
+      if (!responseText) {
+        setMessages((prev: ChatMessage[]) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}`,
+            role: 'assistant',
+            content: 'I could not prepare a response just now. Open Advocates to find a professional, or try sending your question again.'
+          }
+        ]);
+        return;
+      }
+
+      const showProfessionals = responseText.includes('[SHOW_PROFESSIONALS]');
       const assistantMsg: ChatMessage = {
         id: `a-${Date.now()}`,
         role: 'assistant',
-        content: data.response || data.answer || "Please consult a verified advocate."
+        content: responseText.replace(/\[SHOW_PROFESSIONALS\]/g, '').trim()
       };
       setMessages((prev: ChatMessage[]) => [...prev, assistantMsg]);
+      if (showProfessionals) router.push('/(tabs)/marketplace');
     } catch (e: any) {
       // Offline fallback handling with strict credit policies
       const isGuest = !user?.id;

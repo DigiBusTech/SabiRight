@@ -3,58 +3,60 @@ import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ChevronRight, Briefcase } from 'lucide-react-native';
-import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
-import { apiFetch } from '../lib/api';
+import { Briefcase, ChevronRight } from 'lucide-react-native';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+import { apiFetch } from '../../lib/api';
 
 export default function BookingsScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { colors } = useTheme();
 
-  const { data = [], isLoading, refetch, isRefetching } = useQuery({
+  const { data = [], isLoading, refetch, isRefetching, isError, error } = useQuery({
     queryKey: ['my-bookings', user?.id],
     enabled: !!user?.id,
     queryFn: async () => {
       const res = await apiFetch(`/api/bookings/user/${user!.id}`);
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error(`Could not load bookings (HTTP ${res.status})`);
       return res.json();
     },
   });
 
-  const goBack = () => (router.canGoBack() ? router.back() : router.replace('/(tabs)'));
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { borderBottomColor: colors.surfaceBorder, backgroundColor: colors.surfaceCard }]}>
-        <TouchableOpacity onPress={goBack} style={styles.back}>
-          <ArrowLeft size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.textPrimary }]}>My Consultations</Text>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>Bookings</Text>
       </View>
 
       {!user ? (
         <View style={styles.center}>
-          <Text style={{ color: colors.textMuted }}>Sign in to see your consultations.</Text>
+          <Text style={{ color: colors.textMuted }}>Sign in to see your bookings.</Text>
           <TouchableOpacity onPress={() => router.push('/(auth)/login')} style={[styles.cta, { backgroundColor: colors.primary }]}>
             <Text style={styles.ctaText}>Sign in</Text>
           </TouchableOpacity>
         </View>
       ) : isLoading ? (
         <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>
+      ) : isError ? (
+        <View style={styles.center}>
+          <Text style={{ color: colors.textMuted }}>{error instanceof Error ? error.message : 'Bookings are unavailable.'}</Text>
+          <TouchableOpacity onPress={() => refetch()} style={[styles.cta, { backgroundColor: colors.primary }]}>
+            <Text style={styles.ctaText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <FlatList
           data={data}
-          keyExtractor={(b: any) => b.id}
-          contentContainerStyle={{ padding: 16, gap: 10 }}
+          keyExtractor={(booking: any) => booking.id}
+          contentContainerStyle={{ padding: 16, gap: 10, flexGrow: 1 }}
           refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
           ListEmptyComponent={
             <View style={styles.center}>
               <Briefcase size={28} color={colors.textMuted} />
-              <Text style={{ color: colors.textMuted, marginTop: 8 }}>No consultations yet.</Text>
-              <TouchableOpacity onPress={() => router.replace('/(tabs)/marketplace')} style={[styles.cta, { backgroundColor: colors.primary }]}>
-                <Text style={styles.ctaText}>Find an advocate</Text>
+              <Text style={{ color: colors.textMuted, marginTop: 8 }}>No bookings yet.</Text>
+              <TouchableOpacity onPress={() => router.push('/(tabs)/marketplace')} style={[styles.cta, { backgroundColor: colors.primary }]}>
+                <Text style={styles.ctaText}>Find a professional</Text>
               </TouchableOpacity>
             </View>
           }
@@ -83,9 +85,8 @@ export default function BookingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: 1 },
-  back: { padding: 6, marginRight: 6 },
-  title: { fontSize: 17, fontWeight: '800' },
+  header: { paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
+  title: { fontSize: 19, fontWeight: '800' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   cta: { marginTop: 14, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12 },
   ctaText: { color: '#ffffff', fontWeight: '800', fontSize: 13 },
