@@ -124,33 +124,37 @@ export default function Credits() {
       </div>
 
       {/* Credit Plans Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {creditPlans.map((plan) => (
           <Card 
             key={plan.id} 
-            className={`relative ${plan.popular ? 'border-2 border-amber-500 shadow-lg' : 'border-2 border-slate-200'}`}
+            className={`relative rounded-3xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 bg-white dark:bg-slate-900 overflow-hidden ${
+              plan.popular 
+                ? 'border-2 border-amber-500 shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/30' 
+                : 'border border-slate-200 dark:border-slate-800'
+            }`}
           >
             {plan.popular && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge className="bg-amber-500 text-white">
-                  <Zap className="h-3 w-3 mr-1" />
+              <div className="absolute top-0 right-0">
+                <div className="bg-gradient-to-l from-amber-500 to-amber-600 text-white text-[10px] font-mono font-black uppercase tracking-wider px-3 py-1 rounded-bl-xl shadow-xs flex items-center gap-1">
+                  <Zap className="h-3 w-3 fill-current" />
                   Most Popular
-                </Badge>
+                </div>
               </div>
             )}
             
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg">{plan.name}</CardTitle>
+            <CardHeader className="pb-3 pt-6 px-6">
+              <CardTitle className="text-base font-extrabold text-slate-900 dark:text-white">{plan.name}</CardTitle>
               <div className="mt-2">
                 <div className="flex items-baseline gap-1">
-                  <span className="text-3xl font-bold">{formatCurrency(plan.price)}</span>
+                  <span className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">{formatCurrency(plan.price)}</span>
                 </div>
                 <div className="flex items-center gap-2 mt-2">
-                  <Badge variant="outline" className="text-amber-600 border-amber-300">
+                  <Badge variant="outline" className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-xs font-bold">
                     {plan.credits} Credits
                   </Badge>
                   {plan.bonus && (
-                    <Badge className="bg-green-100 text-green-700 border-green-300">
+                    <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-bold">
                       +{plan.bonus} Bonus
                     </Badge>
                   )}
@@ -158,11 +162,11 @@ export default function Credits() {
               </div>
             </CardHeader>
 
-            <CardContent className="space-y-4">
-              <ul className="space-y-2">
+            <CardContent className="space-y-4 px-6 pb-6">
+              <ul className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                 {plan.features.map((feature, idx) => (
-                  <li key={idx} className="flex items-start gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 shrink-0" />
+                  <li key={idx} className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 font-medium">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
                     <span>{feature}</span>
                   </li>
                 ))}
@@ -170,7 +174,11 @@ export default function Credits() {
 
               <Button 
                 onClick={() => handlePurchase(plan)}
-                className={`w-full ${plan.popular ? 'bg-amber-500 hover:bg-amber-600' : ''}`}
+                className={`w-full h-11 rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer ${
+                  plan.popular 
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white shadow-amber-500/20' 
+                    : 'bg-primary hover:bg-primary/90 text-white shadow-blue-500/20'
+                }`}
               >
                 Purchase Now
               </Button>
@@ -180,22 +188,22 @@ export default function Credits() {
       </div>
 
       {/* How Credits Work */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="border-2 border-blue-200 bg-blue-50/50">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <Card className="rounded-3xl border border-blue-200 dark:border-blue-900/40 bg-gradient-to-br from-blue-50/60 to-white dark:from-slate-900 dark:to-slate-900/60 shadow-sm p-2">
           <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Zap className="h-5 w-5 text-blue-600" />
-              How Credits Work
+            <CardTitle className="text-base font-extrabold flex items-center gap-2 text-slate-900 dark:text-white">
+              <Zap className="h-5 w-5 text-primary" />
+              How Sovereign Credits Work
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
+          <CardContent className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
             <div className="flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-              <p><strong>SabiGuard AI:</strong> Each SabiGuard legal query costs 5 credits</p>
+              <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+              <p><strong className="text-slate-900 dark:text-white">SabiGuard AI Legal Queries:</strong> Comprehensive jurisprudence and case law scripts cost 5 credits.</p>
             </div>
             <div className="flex items-start gap-2">
-              <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
-              <p><strong>Civic AI:</strong> Standard civic education queries cost 1 credit</p>
+              <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+              <p><strong className="text-slate-900 dark:text-white">Civic AI Assistance:</strong> Standard statutory queries & educational rights cost 1 credit.</p>
             </div>
             <div className="flex items-start gap-2">
               <CheckCircle2 className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />

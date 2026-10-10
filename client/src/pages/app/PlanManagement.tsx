@@ -136,48 +136,63 @@ export default function PlanManagement() {
   return (
     <div className="space-y-8 pb-20">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">Plans & Billing</h2>
-        <p className="text-slate-500 mt-1">Choose the right plan for your needs</p>
+        <h2 className="text-2xl font-bold tracking-tight">Plans & Quotas</h2>
+        <p className="text-slate-500 mt-1">Select the citizen or professional quota for your legal and civic requirements</p>
       </div>
 
-      {/* User Type Toggle */}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant={userType === 'user' ? 'default' : 'outline'}
-          onClick={() => setUserType('user')}
-        >
-          User Plans
-        </Button>
-        <Button
-          variant={userType === 'vendor' ? 'default' : 'outline'}
-          onClick={() => setUserType('vendor')}
-        >
-          Vendor Plans
-        </Button>
-        <Button
-          variant={billingCycleFilter === 'all' ? 'default' : 'outline'}
-          onClick={() => setBillingCycleFilter('all')}
-        >
-          All Billing
-        </Button>
-        <Button
-          variant={billingCycleFilter === 'monthly' ? 'default' : 'outline'}
-          onClick={() => setBillingCycleFilter('monthly')}
-        >
-          Monthly
-        </Button>
-        <Button
-          variant={billingCycleFilter === 'yearly' ? 'default' : 'outline'}
-          onClick={() => setBillingCycleFilter('yearly')}
-        >
-          Yearly
-        </Button>
+      {/* Segmented Filter Pills */}
+      <div className="flex flex-wrap items-center justify-between gap-3 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+        <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant={userType === 'user' ? 'default' : 'ghost'}
+            className="rounded-xl text-xs font-bold"
+            onClick={() => setUserType('user')}
+          >
+            Citizen Plans
+          </Button>
+          <Button
+            size="sm"
+            variant={userType === 'vendor' ? 'default' : 'ghost'}
+            className="rounded-xl text-xs font-bold"
+            onClick={() => setUserType('vendor')}
+          >
+            Vendor Plans
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-1 overflow-x-auto">
+          <Button
+            size="sm"
+            variant={billingCycleFilter === 'all' ? 'secondary' : 'ghost'}
+            className="rounded-xl text-xs font-semibold"
+            onClick={() => setBillingCycleFilter('all')}
+          >
+            All
+          </Button>
+          <Button
+            size="sm"
+            variant={billingCycleFilter === 'monthly' ? 'secondary' : 'ghost'}
+            className="rounded-xl text-xs font-semibold"
+            onClick={() => setBillingCycleFilter('monthly')}
+          >
+            Monthly
+          </Button>
+          <Button
+            size="sm"
+            variant={billingCycleFilter === 'yearly' ? 'secondary' : 'ghost'}
+            className="rounded-xl text-xs font-semibold"
+            onClick={() => setBillingCycleFilter('yearly')}
+          >
+            Yearly
+          </Button>
+        </div>
       </div>
 
       {/* Plans Grid */}
       <div className="grid md:grid-cols-2 gap-6">
         {filteredPlans.length === 0 ? (
-          <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white/80 p-10 text-center text-slate-600">
+          <div className="col-span-full rounded-3xl border border-dashed border-slate-300 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 p-10 text-center text-slate-500 text-sm">
             No plans match the selected billing cycle. Try switching to All Billing.
           </div>
         ) : filteredPlans.map((plan: Plan) => {
@@ -194,44 +209,44 @@ export default function PlanManagement() {
           return (
             <Card 
               key={plan.id}
-              className={`relative overflow-hidden transition-all ${
+              className={`relative rounded-3xl overflow-hidden transition-all duration-300 bg-white dark:bg-slate-900 ${
                 isCurrentPlan 
-                  ? 'ring-2 ring-primary shadow-lg' 
-                  : 'hover:shadow-lg'
+                  ? 'border-2 border-primary shadow-xl shadow-blue-500/10 ring-2 ring-primary/20' 
+                  : 'border border-slate-200 dark:border-slate-800 hover:shadow-lg hover:border-slate-300'
               }`}
             >
               {isCurrentPlan && (
-                <div className="absolute top-0 right-0 bg-primary text-white px-4 py-1 text-xs font-bold rounded-bl">
-                  Current Plan
+                <div className="absolute top-0 right-0 bg-primary text-white px-4 py-1 text-xs font-bold rounded-bl-xl shadow-xs">
+                  Active Quota
                 </div>
               )}
 
-              <CardHeader>
+              <CardHeader className="pt-7 px-6">
                 <div className="flex items-start justify-between">
                   <div>
-                    <CardTitle className="text-2xl">{plan.name}</CardTitle>
-                    <p className="text-sm text-slate-600 mt-1">{plan.description}</p>
+                    <CardTitle className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{plan.name}</CardTitle>
+                    <p className="text-xs sm:text-sm text-slate-500 mt-1">{plan.description}</p>
                   </div>
                 </div>
               </CardHeader>
 
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-6 px-6 pb-7">
                 {/* Pricing */}
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     {plan.price ? (
                       <div>
-                        <p className="text-3xl font-bold text-slate-900">
-                          ${plan.price}
+                        <p className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                          ₦{Number(plan.price).toLocaleString()}
                         </p>
-                        <p className="text-sm text-slate-600">per {plan.billingCycle || 'month'}</p>
+                        <p className="text-xs text-slate-500 font-medium">per {plan.billingCycle || 'month'}</p>
                       </div>
                     ) : (
-                      <p className="text-3xl font-bold text-green-600">Free</p>
+                      <p className="text-3xl font-black text-emerald-600 dark:text-emerald-400">Free</p>
                     )}
                   </div>
                   {plan.type === 'enterprise' && (
-                    <Badge variant="secondary" className="uppercase">
+                    <Badge variant="secondary" className="uppercase font-mono text-[10px]">
                       Enterprise
                     </Badge>
                   )}

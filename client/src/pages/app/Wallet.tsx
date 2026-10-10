@@ -259,41 +259,48 @@ export default function Wallet() {
     <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight" data-testid="text-wallet-title">My Wallet</h2>
-          <p className="text-slate-500 text-sm md:text-base mt-1">Manage your wallet balance and transactions.</p>
+          <h2 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 dark:text-white" data-testid="text-wallet-title">Sovereign Wallet</h2>
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">Manage legal escrow payments, consultation deposits, and balance history.</p>
         </div>
       </div>
 
-      <Card className="bg-linear-to-br from-primary to-primary/80 text-white border-0 shadow-lg overflow-hidden">
-        <CardContent className="p-6 md:p-8">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="h-14 w-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-              <WalletIcon className="h-7 w-7" />
+      {/* Flagship Hyper-Realistic Sovereign Wallet Card */}
+      <Card className="rounded-3xl bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-950 text-white border border-white/20 shadow-2xl overflow-hidden relative">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-white/10 blur-[60px] pointer-events-none rounded-full" />
+        <CardContent className="p-6 sm:p-8 relative z-10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-4">
+              <div className="h-14 w-14 bg-white/15 rounded-2xl flex items-center justify-center backdrop-blur-md border border-white/20 shadow-md">
+                <WalletIcon className="h-7 w-7 text-white" />
+              </div>
+              <div>
+                <p className="text-white/70 text-xs font-mono uppercase tracking-wider">Available Balance</p>
+                <p className="text-3xl sm:text-4xl font-black tracking-tight" data-testid="text-wallet-balance">
+                  {wallet ? formatCurrency(wallet.balance) : "₦0.00"}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-white/70 text-sm font-medium">Available Balance</p>
-              <p className="text-3xl md:text-4xl font-bold" data-testid="text-wallet-balance">
-                {wallet ? formatCurrency(wallet.balance) : "₦0.00"}
-              </p>
+            <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center">
+              <Badge className="bg-white/20 text-white border border-white/20 hover:bg-white/30 text-xs font-mono font-bold px-3 py-1 rounded-xl">
+                {wallet?.currency || "NGN"}
+              </Badge>
+              <span className="text-[10px] text-white/60 font-mono mt-1">Wallet ID: #{wallet?.id || "---"}</span>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-white/60 text-sm">
-            <Badge className="bg-white/20 text-white border-0 hover:bg-white/30">
-              {wallet?.currency || "NGN"}
-            </Badge>
-            <span>•</span>
-            <span>Wallet ID: {wallet?.id || "---"}</span>
+          <div className="pt-4 border-t border-white/15 flex items-center justify-between text-xs text-white/80 font-medium">
+            <span>SabiRight Sovereign Escrow Protection</span>
+            <span className="text-emerald-400 font-bold">● Active 24/7</span>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="border-2 border-slate-200 shadow-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg font-bold flex items-center gap-2">
-            <Plus className="h-5 w-5 text-primary" /> Top Up Wallet
+      <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
+        <CardHeader className="pb-2 pt-6 px-6">
+          <CardTitle className="text-base font-extrabold flex items-center gap-2 text-slate-900 dark:text-white">
+            <Plus className="h-4 w-4 text-primary" /> Top Up Wallet Balance
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 px-6 pb-6">
           <div className="flex flex-wrap gap-2">
             {QUICK_AMOUNTS.map((amount) => (
               <Button
@@ -301,7 +308,7 @@ export default function Wallet() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleQuickAmount(amount)}
-                className={`${topUpAmount === amount.toString() ? "border-primary bg-primary/5" : ""}`}
+                className={`rounded-xl text-xs font-bold ${topUpAmount === amount.toString() ? "border-primary bg-primary/10 text-primary" : "border-slate-200 dark:border-slate-800"}`}
                 data-testid={`button-quick-amount-${amount}`}
               >
                 ₦{amount.toLocaleString()}

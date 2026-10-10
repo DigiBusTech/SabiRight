@@ -267,28 +267,30 @@ export default function Notifications() {
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Notifications</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Notifications</h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">
             {totalCount} total notifications{unreadCount > 0 && `, ${unreadCount} unread`}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Button
             variant="outline"
+            size="sm"
             onClick={togglePushNotifications}
             disabled={pushBusy || !user}
             data-testid="button-toggle-push"
+            className="rounded-xl text-xs font-bold h-9"
           >
-            <Bell className="h-4 w-4 mr-2" />
-            {pushBusy ? "Updating..." : pushEnabled ? "Disable browser alerts" : "Enable browser alerts"}
+            <Bell className="h-3.5 w-3.5 mr-1.5" />
+            {pushBusy ? "Updating..." : pushEnabled ? "Disable alerts" : "Enable alerts"}
           </Button>
           <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-[180px]" data-testid="select-notification-filter">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Filter by type" />
+            <SelectTrigger className="w-[160px] h-9 rounded-xl text-xs font-semibold" data-testid="select-notification-filter">
+              <Filter className="h-3.5 w-3.5 mr-1.5" />
+              <SelectValue placeholder="Filter type" />
             </SelectTrigger>
             <SelectContent>
               {Object.entries(typeLabels).map(([value, label]) => (
@@ -301,44 +303,46 @@ export default function Notifications() {
           {unreadCount > 0 && (
             <Button 
               variant="outline" 
+              size="sm"
               onClick={markAllAsRead}
               data-testid="button-mark-all-read-page"
+              className="rounded-xl text-xs font-bold h-9"
             >
-              <Check className="h-4 w-4 mr-2" />
+              <Check className="h-3.5 w-3.5 mr-1" />
               Mark all read
             </Button>
           )}
         </div>
       </div>
 
-      <Card>
+      <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
         <CardContent className="p-0">
           {loading && notifications.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-muted-foreground">
+            <div className="flex items-center justify-center h-48 text-slate-400 text-sm font-medium">
               Loading notifications...
             </div>
           ) : notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 text-muted-foreground">
-              <Bell className="h-12 w-12 mb-3 text-slate-300" />
-              <span className="text-lg font-medium">No notifications</span>
-              <span className="text-sm">
-                {filter !== "all" ? "Try changing the filter" : "You're all caught up!"}
+            <div className="flex flex-col items-center justify-center h-52 text-slate-400 p-6">
+              <Bell className="h-12 w-12 mb-3 text-slate-300 dark:text-slate-700" />
+              <span className="text-base font-bold text-slate-700 dark:text-slate-300">No notifications</span>
+              <span className="text-xs text-slate-400 mt-1">
+                {filter !== "all" ? "Try changing the filter" : "You are completely up to date!"}
               </span>
             </div>
           ) : (
-            <div className="divide-y">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
               {notifications.map((notification) => (
                 <div
                   key={notification.id}
                   className={cn(
-                    "p-4 hover:bg-slate-50 transition-colors",
-                    !notification.isRead && "bg-primary/5"
+                    "p-4 sm:p-5 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors",
+                    !notification.isRead && "bg-blue-50/40 dark:bg-blue-950/20"
                   )}
                   data-testid={`notification-row-${notification.id}`}
                 >
-                  <div className="flex gap-4">
-                    <div className="shrink-0 mt-1">
-                      <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center">
+                  <div className="flex gap-3 sm:gap-4">
+                    <div className="shrink-0 mt-0.5">
+                      <div className="h-10 w-10 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
                         {typeIcons[notification.type] || typeIcons.system}
                       </div>
                     </div>

@@ -393,33 +393,33 @@ export default function Marketplace() {
       <div className="flex overflow-x-auto pb-4 -mx-4 px-4 no-scrollbar gap-3">
         <button
           onClick={() => setSortBy("time")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all whitespace-nowrap shadow-sm ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all whitespace-nowrap shadow-sm cursor-pointer ${
             sortBy === "time"
-              ? "bg-blue-600 text-white ring-4 ring-blue-100"
-              : "bg-white text-slate-600 border border-slate-200 hover:border-blue-200"
+              ? "bg-primary text-white ring-2 ring-primary/30 shadow-md shadow-blue-500/20"
+              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:border-blue-200"
           }`}
         >
           <Clock className="h-4 w-4" /> Fastest Arrival
         </button>
         <button
           onClick={() => setSortBy("distance")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all whitespace-nowrap shadow-sm ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all whitespace-nowrap shadow-sm cursor-pointer ${
             sortBy === "distance"
-              ? "bg-green-600 text-white ring-4 ring-green-100"
-              : "bg-white text-slate-600 border border-slate-200 hover:border-green-200"
+              ? "bg-primary text-white ring-2 ring-primary/30 shadow-md shadow-blue-500/20"
+              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:border-blue-200"
           }`}
         >
           <MapPin className="h-4 w-4" /> Closest Distance
         </button>
         <button
           onClick={() => setSortBy("rating")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all whitespace-nowrap shadow-sm ${
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all whitespace-nowrap shadow-sm cursor-pointer ${
             sortBy === "rating"
-              ? "bg-amber-600 text-white ring-4 ring-amber-100"
-              : "bg-white text-slate-600 border border-slate-200 hover:border-amber-200"
+              ? "bg-amber-600 text-white ring-2 ring-amber-500/30 shadow-md shadow-amber-500/20"
+              : "bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:border-amber-200"
           }`}
         >
-          <Star className="h-4 w-4" /> Top Rated
+          <Star className="h-4 w-4 fill-current" /> Top Rated
         </button>
       </div>
     </motion.div>

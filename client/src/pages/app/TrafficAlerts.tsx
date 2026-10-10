@@ -518,16 +518,16 @@ export default function TrafficAlerts() {
             </Card>
           )}
 
-          <div className="space-y-2 max-h-[500px] overflow-y-auto">
+          <div className="space-y-3 max-h-[500px] overflow-y-auto">
             {routes.length === 0 ? (
-              <div className="p-8 text-center bg-slate-50 rounded-xl border-2 border-dashed border-slate-200">
-                <MapPin className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm font-medium text-slate-600">No routes added yet</p>
-                <p className="text-xs text-slate-400 mt-1">Add your frequent routes to start monitoring traffic and checkpoints.</p>
+              <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800">
+                <MapPin className="h-10 w-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No routes registered yet</p>
+                <p className="text-xs text-slate-400 mt-1">Add your frequent routes to monitor checkpoints & congestion.</p>
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="mt-4"
+                  className="mt-4 rounded-xl font-bold text-xs"
                   onClick={() => setIsAddingRoute(true)}
                 >
                   Add Your First Route
@@ -537,10 +537,10 @@ export default function TrafficAlerts() {
               routes.map(route => (
                 <Card 
                   key={route.id}
-                  className={`cursor-pointer transition-all ${
+                  className={`cursor-pointer transition-all rounded-2xl bg-white dark:bg-slate-900 ${
                     selectedRoute?.id === route.id 
-                      ? 'ring-2 ring-primary shadow-md' 
-                      : 'hover:shadow-md'
+                      ? 'border-2 border-primary shadow-lg shadow-blue-500/10 ring-2 ring-primary/20' 
+                      : 'border border-slate-200 dark:border-slate-800 hover:shadow-md hover:border-slate-300'
                   }`}
                   onClick={() => {
                     setSelectedRoute(route);
@@ -552,23 +552,23 @@ export default function TrafficAlerts() {
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm truncate">{route.routeName}</p>
-                        <p className="text-xs text-slate-600 truncate">{route.startLocation}</p>
-                        <p className="text-xs text-slate-600 truncate">→ {route.endLocation}</p>
+                        <p className="font-extrabold text-sm text-slate-900 dark:text-white truncate">{route.routeName}</p>
+                        <p className="text-xs text-slate-500 truncate">{route.startLocation}</p>
+                        <p className="text-xs text-slate-500 truncate">→ {route.endLocation}</p>
                       </div>
-                      <Badge className={`text-xs whitespace-nowrap ${
+                      <Badge className={`text-[10px] font-mono font-bold uppercase whitespace-nowrap ${
                         route.lastStatus === 'cleared' 
-                          ? 'bg-green-100 text-green-800 border-green-300'
+                          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
                           : route.lastStatus === 'active'
-                          ? 'bg-red-100 text-red-800 border-red-300 shadow-sm animate-pulse'
-                          : 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                          ? 'bg-rose-500/15 text-rose-700 dark:text-rose-400 border border-rose-500/30 animate-pulse'
+                          : 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
                       }`}>
-                        {route.lastStatus === 'active' ? 'CONGESTED' : route.lastStatus === 'cleared' ? 'CLEARED' : 'UNKNOWN'}
+                        {route.lastStatus === 'active' ? 'CONGESTION' : route.lastStatus === 'cleared' ? 'CLEARED' : 'UNKNOWN'}
                       </Badge>
                     </div>
-                    <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
+                    <p className="text-[10px] font-mono text-slate-400 mt-2 flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {new Date(route.lastChecked).toLocaleDateString()}
+                      <span>{new Date(route.lastChecked).toLocaleDateString()}</span>
                     </p>
                   </CardContent>
                 </Card>

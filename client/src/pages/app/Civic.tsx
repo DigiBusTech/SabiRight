@@ -124,6 +124,19 @@ export default function CivicGuard() {
     };
   }, []);
 
+  // Listen for query params from dashboard or shortcuts
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const promptParam = params.get('prompt');
+    const urgentParam = params.get('urgent');
+    if (urgentParam === 'true') {
+      setIsUrgent(true);
+    }
+    if (promptParam) {
+      setInput(promptParam);
+    }
+  }, []);
+
   const handleSpeak = (text: string, index: number) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       toast({ title: "NOT SUPPORTED", description: "Text-to-speech not supported on this browser.", variant: "destructive" });

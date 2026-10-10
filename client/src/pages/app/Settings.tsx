@@ -280,34 +280,34 @@ export default function Settings() {
   return (
     <div className="space-y-6 pb-20 max-w-2xl mx-auto">
       <div>
-        <h2 className="text-2xl md:text-3xl font-bold tracking-tight" data-testid="text-settings-title">
-          Profile Settings
+        <h2 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 dark:text-white" data-testid="text-settings-title">
+          Citizen Profile & Settings
         </h2>
-        <p className="text-slate-500 text-sm md:text-base mt-1">
-          Manage your account settings and preferences.
+        <p className="text-slate-500 text-xs sm:text-sm mt-1">
+          Manage your verified credentials, territory jurisdiction, and security preferences.
         </p>
       </div>
 
-      <Card data-testid="card-profile-photo">
+      <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm" data-testid="card-profile-photo">
         <CardHeader>
-          <CardTitle className="text-lg">Profile Photo</CardTitle>
-          <CardDescription>Your profile photo from your authentication provider</CardDescription>
+          <CardTitle className="text-base font-extrabold text-slate-900 dark:text-white">Profile Photo</CardTitle>
+          <CardDescription>Your verified citizen photo and credentials</CardDescription>
         </CardHeader>
         <CardContent className="flex items-center gap-4">
-          <Avatar className="h-20 w-20" data-testid="img-avatar">
+          <Avatar className="h-20 w-20 ring-2 ring-blue-500/30" data-testid="img-avatar">
             <AvatarImage src={user?.photoURL || undefined} alt={user?.displayName || "User"} />
-            <AvatarFallback className="text-lg bg-primary text-white">
+            <AvatarFallback className="text-lg bg-primary text-white font-bold">
               {userInitials}
             </AvatarFallback>
           </Avatar>
           <div>
-            <p className="font-medium" data-testid="text-user-name">{user?.displayName || "No name set"}</p>
-            <p className="text-sm text-slate-500" data-testid="text-user-email">{user?.email}</p>
+            <p className="font-bold text-sm text-slate-900 dark:text-white" data-testid="text-user-name">{user?.displayName || "Citizen"}</p>
+            <p className="text-xs text-slate-500 font-mono" data-testid="text-user-email">{user?.email}</p>
           </div>
         </CardContent>
       </Card>
 
-      <Card data-testid="card-edit-profile">
+      <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm" data-testid="card-edit-profile">
         <CardHeader>
           <CardTitle className="text-lg">Edit Profile</CardTitle>
           <CardDescription>Update your personal information</CardDescription>
@@ -394,9 +394,9 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
+          <CardTitle className="text-base font-extrabold flex items-center gap-2 text-slate-900 dark:text-white">
             <Link2 className="h-5 w-5 text-primary" />
             WhatsApp & Telegram Bot Integration
           </CardTitle>
@@ -410,15 +410,15 @@ export default function Settings() {
               <Label className="text-xs font-bold uppercase text-slate-500 block">Connected Channels</Label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {linkedChannels.map((c) => (
-                  <div key={c.channel} className="flex items-center justify-between p-3 bg-slate-50 border rounded-lg">
+                  <div key={c.channel} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
                     <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      <span className="text-sm font-semibold capitalize">{c.channel} Connected</span>
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-sm font-semibold capitalize text-slate-900 dark:text-white">{c.channel} Connected</span>
                     </div>
                     <Button 
                       variant="ghost" 
                       size="sm" 
-                      className="text-destructive h-7 text-xs" 
+                      className="text-destructive h-7 text-xs rounded-lg" 
                       onClick={() => handleUnlinkChannel(c.channel)}
                     >
                       Disconnect
@@ -429,8 +429,8 @@ export default function Settings() {
             </div>
           )}
 
-          <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl space-y-3">
-            <p className="text-sm text-slate-700">
+          <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl space-y-3">
+            <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
               Link your WhatsApp or Telegram chat to access your SabiRight credits and legal AI assistant from your phone anytime.
             </p>
             {linkCode ? (
@@ -440,13 +440,13 @@ export default function Settings() {
                   <Input 
                     readOnly 
                     value={`link ${linkCode}`} 
-                    className="bg-white border-primary/20 font-mono text-sm font-bold text-primary"
+                    className="bg-white dark:bg-slate-950 border-primary/20 font-mono text-sm font-bold text-primary rounded-xl"
                   />
                   <Button 
                     size="icon" 
                     variant="outline" 
                     onClick={() => copyToClipboard(`link ${linkCode}`)}
-                    className="shrink-0"
+                    className="shrink-0 rounded-xl"
                   >
                     <Copy className="h-4 w-4 text-primary" />
                   </Button>
@@ -460,7 +460,7 @@ export default function Settings() {
                 onClick={handleGenerateLinkCode} 
                 disabled={isGeneratingLinkCode || areChannelsLoading}
                 variant="outline"
-                className="w-full font-bold"
+                className="w-full font-bold rounded-xl text-xs h-10"
               >
                 {isGeneratingLinkCode ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -474,9 +474,9 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
         <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
+          <CardTitle className="text-base font-extrabold flex items-center gap-2 text-slate-900 dark:text-white">
             <Gift className="h-5 w-5 text-primary" />
             Refer & Earn
           </CardTitle>
@@ -484,12 +484,12 @@ export default function Settings() {
         </CardHeader>
         <CardContent className="space-y-4">
           {!profile?.referralCode ? (
-            <div className="text-center p-6 border-2 border-dashed rounded-xl bg-slate-50">
-              <p className="text-sm text-slate-500 mb-4">You haven't generated a referral link yet.</p>
+            <div className="text-center p-6 border-2 border-dashed rounded-2xl bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+              <p className="text-xs sm:text-sm text-slate-500 mb-4">You haven't generated a referral link yet.</p>
               <Button 
                 onClick={handleGenerateReferralCode} 
                 disabled={isGeneratingReferral}
-                className="font-bold"
+                className="font-bold rounded-xl text-xs h-10"
               >
                 {isGeneratingReferral ? (
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -501,19 +501,19 @@ export default function Settings() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="p-4 bg-primary/5 border border-primary/10 rounded-xl">
+              <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl">
                 <Label className="text-xs font-bold uppercase text-slate-500 mb-2 block">Your Referral Link</Label>
                 <div className="flex gap-2">
                   <Input 
                     readOnly 
                     value={referralLink} 
-                    className="bg-white border-primary/20 font-mono text-xs"
+                    className="bg-white dark:bg-slate-950 border-primary/20 font-mono text-xs rounded-xl"
                   />
                   <Button 
                     size="icon" 
                     variant="outline" 
                     onClick={() => copyToClipboard(referralLink)}
-                    className="shrink-0"
+                    className="shrink-0 rounded-xl"
                   >
                     <Copy className="h-4 w-4 text-primary" />
                   </Button>
@@ -521,13 +521,13 @@ export default function Settings() {
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Total Referrals</p>
-                  <p className="text-2xl font-bold text-slate-900">{profile?.referralCount || 0}</p>
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase font-mono">Total Referrals</p>
+                  <p className="text-2xl font-black text-slate-900 dark:text-white mt-0.5">{profile?.referralCount || 0}</p>
                 </div>
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Credits Earned</p>
-                  <p className="text-2xl font-bold text-primary">{(profile?.referralCount || 0) * 50}</p>
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase font-mono">Credits Earned</p>
+                  <p className="text-2xl font-black text-primary mt-0.5">{(profile?.referralCount || 0) * 50}</p>
                 </div>
               </div>
 
@@ -539,20 +539,20 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      <Card data-testid="card-account-status">
+      <Card className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm" data-testid="card-account-status">
         <CardHeader>
-          <CardTitle className="text-lg">Account Status</CardTitle>
+          <CardTitle className="text-base font-extrabold text-slate-900 dark:text-white">Account Status</CardTitle>
           <CardDescription>Your verification and account status</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between p-3 rounded-lg border">
+          <div className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center">
-                <ShieldCheck className="h-5 w-5 text-green-600" />
+              <div className="h-10 w-10 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-xl flex items-center justify-center">
+                <ShieldCheck className="h-5 w-5" />
               </div>
               <div>
-                <p className="font-medium">Email Verification</p>
-                <p className="text-sm text-slate-500">Email verification status</p>
+                <p className="font-bold text-sm text-slate-900 dark:text-white">Email Verification</p>
+                <p className="text-xs text-slate-500">Official citizen verification status</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -560,10 +560,10 @@ export default function Settings() {
                 data-testid="badge-email-status"
                 className={
                   profile?.emailVerificationStatus === 'verified' 
-                    ? 'bg-green-100 text-green-700' 
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30' 
                     : profile?.emailVerificationStatus === 'pending'
-                    ? 'bg-yellow-100 text-yellow-700'
-                    : 'bg-slate-100 text-slate-700'
+                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }
               >
                 {profile?.emailVerificationStatus === 'verified' 
@@ -574,7 +574,7 @@ export default function Settings() {
               </Badge>
               {profile?.emailVerificationStatus !== 'verified' && (
                 <Link href="/app/verify-email">
-                  <Button variant="outline" size="sm" className="ml-2 font-bold" data-testid="link-email-verification">
+                  <Button variant="outline" size="sm" className="ml-2 font-bold rounded-xl text-xs" data-testid="link-email-verification">
                     Verify Now
                   </Button>
                 </Link>
@@ -582,14 +582,14 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-3 rounded-lg border">
+          <div className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 bg-orange-100 rounded-full flex items-center justify-center">
-                <Store className="h-5 w-5 text-orange-600" />
+              <div className="h-10 w-10 bg-orange-500/15 text-orange-600 dark:text-orange-400 rounded-xl flex items-center justify-center">
+                <Store className="h-5 w-5" />
               </div>
               <div>
-                <p className="font-medium">Vendor Status</p>
-                <p className="text-sm text-slate-500">Marketplace vendor account</p>
+                <p className="font-bold text-sm text-slate-900 dark:text-white">Vendor Status</p>
+                <p className="text-xs text-slate-500">Marketplace service provider portal</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -597,14 +597,14 @@ export default function Settings() {
                 data-testid="badge-vendor-status"
                 className={
                   profile?.vendorMode 
-                    ? 'bg-orange-100 text-orange-700' 
-                    : 'bg-slate-100 text-slate-700'
+                    ? 'bg-orange-500/15 text-orange-700 dark:text-orange-400 border border-orange-500/30' 
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }
               >
                 {profile?.vendorMode ? 'Active Vendor' : 'Not a Vendor'}
               </Badge>
               <Link href="/app/vendor">
-                <Button variant="ghost" size="sm" data-testid="link-vendor">
+                <Button variant="ghost" size="sm" className="rounded-xl" data-testid="link-vendor">
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </Link>
@@ -613,16 +613,16 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      <Card className="border-2 border-red-200" data-testid="card-danger-zone">
+      <Card className="rounded-3xl border border-rose-200 dark:border-rose-900/40 bg-white dark:bg-slate-900 shadow-sm" data-testid="card-danger-zone">
         <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2 text-red-600">
+          <CardTitle className="text-base font-extrabold flex items-center gap-2 text-rose-600 dark:text-rose-400">
             <AlertTriangle className="h-5 w-5" />
             Danger Zone
           </CardTitle>
           <CardDescription>Irreversible actions for your account</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+          <div className="p-4 bg-rose-50/50 dark:bg-rose-950/20 rounded-2xl border border-rose-200 dark:border-rose-900/40">
             <h4 className="font-semibold text-red-700 mb-2">Delete Account</h4>
             <p className="text-sm text-red-600 mb-4">
               Once you delete your account, there is no going back. All your data, 
