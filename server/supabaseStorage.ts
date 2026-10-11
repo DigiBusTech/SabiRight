@@ -703,10 +703,17 @@ export const supabaseStorage: IStorage = {
   },
 
   async getMoatData(category?: string): Promise<any[]> {
-    let q = supabase.from('moat_data').select('*');
-    if (category) q = q.eq('category', category);
-    const { data } = await q;
-    return (data || []).map((d: any) => ({
+    const pageSize = 1000;
+    const rows: any[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      let q = supabase.from('moat_data').select('*').order('id').range(offset, offset + pageSize - 1);
+      if (category) q = q.eq('category', category);
+      const { data, error } = await q;
+      if (error) throw new Error(`Could not fetch MOAT data: ${error.message}`);
+      rows.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return rows.map((d: any) => ({
       id: d.id,
       title: d.title,
       content: d.content,
@@ -720,12 +727,14 @@ export const supabaseStorage: IStorage = {
   async createMoatData(data: any): Promise<any> {
     const id = `moat-${Date.now()}`;
     const item = { id, ...data, created_at: new Date().toISOString() };
-    await supabase.from('moat_data').insert(item);
+    const { error } = await supabase.from('moat_data').insert(item);
+    if (error) throw new Error(`Could not create MOAT data: ${error.message}`);
     return item;
   },
 
   async deleteMoatData(id: string): Promise<void> {
-    await supabase.from('moat_data').delete().eq('id', id);
+    const { error } = await supabase.from('moat_data').delete().eq('id', id);
+    if (error) throw new Error(`Could not delete MOAT data: ${error.message}`);
   },
 
   // Professionals & Marketplace

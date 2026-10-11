@@ -15,12 +15,30 @@ const GROQ_MODEL_TIMEOUT_MS = 8_000;
 const FAST_BOT_AI_BUDGET_MS = 7_000;
 const FAST_BOT_NATLAS_BUDGET_MS = 3_000;
 const FAST_BOT_MAX_OUTPUT_TOKENS = 768;
+const MOAT_CACHE_TTL_MS = 60_000;
 const DEFAULT_NATLAS_ENDPOINT = 'https://router.huggingface.co/v1/chat/completions';
 const DEFAULT_NATLAS_ASR_ENDPOINT = 'https://router.huggingface.co/hf-inference/models';
 export const MAX_TRANSCRIPTION_AUDIO_BYTES = 8 * 1024 * 1024;
 const ffmpegPath: string | null = typeof ffmpegPackage === 'string'
   ? ffmpegPackage
   : ffmpegPackage.default;
+let moatCache: { data: any[]; expiresAt: number } | undefined;
+let moatLoad: Promise<any[]> | undefined;
+
+async function loadMoatData(): Promise<any[]> {
+  if (moatCache && moatCache.expiresAt > Date.now()) return moatCache.data;
+  if (!moatLoad) {
+    moatLoad = storage.getMoatData()
+      .then(data => {
+        moatCache = { data, expiresAt: Date.now() + MOAT_CACHE_TTL_MS };
+        return data;
+      })
+      .finally(() => {
+        moatLoad = undefined;
+      });
+  }
+  return moatLoad;
+}
 
 function createTranscriptionError(message: string, statusCode: number) {
   return Object.assign(new Error(message), { statusCode });
@@ -213,45 +231,40 @@ export async function isNAtlasSovereignMode(): Promise<boolean> {
  * Retrieves and formats relevant admin-managed MOAT entries for the given user prompt.
  */
 export async function getRelevantMoatContext(userPrompt: string): Promise<string> {
-  try {
-    const moatData = await storage.getMoatData();
-    if (!moatData || moatData.length === 0) return '';
+  const moatData = await loadMoatData();
+  if (!moatData || moatData.length === 0) return '';
 
-    const cleanTokens = userPrompt
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(w => w.length > 2 && !['what', 'when', 'where', 'which', 'who', 'how', 'the', 'and', 'for', 'with', 'that', 'this'].includes(w));
+  const cleanTokens = userPrompt
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !['what', 'when', 'where', 'which', 'who', 'how', 'the', 'and', 'for', 'with', 'that', 'this'].includes(w));
 
-    const scored = moatData.map(item => {
-      const corpus = `${item.title || ''} ${item.category || ''} ${item.content || ''}`.toLowerCase();
-      let matchCount = 0;
-      for (const token of cleanTokens) {
-        if (corpus.includes(token)) matchCount++;
-      }
-      return { item, score: matchCount };
-    });
-
-    const relevant = scored
-      .filter(s => s.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 4)
-      .map(s => s.item);
-
-    const chosen = relevant;
-    if (chosen.length === 0) return '';
-
-    let context = "\n\n[ADMIN-MANAGED LEGAL REFERENCE MATERIAL]\n";
-    context += "These entries are administrator-managed and have not been independently verified by this application. Use only relevant entries. Do not treat them as conclusive legal authority, infer missing details, or invent statutes, section numbers, quotations, or citations. Cite a legal source only when the entry itself provides enough information to support it. If the material does not support an answer, say that you cannot verify the point and recommend checking an authoritative source or consulting qualified counsel.\n\n";
-    for (const entry of chosen) {
-      context += `• **${entry.title}** (${entry.category || 'Reference'}):\n  ${entry.content}\n  Source field: ${entry.source || 'Not specified'}\n\n`;
+  const scored = moatData.map(item => {
+    const corpus = `${item.title || ''} ${item.category || ''} ${item.content || ''}`.toLowerCase();
+    let matchCount = 0;
+    for (const token of cleanTokens) {
+      if (corpus.includes(token)) matchCount++;
     }
-    context += "[END ADMINISTRATIVE MOAT CONTEXT]\n\n";
-    return context;
-  } catch (err) {
-    console.warn('[aiService] Failed to retrieve MOAT context:', err);
-    return '';
+    return { item, score: matchCount };
+  });
+
+  const relevant = scored
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 4)
+    .map(s => s.item);
+
+  const chosen = relevant;
+  if (chosen.length === 0) return '';
+
+  let context = "\n\n[ADMIN-MANAGED LEGAL REFERENCE MATERIAL]\n";
+  context += "These entries are administrator-managed and have not been independently verified by this application. Use only relevant entries. Do not treat them as conclusive legal authority, infer missing details, or invent statutes, section numbers, quotations, or citations. For legal answers, cite the exact statute and section shown in the source text, or the source page when a section cannot be identified. If the material does not support an answer, say that you cannot verify the point and recommend checking an authoritative source or consulting qualified counsel.\n\n";
+  for (const entry of chosen) {
+    context += `• **${entry.title}** (${entry.category || 'Reference'}):\n  ${entry.content}\n  Source field: ${entry.source || 'Not specified'}\n\n`;
   }
+  context += "[END ADMINISTRATIVE MOAT CONTEXT]\n\n";
+  return context;
 }
 
 /**
@@ -615,7 +628,7 @@ export async function generateAIResponse(
       try {
         moatContext = await withTimeout(
           getRelevantMoatContext(prompt),
-          Math.min(1_000, remainingMs('MOAT context')),
+          Math.min(2_000, remainingMs('MOAT context')),
           'MOAT context lookup'
         );
       } catch (error) {
