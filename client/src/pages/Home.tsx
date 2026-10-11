@@ -38,6 +38,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getYouTubeEmbedUrl } from "@/lib/utils";
 import { TrustMarks } from "@/components/TrustMarks";
 import { AppStoreButtons } from "@/components/common/AppStoreButtons";
+import { ProductMockups } from "@/components/ProductMockups";
 
 export default function Home() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -570,6 +571,8 @@ export default function Home() {
       </header>
 
       <TrustMarks className="border-y border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950" />
+
+      <ProductMockups />
 
       {/* High-Level Software Solutions Bento Grid (Concise & Structured) */}
       <section className="py-20 md:py-28 max-w-7xl mx-auto px-6 bg-white">
