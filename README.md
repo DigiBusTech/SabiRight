@@ -3,7 +3,7 @@
 <div align="center">
   <img src="client/public/favicon.png" alt="SabiRight Logo" width="104" height="104" />
   <h2>⚖️ SabiRight — Civic Intellect & Justice Infrastructure</h2>
-  <p><strong>Omnichannel AI legal first-aid, accredited practitioner directory, statutory de-escalation intelligence, and unified cross-channel civic infrastructure for Nigeria and Africa.</strong></p>
+  <p><strong>Omnichannel AI legal first-aid, sovereign Nigerian multilingual intelligence, accredited practitioner directory, statutory de-escalation intelligence, and unified civic infrastructure for Nigeria and Africa.</strong></p>
 
   <div>
     <img src="https://img.shields.io/badge/TypeScript-5.6-blue?logo=typescript" alt="TypeScript" />
@@ -13,10 +13,11 @@
     <img src="https://img.shields.io/badge/TailwindCSS-v4.1-38B2AC?logo=tailwind-css" alt="Tailwind CSS v4" />
     <img src="https://img.shields.io/badge/Expo-SDK_52-black?logo=expo" alt="Expo SDK 52" />
     <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase" alt="Supabase PostgreSQL" />
-    <img src="https://img.shields.io/badge/Capacitor-v8.0-119EFF?logo=capacitor" alt="Capacitor 8" />
-    <img src="https://img.shields.io/badge/AI_Engine-Gemini%202.0%20%7C%20Groq%20%7C%20GPT--4o%20%7C%20Claude-8A2BE2" alt="Multi-LLM" />
+    <img src="https://img.shields.io/badge/Primary_AI-Sovereign_N--ATLAS_(NCAIR1)-008751?logo=huggingface" alt="Sovereign N-ATLAS" />
+    <img src="https://img.shields.io/badge/Grounding-Statutory_MOAT_%2B_MCP-0A66C2" alt="MOAT + MCP Grounding" />
+    <img src="https://img.shields.io/badge/AI_Fallbacks-Gemini%202.5%20%7C%20Groq%20%7C%20Claude-8A2BE2" alt="Fallback Models" />
     <img src="https://img.shields.io/badge/Payments-Flutterwave%20%7C%20Bachs%20%7C%20Paystack-FF5A5F" alt="Payments" />
-    <img src="https://img.shields.io/badge/Compliance-NDPC%20%7C%20NITDA-008751" alt="Compliance" />
+    <img src="https://img.shields.io/badge/Compliance-NDPC%20%7C%20NITDA%20%7C%20NCAIR-008751" alt="Compliance" />
   </div>
 </div>
 
@@ -25,29 +26,30 @@
 ## 📑 Table of Contents
 
 - [Executive Overview](#-executive-overview)
+  - [Primary AI: Nigeria's Sovereign N-ATLAS Core](#primary-ai-nigerias-sovereign-n-atlas-core)
+  - [Indigenous Dialect & Vernacular Support (NCAIR1)](#indigenous-dialect--vernacular-support-ncair1)
+  - [Anti-Hallucination: Statutory MOAT & Model Context Protocol (MCP)](#anti-hallucination-statutory-moat--model-context-protocol-mcp)
+  - [Resilient Multi-Model Fallback Architecture](#resilient-multi-model-fallback-architecture)
+  - [The Dual-Engine Model](#the-dual-engine-model)
 - [Key Enterprise Capabilities](#-key-enterprise-capabilities)
 - [System Architecture](#-system-architecture)
 - [Comprehensive Technology Stack](#-comprehensive-technology-stack)
+  - [Primary AI, Indigenous NLP & Anti-Hallucination Stack](#primary-ai-indigenous-nlp--anti-hallucination-stack)
+  - [Frontend Web & PWA](#frontend-web--pwa)
+  - [Native Mobile (iOS & Android)](#native-mobile-ios--android)
+  - [Backend Server & API Gateway](#backend-server--api-gateway)
+  - [Third-Party Gateways & Integrations](#third-party-gateways--integrations)
 - [End-to-End Operational Processes](#-end-to-end-operational-processes)
-  - [1. Statutory Grounding & MOAT RAG Pipeline](#1-statutory-grounding--moat-rag-pipeline)
+  - [1. Statutory Grounding, MCP Normalization & N-ATLAS Pipeline](#1-statutory-grounding-mcp-normalization--n-atlas-pipeline)
   - [2. Legal First Aid & Case Intake Referral Flow](#2-legal-first-aid--case-intake-referral-flow)
   - [3. Cross-Platform Channel Pairing & Account Linking](#3-cross-platform-channel-pairing--account-linking)
   - [4. Dynamic Payment Orchestration & Webhook Settlement](#4-dynamic-payment-orchestration--webhook-settlement)
   - [5. Offline Statutory MOAT Synchronization](#5-offline-statutory-moat-synchronization)
   - [6. Multi-Channel Notification Dispatch Pipeline](#6-multi-channel-notification-dispatch-pipeline)
 - [Client Applications & Interfaces](#-client-applications--interfaces)
-  - [Web Application (React 19 & Tailwind v4)](#web-application-react-19--tailwind-v4)
-  - [Native Mobile Application (Expo SDK 52)](#native-mobile-application-expo-sdk-52)
-  - [Omnichannel Bot Suite (WhatsApp Cloud & Telegram)](#omnichannel-bot-suite-whatsapp-cloud--telegram)
-  - [Super Admin Control Plane & CMS](#super-admin-control-plane--cms)
 - [Database Schema & Entity Relationship](#-database-schema--entity-relationship)
 - [Directory Layout](#-directory-layout)
 - [Installation & Quickstart Guide](#-installation--quickstart-guide)
-  - [Prerequisites](#prerequisites)
-  - [Environment Variables](#environment-variables)
-  - [Database Setup & Migrations](#database-setup--migrations)
-  - [Running the Full-Stack Web & Backend](#running-the-full-stack-web--backend)
-  - [Running the Native Mobile Client](#running-the-native-mobile-client)
 - [API Gateway Reference](#-api-gateway-reference)
 - [Bot Commands Reference](#-bot-commands-reference)
 - [Security, Encryption & Regulatory Compliance](#-security-encryption--regulatory-compliance)
@@ -59,18 +61,64 @@
 
 **SabiRight** is an enterprise-grade civic intelligence and justice platform designed specifically for the Nigerian and greater African legal landscape. In environments where statutory knowledge is inaccessible, police checkpoints create arbitrary friction, and finding verified legal representation is cumbersome, SabiRight provides **accessible, real-time statutory protection** to citizens across every device and communication channel.
 
+### Primary AI: Nigeria's Sovereign N-ATLAS Core
+
+Unlike generic overseas AI solutions that lack African cultural grounding and frequently hallucinate foreign statutes (such as US or UK legislation), SabiRight is powered **primarily by N-ATLAS (`NCAIR1/N-ATLaS`)**, Nigeria's Sovereign Multilingual Large Language Model developed under the **National Centre for Artificial Intelligence and Robotics (NCAIR / NITDA)**:
+
+- **Hugging Face Model Repository:** [https://huggingface.co/NCAIR1/N-ATLaS](https://huggingface.co/NCAIR1/N-ATLaS)
+- **NCAIR1 Organization Hub:** [https://huggingface.co/NCAIR1](https://huggingface.co/NCAIR1)
+- **Sovereign Foundation:** Fine-tuned on Llama-3 8B with extensive Nigerian jurisprudence, cultural idioms, and local civic conflict data as part of the **National AI Innovation Challenge (NAIC)**.
+
+### Indigenous Dialect & Vernacular Support (NCAIR1)
+
+SabiRight delivers native speech recognition (ASR) and conversational legal guidance across all major Nigerian dialects and languages through the official **NCAIR1** model suite:
+
+| Language / Dialect | ASR Speech Recognition Model | Text Generation & Legal Guidance |
+|---|---|---|
+| **Yoruba** | [`NCAIR1/Yoruba-ASR`](https://huggingface.co/NCAIR1/Yoruba-ASR) | Native N-ATLAS Multilingual Generation |
+| **Igbo** | [`NCAIR1/Igbo-ASR`](https://huggingface.co/NCAIR1/Igbo-ASR) | Native N-ATLAS Multilingual Generation |
+| **Hausa** | [`NCAIR1/Hausa-ASR`](https://huggingface.co/NCAIR1/Hausa-ASR) | Native N-ATLAS Multilingual Generation |
+| **Nigerian Pidgin (Naija)** | [`NCAIR1/NigerianAccentedEnglish`](https://huggingface.co/NCAIR1/NigerianAccentedEnglish) | Native N-ATLAS Vernacular Pidgin |
+| **Nigerian Accented English**| [`NCAIR1/NigerianAccentedEnglish`](https://huggingface.co/NCAIR1/NigerianAccentedEnglish) | Native N-ATLAS English Generation |
+
+All audio inputs from voice notes (WhatsApp, Telegram, Web, and Mobile) are dynamically transcoded via an internal FFmpeg pipeline to 16kHz mono PCM WAV and routed to the corresponding language-specific NCAIR1 ASR engine.
+
+### Anti-Hallucination: Statutory MOAT & Model Context Protocol (MCP)
+
+To achieve **zero legal hallucinations**, SabiRight does not rely solely on raw LLM generation. Instead, it enforces a strict two-layer factual grounding architecture:
+
+1. **Deterministic Statutory MOAT (`moat_data`):** An administrator-curated legal knowledge base within Supabase PostgreSQL holding authoritative sections of the **Constitution of the Federal Republic of Nigeria (CFRN 1999 as amended)**, the **Police Act 2020**, the **Administration of Criminal Justice Act (ACJA 2015)**, the **Cybercrimes (Prohibition, Prevention, etc.) Act 2015**, and state tenancy statutes. Every user query triggers a high-speed tokenized relevance search (`getRelevantMoatContext`) that binds the LLM prompt to exact statutory excerpts.
+2. **Anthropic Model Context Protocol (MCP) Server (`legalMcpServer.ts`):** Implements an RFC-compliant MCP server (`@modelcontextprotocol/sdk`) paired with the Google Agent Development Kit (`@google/adk`). The MCP server exposes deterministic tools:
+   - `search_legal_faqs`: Structured FAQ resolution.
+   - `search_verified_legal_data`: Authoritative statutory verification with strict non-extrapolation rules.
+   - `search_legal_professionals`: Proximity-based accredited NBA practitioner lookup.
+   - **Colloquial Query Normalization:** Automatically maps Nigerian street slang to statutory legal concepts:
+     - *"search my phone"* $\rightarrow$ Section 37 CFRN 1999 (Right to Privacy & Warrantless Search Protections)
+     - *"egunje"* / *"roger"* $\rightarrow$ Police Act 2020 & Criminal Code Extortion / Misconduct Provisions
+     - *"house wahala"* / *"quit notice"* $\rightarrow$ State Tenancy Laws & Recovery of Premises Act
+     - *"police stop"* / *"checkpoint"* $\rightarrow$ Police Act 2020 Powers of Arrest & Stop-and-Search Procedures
+     - *"bail"* $\rightarrow$ ACJA 2015 Sections 30–32 (Constitutional Right to Bail Free of Charge)
+
+### Resilient Multi-Model Fallback Architecture
+
+To ensure 99.99% uptime during model cold-starts, high-latency spikes, or external Hugging Face inference rate limits, SabiRight implements an automated, cascading fallback mechanism:
+- **Primary AI (Default Mode):** **N-ATLAS (`NCAIR1/N-ATLaS`)** is always invoked first for every legal query and speech transcription.
+- **Secondary Fallback:** **Google Gemini 2.5 / 2.0 Flash** is utilized strictly as a resilient fallback engine when N-ATLAS is cold-starting or unreachable.
+- **Tertiary Fallback:** **Groq (Llama 3.3 70B Versatile)**, **Anthropic (Claude 3.5 Sonnet)**, or **OpenAI (GPT-4o)** can be dynamically designated by administrators via the Super Admin Control Plane.
+
 ### The Dual-Engine Model
-1. **Legal First Aid AI Engine:** Delivers instant, constitutionally grounded legal advice in plain English, Nigerian Pidgin, Yoruba, Hausa, and Igbo. Equips citizens with real-time de-escalation scripts citing relevant sections of the **Constitution of the Federal Republic of Nigeria (CFRN 1999 as amended)**, the **Administration of Criminal Justice Act (ACJA 2015)**, the **Police Act 2020**, and state-level tenancy statutes.
+1. **Legal First Aid AI Engine:** Delivers instant, constitutionally grounded legal advice in plain English, Nigerian Pidgin, Yoruba, Hausa, and Igbo. Equips citizens with real-time de-escalation scripts citing relevant sections of the Constitution, ACJA 2015, Police Act 2020, and tenancy laws.
 2. **Accredited Professional Directory:** A verified marketplace of Nigerian Bar Association (NBA) accredited lawyers, paralegals, and accredited consultants. When an inquiry exceeds initial guidance, the system synthesizes a standardized 5-part **Pre-Case File** and connects the citizen with nearby legal counsel through encrypted consultation rooms.
 
 ---
 
 ## 🚀 Key Enterprise Capabilities
 
+- **Sovereign N-ATLAS Multilingual Core:** Powered primarily by Nigeria's national foundation model (`NCAIR1/N-ATLaS`) with native multi-dialect support across Nigerian Pidgin, Yoruba, Hausa, Igbo, and English.
+- **Statutory MOAT & MCP Anti-Hallucination MOAT:** Zero statutory hallucinations through continuous prompt grounding with verified Nigerian statutes and Anthropic MCP tool execution.
 - **Omnichannel Access:** Single unified experience across Responsive Web (Desktop/Mobile), Native iOS/Android (Expo), Progressive Web App (PWA), WhatsApp Cloud API, and Telegram Bot.
 - **Gemini-Style Responsive Workspace:** Clean, minimalist navigation shell with compact icon rail, top toggle control (`PanelLeft`), "+ New Legal First Aid" quick-action pill, and floating hover tooltips when collapsed.
-- **Statutory MOAT RAG:** Administrator-curated database of binding Nigerian jurisprudence that grounds every AI response in factual statutory law, eliminating legal hallucinations.
-- **Multi-LLM Dynamic Routing:** Dynamic runtime fallback across **Google Gemini 2.0 Flash / Pro**, **Groq (Llama 3.3 70B)**, **OpenAI (GPT-4o)**, **Anthropic (Claude 3.5 Sonnet)**, **DeepSeek**, **Mistral**, and **Perplexity**.
+- **Multi-LLM Dynamic Resilient Routing:** Automated fail-safe switching from N-ATLAS to **Google Gemini 2.5 / 2.0 Flash** or **Groq (Llama 3.3 70B)** during network timeouts or model warmup periods.
 - **Automated Pre-Case File Synthesis:** Converts multi-turn citizen chats into structured legal intake briefs complete with incident timelines, evidence logs, urgency scores, and recommended remedies.
 - **SabiMove™ Transit & Checkpoint Radar:** Crowdsourced road intelligence allowing citizens to report and navigate around unauthorized roadblocks, checkpoints, and extortion zones across Nigerian transit corridors.
 - **Dynamic Multi-Gateway Payments:** Seamless checkout via **Flutterwave Standard**, **Bachs Multi-Currency (Fiat & Crypto)**, **Paystack**, and **Manual Bank Transfers** with receipt OCR and admin approval.
@@ -101,25 +149,40 @@
   │  └───────────┬───────────┘  └───────────┬───────────┘  └─────────────┬──────────────┘  │
   │              │                          │                            │                 │
   │  ┌───────────▼──────────────────────────▼────────────────────────────▼──────────────┐  │
-  │  │                           AI ORCHESTRATION PIPELINE                              │  │
+  │  │                  SOVEREIGN AI & ANTI-HALLUCINATION PIPELINE                      │  │
   │  │                                                                                  │  │
-  │  │   [ Statutory MOAT Database ] ──> Keyword Grounding ──> [ Multi-LLM Router ]     │  │
-  │  │     (moat_data in Supabase)      (getRelevantMoat)       (Gemini, Groq, OpenAI)  │  │
-  │  │                                                                                  │  │
-  │  │   [ Google ADK Legal Agent ]  ──> MCP Tools Server ───> Pre-Case File Synthesizer│  │
-  │  └──────────────────────────────────────┬───────────────────────────────────────────┘  │
-  │                                         │                                              │
-  │  ┌──────────────────────────────────────▼───────────────────────────────────────────┐  │
+  │  │   ┌────────────────────────────────┐       ┌────────────────────────────────┐    │  │
+  │  │   │  Statutory MOAT Database (RAG) │       │  Anthropic MCP Legal Server    │    │  │
+  │  │   │   (moat_data in Supabase)      │       │   (legalMcpServer.ts / SDK)    │    │  │
+  │  │   └───────────────┬────────────────┘       └───────────────┬────────────────┘    │  │
+  │  │                   │                                        │                     │  │
+  │  │                   ▼                                        ▼                     │  │
+  │  │       [ Colloquial Slang Normalizer & Statutory Grounding Context Injector ]      │  │
+  │  │                                        │                                         │  │
+  │  │                 ┌──────────────────────┴──────────────────────┐                  │  │
+  │  │                 │                                             │                  │  │
+  │  │                 ▼                                             ▼                  │  │
+  │  │   [ 🇳🇬 PRIMARY SOVEREIGN CORE ]                 [ 🛡 RESILIENT FALLBACK ]        │  │
+  │  │      N-ATLAS (NCAIR1/N-ATLaS)                     Google Gemini 2.5 Flash        │  │
+  │  │      Fine-tuned Nigerian LLM                      Groq (Llama 3.3 70B) / Claude  │  │
+  │  │      + NCAIR1 ASR Dialect Suite                   (Invoked only on cold-start)   │  │
+  │  │                 │                                             │                  │  │
+  │  │                 └──────────────────────┬──────────────────────┘                  │  │
+  │  │                                        ▼                                         │  │
+  │  │                         [ Pre-Case File Synthesizer ]                            │  │
+  │  └────────────────────────────────────────┬─────────────────────────────────────────┘  │
+  │                                           │                                            │
+  │  ┌────────────────────────────────────────▼─────────────────────────────────────────┐  │
   │  │                       PAYMENT & BILLING ORCHESTRATOR                             │  │
   │  │                                                                                  │  │
   │  │   Flutterwave Standard   │   Bachs Checkout (APIv1)   │   Paystack API Checkout      │  │
   │  │   (Hosted link + verify) │   (HMAC-SHA256 Webhook)    │   (Popup / Redirect Callback)│  │
   │  │                                                                                  │  │
   │  │   Manual Bank Transfers  │   Unified Fulfillment Pipeline (fulfillPayment)       │  │
-  │  └──────────────────────────────────────┬───────────────────────────────────────────┘  │
-  └─────────────────────────────────────────┼──────────────────────────────────────────────┘
-                                            │
-                                            ▼
+  │  └────────────────────────────────────────┬─────────────────────────────────────────┘  │
+  └───────────────────────────────────────────┼────────────────────────────────────────────┘
+                                              │
+                                              ▼
   ┌────────────────────────────────────────────────────────────────────────────────────────┐
   │                               SUPABASE POSTGRESQL ENGINE                               │
   │                                                                                        │
@@ -133,6 +196,21 @@
 ---
 
 ## 💻 Comprehensive Technology Stack
+
+### Primary AI, Indigenous NLP & Anti-Hallucination Stack
+- **Primary Sovereign Foundation Model:** **N-ATLAS (`NCAIR1/N-ATLaS`)** fine-tuned on Llama-3 8B. Developed by the **National Centre for AI and Robotics (NCAIR / NITDA)** for Nigerian constitutional law, civic dispute de-escalation, and multi-vernacular comprehension. Hosted on Hugging Face Hub: [NCAIR1/N-ATLaS](https://huggingface.co/NCAIR1/N-ATLaS).
+- **Multi-Dialect ASR (Speech-to-Text):** Direct integration with the full suite of NCAIR1 African speech models:
+  - `NCAIR1/Yoruba-ASR` (Yoruba)
+  - `NCAIR1/Igbo-ASR` (Igbo)
+  - `NCAIR1/Hausa-ASR` (Hausa)
+  - `NCAIR1/NigerianAccentedEnglish` (Nigerian Pidgin / Naija & Nigerian-accented English)
+- **Audio Processing Pipeline:** Node.js native `child_process` with static FFmpeg (`ffmpeg-static`) transcoding incoming WhatsApp/Telegram voice notes into 16kHz 16-bit mono PCM WAV for accurate ASR parsing.
+- **Anti-Hallucination Grounding MOAT:** Supabase PostgreSQL `moat_data` table storing binding statutory excerpts (CFRN 1999, Police Act 2020, ACJA 2015, Cybercrimes Act, Tenancy Laws). Evaluated per query via tokenized score ranking.
+- **Model Context Protocol (MCP) Server:** `@modelcontextprotocol/sdk` exposing deterministic tools (`search_legal_faqs`, `search_verified_legal_data`, `search_legal_professionals`) with local slang query normalization ("house wahala", "egunje", "search my phone", "quit notice").
+- **Agentic Orchestration:** `@google/adk` (Google Agent Development Kit) bridging MCP tools and structured Pre-Case File synthesis.
+- **Resilient Fallback Engines:** Dynamic secondary fail-safe switching to **Google Gemini 2.5 Flash / 2.0 Flash**, **Groq (Llama 3.3 70B Versatile)**, **Anthropic Claude 3.5 Sonnet**, and **OpenAI GPT-4o-mini** if N-ATLAS encounters a cold start or latency budget expiration.
+
+---
 
 ### Frontend Web & PWA
 - **Core Framework:** React 19 (`react`, `react-dom`) with TypeScript 5.6.
@@ -161,32 +239,44 @@
 - **Email Delivery:** Nodemailer with authenticated SMTP transport and responsive HTML email templates.
 - **Web Push:** `web-push` using VAPID key pairs.
 
-### Third-Party Gateways & APIs
-- **AI Models:** Google Generative AI (Gemini 2.0 Flash / Pro), Groq Cloud API, OpenAI API, Anthropic Claude API.
-- **Payments:** Flutterwave API v3, Bachs API v1, Paystack API, and verified Bank Transfer receipts.
+### Third-Party Gateways & Integrations
+- **Primary Sovereign AI:** N-ATLAS (`NCAIR1/N-ATLaS`), Hugging Face Router & Inference Endpoints, NCAIR1 ASR dialect models (`Yoruba-ASR`, `Igbo-ASR`, `Hausa-ASR`, `NigerianAccentedEnglish`).
+- **Resilient Fallback AI:** Google Generative AI (Gemini 2.5 Flash / 2.0 Flash — secondary fallback), Groq Cloud API (Llama 3.3 70B), Anthropic Claude API, OpenAI API.
+- **Payments:** Flutterwave API v3, Bachs API v1 (Crypto/Fiat), Paystack API, and verified Bank Transfer receipts.
 - **Messaging:** Meta WhatsApp Cloud API / Twilio WhatsApp Sandbox, Telegram Bot API.
 
 ---
 
 ## 🔄 End-to-End Operational Processes
 
-### 1. Statutory Grounding & MOAT RAG Pipeline
+### 1. Statutory Grounding, MCP Normalization & N-ATLAS Pipeline
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Citizen as Citizen (Web/Mobile/Bot)
+    actor Citizen as Citizen (Web/Mobile/WhatsApp/Telegram)
     participant Server as Express API Gateway
+    participant MCP as Anthropic MCP Server (legalMcpServer)
     participant DB as Supabase PostgreSQL (moat_data)
-    participant LLM as Multi-LLM Router (Gemini/Groq)
+    participant NATLAS as Primary: N-ATLAS (NCAIR1/N-ATLaS)
+    participant Fallback as Secondary: Gemini 2.5 Flash
 
-    Citizen->>Server: POST /api/ai/chat (Prompt: "Police wants to search my phone without warrant")
+    Citizen->>Server: POST /api/ai/chat (Vernacular prompt: "Police stop me, they want search my phone without warrant")
+    Server->>MCP: Normalize colloquial phrasing & evaluate legal tools
+    MCP-->>Server: Normalized query: "Section 37 CFRN 1999 privacy warrantless search police act 2020"
     Server->>DB: Query moat_data where keywords match (getRelevantMoatContext)
-    DB-->>Server: Returns Section 37 CFRN (Privacy) & Section 49 Police Act
-    Server->>Server: Inject statutory citations into system prompt & de-escalation guardrails
-    Server->>LLM: Generate response with statutory grounding
-    LLM-->>Server: Structured response with exact legal citations & de-escalation script
-    Server->>Server: Deduct credits & log in credit_logs
-    Server-->>Citizen: Render legal guidance with copyable de-escalation script
+    DB-->>Server: Returns exact excerpts of Section 37 CFRN (Privacy) & Section 49 Police Act 2020
+    Server->>Server: Inject statutory citations into system prompt with strict non-hallucination rules
+    
+    alt N-ATLAS Available (Primary Sovereign Core)
+        Server->>NATLAS: Dispatch prompt to NCAIR1/N-ATLaS (Pidgin / Yoruba / Hausa / Igbo / English)
+        NATLAS-->>Server: Constitutionally grounded vernacular guidance + statutory de-escalation script
+    else N-ATLAS Cold-Start / Latency Timeout (Resilient Fail-Safe)
+        Server->>Fallback: Seamlessly route to Google Gemini 2.5 Flash with identical MOAT grounding
+        Fallback-->>Server: Grounded legal guidance with statutory citations
+    end
+
+    Server->>Server: Deduct user credit balance & log in credit_logs
+    Server-->>Citizen: Deliver instant vernacular legal protection & de-escalation script
 ```
 
 ### 2. Legal First Aid & Case Intake Referral Flow
@@ -394,11 +484,17 @@ SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
 VITE_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
 
-# Primary AI Provider Keys (Can also be managed live in Super Admin)
-GEMINI_API_KEY=AIzaSy...
-GROQ_API_KEY=gsk_...
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
+# Sovereign N-ATLAS Primary AI Configuration (NCAIR1/N-ATLaS)
+NATLAS_API_TOKEN=hf_...                         # Hugging Face User Access Token (read permissions)
+NATLAS_MODEL_ID=NCAIR1/N-ATLaS                  # Model repository on Hugging Face Hub (default: NCAIR1/N-ATLaS)
+NATLAS_API_ENDPOINT=https://router.huggingface.co/v1/chat/completions # Router or custom inference endpoint
+NATLAS_ASR_ENDPOINT=https://router.huggingface.co/hf-inference/models/{model} # ASR endpoint override
+
+# Resilient Secondary Fallback Provider Keys (Invoked only on N-ATLAS cold-start or timeout)
+GEMINI_API_KEY=AIzaSy...                        # Google Gemini 2.5/2.0 Flash (Secondary Fallback)
+GROQ_API_KEY=gsk_...                            # Groq Llama 3.3 70B Versatile (Tertiary Fallback)
+OPENAI_API_KEY=sk-...                           # OpenAI GPT-4o-mini
+ANTHROPIC_API_KEY=sk-ant-...                    # Anthropic Claude 3.5 Sonnet
 
 # Bot Configuration (Optional for messaging channels)
 TELEGRAM_BOT_TOKEN=123456789:ABC...
@@ -535,6 +631,8 @@ When messaging SabiRight via **WhatsApp** or **Telegram**:
 
 ## 🔒 Security, Encryption & Regulatory Compliance
 
+- **Sovereign AI & Linguistic Compliance (NCAIR / NITDA NAIC):** Developed in alignment with the **National Artificial Intelligence Policy** and the **NITDA National AI Innovation Challenge (NAIC)**. SabiRight prioritizes domestic legal intelligence via Nigeria's sovereign model **N-ATLAS ([NCAIR1/N-ATLaS](https://huggingface.co/NCAIR1/N-ATLaS))** and vernacular speech recognition engines ([NCAIR1 Organization](https://huggingface.co/NCAIR1)), preventing informational leakage and ensuring localized civic data remains under indigenous governance.
+- **Anti-Hallucination Guarantee (Statutory MOAT + Anthropic MCP):** The Model Context Protocol (`@modelcontextprotocol/sdk`) server enforces strict non-extrapolation guardrails. If a statutory query is not substantiated by the binding provisions of the 1999 Constitution, the Police Act 2020, or the ACJA 2015 in `moat_data`, the AI refuses to invent legal citations, explicitly admits uncertainty, and refers the citizen to verified NBA legal practitioners.
 - **Data Protection Compliance (NDPC & NITDA):** Designed in alignment with the Nigeria Data Protection Act (NDPA) and NITDA guidelines. Citizen inquiry transcripts and consultation records are stored in encrypted Supabase storage with restricted access.
 - **Row Level Security (RLS):** Every PostgreSQL table enforces RLS; citizens can only access their own records, and administrative endpoints require verified admin tokens.
 - **HMAC Webhook Signatures:**
