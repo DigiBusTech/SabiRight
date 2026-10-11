@@ -16,6 +16,7 @@ import { useLocation } from "wouter";
 import ReactMarkdown from "react-markdown";
 import { SurveyDialog } from "../../components/SurveyDialog";
 import { SabiContributorModal } from "../../components/SabiContributorModal";
+import { recordLanguageInteraction } from "../../lib/innovationAnalytics";
 import {
   Sheet,
   SheetContent,
@@ -537,6 +538,7 @@ export default function CivicGuard() {
         throw new Error(d.error || "AI service error");
       }
       setMessages(p => [...p, { role: "ai", text: d.response }]);
+      recordLanguageInteraction(preferredLanguage);
       refetchCredits();
       queryClient.invalidateQueries({ queryKey: ['sabiguard-messages', cid] });
 

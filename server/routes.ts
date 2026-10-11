@@ -13,6 +13,10 @@ import { whatsappRouter } from "./bots/whatsapp/whatsappRoutes.js";
 import { telegramRouter } from "./bots/telegram/telegramRoutes.js";
 import { drainInboundBotQueue } from "./bots/inboundBotWorker.js";
 import {
+  getInnovationAnalytics,
+  recordAnalyticsEvent
+} from "./innovationAnalytics.js";
+import {
   normalizeTelegramBotUrl,
   normalizeWhatsAppBotUrl
 } from "./botPublicLinks.js";
@@ -1971,6 +1975,59 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
       res.json({ ok: true, model: "N-ATLAS (NCAIR1/N-ATLaS)", sampleOutput: testResponse.slice(0, 400) });
     } catch (error: any) {
       res.status(500).json({ ok: false, error: error.message || String(error) });
+    }
+  });
+
+  // Admin User Management - protected routes
+  app.post("/api/analytics/events", async (req, res, next) => {
+    const { channel, visitorId, eventType, language } = req.body || {};
+    if (
+      (channel !== "web" && channel !== "native_app") ||
+      typeof visitorId !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(visitorId) ||
+      (eventType !== undefined && eventType !== "language_interaction") ||
+      (eventType === "language_interaction" &&
+        (typeof language !== "string" || !["English", "Nigerian Pidgin", "Hausa", "Yoruba", "Igbo"].includes(language)))
+    ) {
+      return res.status(400).json({ error: "A valid event, channel, visitor ID, and supported language are required" });
+    }
+
+    try {
+      await recordAnalyticsEvent({
+        channel,
+        eventType: eventType || "visit",
+        visitorId,
+        language
+      });
+      res.status(202).json({ accepted: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/admin/innovation-analytics", adminAuth, async (req, res, next) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const defaultStart = new Date();
+    defaultStart.setUTCDate(defaultStart.getUTCDate() - 29);
+    const startDate = typeof req.query.startDate === "string" ? req.query.startDate : defaultStart.toISOString().slice(0, 10);
+    const endDate = typeof req.query.endDate === "string" ? req.query.endDate : today;
+    const validDate = (value: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const parsed = new Date(`${value}T00:00:00.000Z`);
+      return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    };
+    if (!validDate(startDate) || !validDate(endDate) || startDate > endDate) {
+      return res.status(400).json({ error: "Provide a valid startDate and endDate in YYYY-MM-DD format" });
+    }
+    if ((Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) / 86400000 > 3660) {
+      return res.status(400).json({ error: "The reporting range cannot exceed 10 years" });
+    }
+
+    try {
+      const analytics = await getInnovationAnalytics(startDate, endDate);
+      res.json(analytics);
+    } catch (error) {
+      next(error);
     }
   });
 

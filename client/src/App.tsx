@@ -7,6 +7,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { Capacitor } from '@capacitor/core';
+import { recordAnalyticsVisit } from "@/lib/innovationAnalytics";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/context/AuthContext";
@@ -130,6 +131,8 @@ function App() {
   const [showPreloader, setShowPreloader] = useState(true);
 
   useEffect(() => {
+    recordAnalyticsVisit();
+
     // Initialize Capacitor plugins
     if (Capacitor.isNativePlatform()) {
       const initNative = async () => {

@@ -19,7 +19,7 @@ app.use((_req, res, next) => {
 
 // Minimal in-memory rate limiter for abuse-prone endpoints (per IP)
 const hits = new Map<string, { n: number; reset: number }>();
-const limited = /^\/api\/(auth|payments|ai|civic|bots)/;
+const limited = /^\/api\/(auth|payments|ai|civic|bots|analytics)/;
 app.use((req, res, next) => {
   if (!limited.test(req.path) || /webhook|callback/.test(req.path)) return next();
   const key = `${req.ip}:${req.path.split('/')[2]}`;

@@ -54,6 +54,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { GeneralSettings } from "./components/GeneralSettings";
+import InnovationAnalytics from "./InnovationAnalytics";
 
 const getAdminHeaders = async () => {
   const { data } = await supabase.auth.getSession();
@@ -517,6 +518,7 @@ export default function AdminDashboard() {
         { id: "api-keys", label: "API Keys", icon: Key },
               { id: "email-templates", label: "Email Templates", icon: Mail },
               { id: "analytics", label: "Analytics", icon: BarChart3 },
+              { id: "innovation-analytics", label: "Innovation Analytics", icon: BarChart3 },
       ]
     },
     {
@@ -6891,6 +6893,10 @@ export default function AdminDashboard() {
       );
     })()}
   </TabsContent>
+
+        <TabsContent value="innovation-analytics" className="space-y-6">
+          <InnovationAnalytics />
+        </TabsContent>
 
         <TabsContent value="flagged-posts" className="space-y-4">
           <Card>

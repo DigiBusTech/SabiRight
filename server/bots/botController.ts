@@ -12,6 +12,11 @@ import {
   getTypedLanguageSelection
 } from "./onboarding.js";
 import { getProfessionalLabel, getRecommendedProfessionalRole } from "./professionalRouting.js";
+import {
+  ANALYTICS_LANGUAGES,
+  hashAnalyticsVisitorId,
+  recordAnalyticsEvent
+} from "../innovationAnalytics.js";
 
 const BOT_AI_RESPONSE_BUDGET_MS = 7_000;
 const AUTO_DETECT_LANGUAGE = 'Auto-detect';
@@ -1326,6 +1331,21 @@ AI:`;
       await refundBotCredit(userId, cost, creditKey);
       finalResponse = `I couldn't generate a reliable response to that enquiry. Your credits have been refunded.${fallbackGuidance} Please try again or type /professional to find a suitable professional.`;
     } else {
+      const analyticsLanguage = autoDetectLanguage ? parsedResponse.language : userLang;
+      if (analyticsLanguage && (ANALYTICS_LANGUAGES as readonly string[]).includes(analyticsLanguage)) {
+        try {
+          const visitorId = hashAnalyticsVisitorId(msg.channel, msg.channelUserId);
+          void recordAnalyticsEvent({
+            channel: msg.channel,
+            eventType: "language_interaction",
+            visitorId,
+            language: analyticsLanguage
+          }).catch(error => console.error("[Innovation Analytics] Could not record bot language interaction:", error));
+        } catch (error) {
+          console.error("[Innovation Analytics] Could not pseudonymize bot visitor:", error);
+        }
+      }
+
       if (autoDetectLanguage && parsedResponse.language) {
         const { error: languageError } = await supabase.from('profiles')
           .update({ language: parsedResponse.language, bot_language_mode: 'auto', updated_at: new Date().toISOString() })
