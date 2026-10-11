@@ -80,21 +80,6 @@ export default function Marketplace() {
   const [isCreatingBooking, setIsCreatingBooking] = useState(false);
   const [showVerificationPopup, setShowVerificationPopup] = useState(false);
   const [verificationAction, setVerificationAction] = useState("");
-  
-  // Fetch wallet balance
-  const { data: wallet } = useQuery({
-    queryKey: ['wallet', user?.uid],
-    queryFn: async () => {
-      if (!user) return null;
-      const token = await user.getIdToken();
-      const res = await fetch(`/api/wallet/${user.uid}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!res.ok) return null;
-      return res.json();
-    },
-    enabled: !!user
-  });
 
   // Get user's current location
   useEffect(() => {
@@ -689,7 +674,7 @@ export default function Marketplace() {
                   <div>
                     <p className="font-semibold text-blue-800">Secure Communication</p>
                     <p className="text-sm text-blue-700 mt-1">
-                      Chat directly with the professional. SabiGuard will summarize your case file to assist them.
+                      Chat directly with the professional. Legal First Aid will summarize your case file to assist them.
                     </p>
                   </div>
                 </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { HelmetProvider } from "react-helmet-async";
@@ -28,7 +28,6 @@ import Forum from "@/pages/app/Forum";
 import PlanManagement from "@/pages/app/PlanManagement";
 import TrafficAlerts from "@/pages/app/TrafficAlerts";
 import EmailVerification from "@/pages/app/EmailVerification";
-import Wallet from "@/pages/app/Wallet";
 import ProfessionalDashboard from "@/pages/app/ProfessionalDashboard";
 import AdminDashboard from "@/pages/admin/AdminDashboard";
 import Login from "@/pages/auth/Login";
@@ -83,7 +82,7 @@ function Router() {
         <AppLayout><EmailVerification /></AppLayout>
       </Route>
       <Route path="/app/wallet">
-        <AppLayout><Wallet /></AppLayout>
+        <Redirect to="/app/credits" />
       </Route>
       <Route path="/app/settings">
         <AppLayout><Settings /></AppLayout>
@@ -105,6 +104,18 @@ function Router() {
       </Route>
       <Route path="/app/bookings/:id">
         <AppLayout><BookingDetail /></AppLayout>
+      </Route>
+      <Route path="/bookings">
+        <AppLayout><Bookings /></AppLayout>
+      </Route>
+      <Route path="/bookings/:id">
+        <AppLayout><BookingDetail /></AppLayout>
+      </Route>
+      <Route path="/app/history">
+        <AppLayout><Bookings /></AppLayout>
+      </Route>
+      <Route path="/history">
+        <AppLayout><Bookings /></AppLayout>
       </Route>
       <Route path="/admin">
         <AppLayout><AdminDashboard /></AppLayout>

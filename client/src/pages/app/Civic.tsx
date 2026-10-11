@@ -279,7 +279,7 @@ export default function CivicGuard() {
           userId: user.uid,
           vendorId: prof.vendorId,
           totalAmount: 0,
-          description: "Referred from SabiGuard AI Assistant.",
+          description: "Referred from Legal First Aid AI Assistant.",
           scheduledDate: null,
           chatId: currentChatId
         })
@@ -359,7 +359,7 @@ export default function CivicGuard() {
 
     messages.forEach(message => {
       const messageData = [
-        message.role === 'ai' ? 'SabiGuard AI' : 'User',
+        message.role === 'ai' ? 'Legal First Aid AI' : 'User',
         message.text || message.content,
         new Date().toLocaleString()
       ];

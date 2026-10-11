@@ -395,13 +395,13 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        {/* Metric 2: SabiGuard Legal First-Aid Status */}
+        {/* Metric 2: Legal First Aid Status */}
         <motion.div variants={itemVariants} whileHover={{ y: -3 }} transition={{ duration: 0.2 }}>
           <div className="h-full p-5 rounded-3xl bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-white dark:to-slate-900 border border-blue-500/25 dark:border-blue-500/20 shadow-lg flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-primary dark:text-blue-400">
-                  SabiGuard Engine
+                  Legal First Aid Engine
                 </span>
                 <div className="h-8 w-8 rounded-xl bg-blue-500/20 text-primary dark:text-blue-400 flex items-center justify-center">
                   <Scale className="h-4 w-4" />
@@ -601,7 +601,7 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h4 className="font-extrabold text-sm text-slate-900 dark:text-white group-hover:text-primary transition-colors">
-                    SabiGuard AI Legal Shield
+                    Legal First Aid AI Shield
                   </h4>
                   <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
                     Interactive voice & text legal first-aid in Nigerian Pidgin, Yoruba, Hausa, Igbo, and English.
@@ -707,8 +707,8 @@ export default function Dashboard() {
             </div>
           </Link>
 
-          {/* Bento 6: Sovereign Wallet & Escrow */}
-          <Link href="/app/wallet">
+          {/* Bento 6: Plans & Subscriptions */}
+          <Link href="/app/plans">
             <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-purple-400 dark:hover:border-purple-600 hover:shadow-xl transition-all group cursor-pointer flex flex-col justify-between h-full">
               <div className="space-y-3">
                 <div className="h-10 w-10 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center border border-purple-200 dark:border-purple-900 group-hover:scale-105 transition-transform">
@@ -716,15 +716,15 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h4 className="font-extrabold text-sm text-slate-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors">
-                    Sovereign Wallet & Escrow
+                    Plans & Subscriptions
                   </h4>
                   <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed">
-                    Protect legal consultation funds in secure milestones with verified Nigerian payment gateways.
+                    Upgrade citizen quotas, access multi-lingual priority legal aid, and manage tier benefits.
                   </p>
                 </div>
               </div>
               <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs font-bold text-purple-600 dark:text-purple-400">
-                <span>Open Wallet</span>
+                <span>Manage Plans</span>
                 <ChevronRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
               </div>
             </div>

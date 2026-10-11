@@ -245,7 +245,7 @@ export function PwaInstallPrompt() {
 
                   <div className="p-3.5 rounded-2xl bg-sky-50/80 dark:bg-sky-950/20 border border-sky-100 dark:border-sky-800/30">
                     <ShieldCheck className="h-5 w-5 text-sky-600 dark:text-sky-400 mb-1.5" />
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">SabiGuard AI</h4>
+                    <h4 className="text-xs font-bold text-slate-900 dark:text-white">Legal First Aid AI</h4>
                     <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
                       Instant legal assistance & lawyer directory.
                     </p>

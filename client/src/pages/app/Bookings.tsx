@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { MessageSquare, Clock, ShieldCheck, UserCheck, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -16,12 +17,17 @@ export default function Bookings() {
     queryKey: ['bookings-citizen', user?.uid],
     queryFn: async () => {
       if (!user?.uid) return [];
-      const token = await user.getIdToken();
-      const res = await fetch(`/api/bookings/user/${user.uid}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error('Failed to load bookings');
-      return res.json();
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/bookings/user/${user.uid}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return [];
+        return await res.json();
+      } catch (err) {
+        console.warn("Could not load citizen bookings:", err);
+        return [];
+      }
     },
     enabled: !!user?.uid
   });
@@ -31,12 +37,17 @@ export default function Bookings() {
     queryKey: ['bookings-professional', user?.uid],
     queryFn: async () => {
       if (!user?.uid) return [];
-      const token = await user.getIdToken();
-      const res = await fetch(`/api/bookings/vendor/${user.uid}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!res.ok) throw new Error('Failed to load bookings');
-      return res.json();
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(`/api/bookings/vendor/${user.uid}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return [];
+        return await res.json();
+      } catch (err) {
+        console.warn("Could not load professional bookings:", err);
+        return [];
+      }
     },
     enabled: !!user?.uid && !!profile?.isVendor
   });
@@ -134,7 +145,7 @@ export default function Bookings() {
               </Link>
               <Link href="/app/civic">
                 <Button variant="outline" className="h-10 px-4 border-primary/20 text-primary font-bold text-xs rounded-xl bg-blue-50/50 dark:bg-blue-950/30">
-                  Chat with SabiGuard
+                  Start Legal First Aid
                 </Button>
               </Link>
             </div>

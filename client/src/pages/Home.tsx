@@ -586,7 +586,7 @@ export default function Home() {
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {/* Pillar 1: SabiGuard Legal First-Aid */}
+          {/* Pillar 1: Legal First Aid */}
           <motion.div 
             whileHover={{ y: -6 }}
             transition={{ duration: 0.2 }}
@@ -596,7 +596,7 @@ export default function Home() {
               <div className="h-12 w-12 rounded-2xl bg-blue-100 text-primary flex items-center justify-center font-bold">
                 <Scale className="h-6 w-6 text-primary" />
               </div>
-              <h3 className="text-xl font-black text-slate-900">SabiGuard</h3>
+              <h3 className="text-xl font-black text-slate-900">Legal First Aid</h3>
               <p className="text-xs text-slate-600 leading-relaxed font-medium">
                 Legal First-Aid powered by statutory Nigerian jurisprudence. Instant script guidance during stop-and-search, unlawful detentions, and landlord disputes.
               </p>

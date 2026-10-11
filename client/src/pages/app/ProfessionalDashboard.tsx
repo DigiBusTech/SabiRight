@@ -889,7 +889,7 @@ export default function VendorDashboard() {
                   ) : (
                     <div className="space-y-3">
                       {bookings.map((booking) => (
-                        <Link key={booking.id} href={`/bookings/${booking.id}`}>
+                        <Link key={booking.id} href={`/app/bookings/${booking.id}`}>
                           <div className="p-4 border rounded-lg cursor-pointer hover:border-primary/50 transition-colors">
                             <div className="flex items-start justify-between">
                               <div>

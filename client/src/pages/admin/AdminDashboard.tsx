@@ -2551,7 +2551,7 @@ export default function AdminDashboard() {
                             <div className="space-y-2">
                               <label className="text-xs font-medium text-slate-500 uppercase">Term / Word</label>
                               <Input 
-                                placeholder="e.g. SabiGuard" 
+                                placeholder="e.g. Legal First Aid" 
                                 value={newTrainingTerm.term}
                                 onChange={(e) => setNewTrainingTerm(prev => ({ ...prev, term: e.target.value }))}
                               />
@@ -6957,7 +6957,7 @@ export default function AdminDashboard() {
                                       size="sm" 
                                       variant="outline"
                                       className="w-full bg-blue-50"
-                                      onClick={() => window.location.href = `/bookings/${dispute.bookingId}`}
+                                      onClick={() => window.location.href = `/app/bookings/${dispute.bookingId}`}
                                     >
                                       Go to Chat
                                     </Button>
@@ -7013,7 +7013,7 @@ export default function AdminDashboard() {
                     <div className="space-y-2">
                       <Label>Company</Label>
                       <Input 
-                        placeholder="e.g. Sabiguard Legal" 
+                        placeholder="e.g. Legal First Aid" 
                         value={newJob.company}
                         onChange={(e) => setNewJob({ ...newJob, company: e.target.value })}
                       />

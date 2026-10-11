@@ -26,7 +26,7 @@ const steps: Step[] = [
     target: "location-card"
   },
   {
-    title: "SabiGuard AI",
+    title: "Legal First Aid AI",
     content: "Get 'Legal First Aid', verify your rights, and get guidance on Nigerian laws in real-time.",
     target: "civic-card"
   },

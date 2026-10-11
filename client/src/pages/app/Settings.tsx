@@ -647,7 +647,7 @@ export default function Settings() {
                   <AlertDialogDescription>
                     This action cannot be undone. This will permanently delete your 
                     account and remove all your data from our servers including your 
-                    profile, bookings, wallet balance, and credits.
+                    profile, consultations, and credits.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

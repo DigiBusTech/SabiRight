@@ -230,7 +230,7 @@ export function GeneralSettings() {
               <Languages className="h-5 w-5 text-primary" /> Multi-Language Portal Management
             </h3>
             <p className="text-sm text-slate-500 mt-1">
-              Select which localized languages appear as active preferences for citizens inside SabiGuard Chat.
+              Select which localized languages appear as active preferences for citizens inside Legal First Aid Chat.
             </p>
           </div>
           <Badge className="bg-primary/10 text-primary border-none text-xs font-black">SINGLE PASS RAG</Badge>

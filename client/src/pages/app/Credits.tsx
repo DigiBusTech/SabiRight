@@ -199,7 +199,7 @@ export default function Credits() {
           <CardContent className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
             <div className="flex items-start gap-2">
               <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-              <p><strong className="text-slate-900 dark:text-white">SabiGuard AI Legal Queries:</strong> Comprehensive jurisprudence and case law scripts cost 5 credits.</p>
+              <p><strong className="text-slate-900 dark:text-white">Legal First Aid Queries:</strong> Comprehensive jurisprudence and case law scripts cost 5 credits.</p>
             </div>
             <div className="flex items-start gap-2">
               <CheckCircle2 className="h-4 w-4 text-primary mt-0.5 shrink-0" />
