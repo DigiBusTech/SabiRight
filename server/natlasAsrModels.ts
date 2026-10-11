@@ -19,7 +19,7 @@ export function selectNAtlasAsrModel(language?: string): string {
     return ASR_MODELS.nigerianEnglish;
   }
 
-  if (!normalized || /^(auto|detect|unknown)$/.test(normalized)) {
+  if (!normalized || /^(auto(?:-detect)?|detect|unknown)$/.test(normalized)) {
     return ASR_MODELS.nigerianEnglish;
   }
 

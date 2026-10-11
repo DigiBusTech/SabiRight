@@ -491,7 +491,9 @@ export async function transcribeAudio(
     throw error;
   }
 
-  const requestedLanguage = language?.trim().slice(0, 80);
+  const requestedLanguage = language && !/^(?:auto(?:-detect)?|detect|unknown)$/i.test(language.trim())
+    ? language.trim().slice(0, 80)
+    : undefined;
   const languageInstruction = requestedLanguage && requestedLanguage.toLowerCase() !== 'english'
     ? ` The speaker may be speaking ${requestedLanguage}; preserve the language spoken.`
     : '';

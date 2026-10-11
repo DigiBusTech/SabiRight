@@ -6,6 +6,7 @@ import PaystackService from "../paystackService.js";
 import type { IncomingBotMessage, BotResponse } from "./types.js";
 
 const BOT_AI_RESPONSE_BUDGET_MS = 7_000;
+const AUTO_DETECT_LANGUAGE = 'Auto-detect';
 type ChatTurn = { role: string; content: string; eventId?: string };
 const userChatBuffers: Map<string, ChatTurn[]> = new Map();
 
@@ -316,9 +317,68 @@ async function searchNearbyProfessionals(
 
 const LINK_COMMAND = /^\/?link\s+([A-Za-z0-9]{6,10})$/i;
 const BOT_GREETING = /^(?:hi|hello|hey|hiya|yo|howfa|how\s+far|how\s+far\s+are\s+you|wetin\s+dey|good\s+morning|good\s+afternoon|good\s+evening)[\s.!?,]*$/i;
+const BOT_RESPONSE_LANGUAGES = ['English', 'Nigerian Pidgin', 'Hausa', 'Yoruba', 'Igbo'] as const;
+
+function parseAutoDetectedLanguage(response: string): { language: string | null; text: string } {
+  const marker = response.match(/\[\[SABIRIGHT_LANGUAGE:\s*(English|Nigerian Pidgin|Hausa|Yoruba|Igbo)\s*\]\]/i);
+  const language = marker
+    ? BOT_RESPONSE_LANGUAGES.find(candidate => candidate.toLowerCase() === marker[1].trim().toLowerCase()) || null
+    : null;
+  return {
+    language,
+    text: response.replace(/\[\[SABIRIGHT_LANGUAGE:[^\]]+\]\]/gi, '').trim()
+  };
+}
 
 function isBotGreeting(text: string): boolean {
   return BOT_GREETING.test(text.trim());
+}
+
+function detectGreetingLanguage(text: string): string {
+  return /^(?:howfa|how\s+far|how\s+far\s+are\s+you|wetin\s+dey)[\s.!?,]*$/i.test(text.trim())
+    ? 'Nigerian Pidgin'
+    : 'English';
+}
+
+function localizedBotGreeting(name: string, language: string, isLinked: boolean): string {
+  const greetings: Record<string, { linked: string; guest: string; prompt: string }> = {
+    'English': {
+      linked: '✅ Your SabiRight account is connected.',
+      guest: 'You are using guest chat. Tap Link Account to connect your SabiRight account.',
+      prompt: 'Send a civic question or choose an option below.'
+    },
+    'Nigerian Pidgin': {
+      linked: '✅ Your SabiRight account don connect.',
+      guest: 'You dey use guest chat. Tap Link Account to connect your SabiRight account.',
+      prompt: 'Send your civic question or choose one option below.'
+    },
+    'Hausa': {
+      linked: '✅ An haɗa asusunka na SabiRight.',
+      guest: 'Kana amfani da baƙo. Danna Link Account don haɗa asusunka na SabiRight.',
+      prompt: 'Aiko da tambayarka ko zaɓi ɗaya daga cikin zaɓuɓɓukan da ke ƙasa.'
+    },
+    'Yoruba': {
+      linked: '✅ A ti so akọọlẹ SabiRight rẹ pọ.',
+      guest: 'O nlo iwiregbe alejo. Tẹ Link Account lati so akọọlẹ SabiRight rẹ pọ.',
+      prompt: 'Fi ìbéèrè rẹ ránṣẹ́ tàbí yan ọ̀kan lára àwọn àṣàyàn tó wà ní ìsàlẹ̀.'
+    },
+    'Igbo': {
+      linked: '✅ Ejikọtala akaụntụ SabiRight gị.',
+      guest: 'Ị na-eji nkata ọbịa. Pịa Link Account iji jikọọ akaụntụ SabiRight gị.',
+      prompt: 'Zipu ajụjụ gị ma ọ bụ họrọ otu n’ime nhọrọ ndị dị n’okpuru.'
+    }
+  };
+  const copy = greetings[language] || greetings.English;
+  const intro = language === 'Nigerian Pidgin'
+    ? `👋 How far ${name}! Na Sabi be this, your Nigerian civic and legal first-aid assistant.`
+    : language === 'Hausa'
+      ? `👋 Sannu ${name}! Ni Sabi ce, mai taimaka kan haƙƙoƙin jama'a da dokokin Najeriya.`
+      : language === 'Yoruba'
+        ? `👋 Ẹ káàbọ̀ ${name}! Èmi ni Sabi, olùrànlọ́wọ́ fún ẹ̀tọ́ aráàlú àti òfin Nàìjíríà.`
+        : language === 'Igbo'
+          ? `👋 Ndewo ${name}! Abụ m Sabi, onye enyemaka gbasara ikike na iwu Naịjirịa.`
+          : `👋 Hello ${name}! I'm Sabi, your Nigerian civic and legal first-aid assistant.`;
+  return `${intro}\n\n${isLinked ? copy.linked : copy.guest}\n\n${copy.prompt}`;
 }
 
 function getAccountLinkInstructions(isLinked: boolean, channel: IncomingBotMessage['channel']): string {
@@ -440,6 +500,7 @@ async function createBotGuestProfile(msg: IncomingBotMessage): Promise<any> {
       city: null,
       state: null,
       language: 'English',
+      bot_language_mode: 'auto',
       is_admin: false,
       is_vendor: false,
       is_guest: true,
@@ -476,9 +537,15 @@ export async function getBotLanguage(channel: IncomingBotMessage['channel'], cha
     .maybeSingle();
   if (linkError) throw linkError;
   const userId = link?.user_id || channelUserId;
-  const { data: profile, error } = await supabase.from('profiles').select('language').eq('id', userId).maybeSingle();
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('language,bot_language_mode')
+    .eq('id', userId)
+    .maybeSingle();
   if (error) throw error;
-  return profile?.language || 'English';
+  return profile?.bot_language_mode === 'selected'
+    ? profile.language || 'English'
+    : AUTO_DETECT_LANGUAGE;
 }
 
 async function refundBotCredit(userId: string, amount: number, idempotencyKey: string): Promise<void> {
@@ -531,6 +598,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   }
 
   const userId = profile.id;
+  const autoDetectLanguage = profile.bot_language_mode !== 'selected';
   const userLang = profile.language || 'English';
   const isLinked = profile.id !== msg.channelUserId;
 
@@ -759,9 +827,10 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
 
   if (payload === 'ACTION_LANG' || rawText.toLowerCase() === '/language') {
     return {
-      text: `🌐 *Select Your Preferred Language:*\n\n` +
-        `Choose the language you would like SabiRight to respond in:`,
+      text: `🌐 *Language preference*\n\n` +
+        `Choose a fixed reply language, or let Sabi match the language of each message:`,
       quickActions: [
+        { id: 'auto', title: 'Auto-detect 🌐', payload: 'SET_LANG_AUTO' },
         { id: 'pidgin', title: 'Nigerian Pidgin 🇳🇬', payload: 'SET_LANG_PIDGIN' },
         { id: 'hausa', title: 'Hausa 🇳🇬', payload: 'SET_LANG_HAUSA' },
         { id: 'yoruba', title: 'Yoruba 🇳🇬', payload: 'SET_LANG_YORUBA' },
@@ -773,17 +842,39 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
 
   if (payload?.startsWith('SET_LANG_')) {
     const langMap: Record<string, string> = {
+      'SET_LANG_AUTO': AUTO_DETECT_LANGUAGE,
       'SET_LANG_PIDGIN': 'Nigerian Pidgin',
       'SET_LANG_HAUSA': 'Hausa',
       'SET_LANG_YORUBA': 'Yoruba',
       'SET_LANG_IGBO': 'Igbo',
       'SET_LANG_ENGLISH': 'English'
     };
-    const targetLang = langMap[payload] || 'English';
-    await supabase.from('profiles').update({ language: targetLang, updated_at: new Date().toISOString() }).eq('id', userId);
+    const targetLang = langMap[payload];
+    if (!targetLang) throw new Error(`Unsupported bot language selection: ${payload}`);
+    const update = targetLang === AUTO_DETECT_LANGUAGE
+      ? { bot_language_mode: 'auto', updated_at: new Date().toISOString() }
+      : { language: targetLang, bot_language_mode: 'selected', updated_at: new Date().toISOString() };
+    const { error } = await supabase.from('profiles').update(update).eq('id', userId);
+    if (error) throw error;
 
+    const autoConfirmations: Record<string, string> = {
+      'English': `✅ Auto-detect is on. I’ll reply in the language you use in each message.`,
+      'Nigerian Pidgin': `✅ Auto-detect dey on. I go reply for the language wey you use each time.`,
+      'Hausa': `✅ An kunna gano harshe ta atomatik. Zan amsa da harshen da ka yi amfani da shi.`,
+      'Yoruba': `✅ A ti tan ìdáhùn aládàáṣiṣẹ́. Màá dáhùn ní èdè tí o bá lò.`,
+      'Igbo': `✅ Agbanwula nchọpụta asụsụ na-akpaghị aka. M ga-aza n'asụsụ i jiri dee ozi gị.`
+    };
+    const confirmations: Record<string, string> = {
+      'Nigerian Pidgin': `✅ I don set your reply language to Nigerian Pidgin. How I fit help you today?`,
+      'Hausa': `✅ An saita harshen amsa zuwa Hausa. Ta yaya zan taimaka da tambayarka?`,
+      'Yoruba': `✅ A ti yan Yorùbá gẹ́gẹ́ bí èdè ìdáhùn. Báwo ni mo ṣe lè ràn yín lọ́wọ́?`,
+      'Igbo': `✅ E debela asụsụ nzaghachi gị na Igbo. Kedu ka m ga-esi nyere gị aka?`,
+      'English': `✅ Language set to English. How can I help with your civic question?`
+    };
     return {
-      text: `✅ Language updated to *${targetLang}*. How may I help you with your civic enquiry today?`,
+      text: targetLang === AUTO_DETECT_LANGUAGE
+        ? autoConfirmations[userLang] || autoConfirmations.English
+        : confirmations[targetLang],
       quickActions: [
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' }
@@ -1021,7 +1112,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
         `• */lawyer* - Find verified nearby legal advocates\n` +
         `• */directory* - Browse professional directory categories\n` +
         `• */bookings* - View your active case leads & booking statuses\n` +
-        `• */language* - Change response language (English, Pidgin, Hausa, Yoruba, Igbo)\n` +
+        `• */language* - Choose a fixed language or enable automatic language matching\n` +
         `• *link <CODE>* - Link this chat to your web/mobile account\n` +
         `• */unlink* - Disconnect linked web account and return to guest mode\n\n` +
         `Or simply type your legal question naturally!`,
@@ -1040,23 +1131,27 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     payload === 'ACTION_START' ||
     payload === 'ACTION_CONTINUE_GUEST'
   ) {
-    const appUrl = (process.env.APP_URL || 'https://www.sabiright.ng').replace(/\/+$/, '');
-    const accountStatusText = isLinked
-      ? `✅ *Account Status:* Connected to SabiRight account (${profile.email || profile.display_name || 'Citizen'})`
-      : `👤 *Account Status:* Operating as Guest\n` +
-        `• To connect an existing web account, enter: \`link CODE\`\n` +
-        `• To create a full account, register at: ${appUrl}/auth/login?mode=register\n` +
-        `• Or continue directly as a guest with free introductory access below.`;
+    let greetingLanguage = userLang;
+    if (autoDetectLanguage && isBotGreeting(rawText)) {
+      greetingLanguage = detectGreetingLanguage(rawText);
+      const { error } = await supabase.from('profiles')
+        .update({ language: greetingLanguage, bot_language_mode: 'auto', updated_at: new Date().toISOString() })
+        .eq('id', userId);
+      if (error) {
+        console.error('[BotController] Could not save auto-detected greeting language:', error);
+      } else {
+        profile.language = greetingLanguage;
+      }
+    }
 
     return {
-      text: `👋 Hello ${profile.display_name || msg.userName || 'Citizen'}! I'm Sabi, your Nigerian civic and legal first-aid assistant.\n\n` +
-        `${isLinked ? '✅ Your SabiRight account is connected.' : `You are using guest chat. To sync account credits and history, open ${appUrl}/app/settings and send the generated code here as: link CODE.`}\n\n` +
-        `Ask a question or choose an option:`,
+      text: localizedBotGreeting(profile.display_name || msg.userName || 'Citizen', greetingLanguage, isLinked),
       quickActions: [
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
         { id: 'balance', title: '💳 Credits', payload: 'ACTION_BALANCE' },
-        { id: 'link', title: isLinked ? '🔗 Account Info' : '🔗 Link Account', payload: 'ACTION_LINK' }
+        { id: 'link', title: isLinked ? '🔗 Account Info' : '🔗 Link Account', payload: 'ACTION_LINK' },
+        { id: 'lang', title: '🌐 Language', payload: 'ACTION_LANG' }
       ]
     };
   }
@@ -1131,8 +1226,10 @@ STRICT OPERATING RULES:
 5. RESPONSE STYLE: Be concise and formatted for chat screens. Use short bullet points when useful; include citations only when supported by the available source.
 6. ADVOCATE REFERRAL: If the dispute needs formal representation, inform the user they can type /lawyer to search the professional directory.`;
 
-    if (userLang && userLang.toLowerCase() !== 'english') {
-      fallbackInstruction += `\n7. MULTILINGUAL OUTPUT: Conduct the entire response in ${userLang}, using natural phrasing while preserving uncertainty.`;
+    if (autoDetectLanguage) {
+      fallbackInstruction += `\n7. AUTOMATIC LANGUAGE MATCHING: Detect the primary language in the user's latest message and answer in that language. Support English, Nigerian Pidgin, Hausa, Yoruba, and Igbo. For code-mixed messages, use the dominant language. If the language is unclear, use English. At the very start of your response, emit exactly one metadata line in this format, choosing the detected language: [[SABIRIGHT_LANGUAGE:English]] (the value must be exactly one of English, Nigerian Pidgin, Hausa, Yoruba, or Igbo). This marker is for SabiRight processing only; never mention it in the answer itself.`;
+    } else {
+      fallbackInstruction += `\n7. LANGUAGE PREFERENCE: Conduct the entire response in ${userLang}, using natural phrasing while preserving uncertainty.`;
     }
 
     const fallbackPrompt = `${fallbackInstruction}
@@ -1142,14 +1239,30 @@ ${historyContext ? `Conversation history:\n${historyContext}\n` : ""}
 User: ${rawText}
 AI:`;
 
-    let finalResponse = await generateAIResponse(fallbackPrompt, false, {
+    const generatedResponse = await generateAIResponse(fallbackPrompt, false, {
       maxLatencyMs: BOT_AI_RESPONSE_BUDGET_MS
-    }) || '';
+    });
+    const parsedResponse = autoDetectLanguage && generatedResponse
+      ? parseAutoDetectedLanguage(generatedResponse)
+      : { language: null, text: generatedResponse || '' };
+    let finalResponse = parsedResponse.text;
 
     if (!finalResponse) {
       await refundBotCredit(userId, cost, creditKey);
       finalResponse = `I couldn't generate a reliable response to that enquiry. Your credits have been refunded.${fallbackGuidance} Please try again or type /lawyer to find a verified professional.`;
     } else {
+      if (autoDetectLanguage && parsedResponse.language) {
+        const { error: languageError } = await supabase.from('profiles')
+          .update({ language: parsedResponse.language, bot_language_mode: 'auto', updated_at: new Date().toISOString() })
+          .eq('id', userId);
+        if (languageError) {
+          console.error('[BotController] Could not save auto-detected bot language:', languageError);
+        } else {
+          profile.language = parsedResponse.language;
+        }
+      } else if (autoDetectLanguage) {
+        console.warn('[BotController] AI response did not include a supported auto-detected language marker');
+      }
       history.push({ role: 'ai', content: finalResponse, eventId: msg.eventId });
       try {
         await saveHistory(userId, history);
