@@ -62,6 +62,25 @@ export default function LoginScreen() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email || !email.includes('@')) {
+      Alert.alert('Email Required', 'Please enter your registered email address in the email field above to receive a password reset link.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: 'https://www.sabiright.ng/auth/login?mode=reset'
+      });
+      if (error) throw error;
+      Alert.alert('Recovery Link Sent', `A password reset link has been dispatched to ${email.trim()}. Please check your email inbox.`);
+    } catch (err: any) {
+      Alert.alert('Reset Error', err.message || 'Failed to send recovery email. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeContainer, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
@@ -152,7 +171,14 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={[styles.fieldLabel, { color: colors.textSecondary }]}>Password</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <Text style={[styles.fieldLabel, { color: colors.textSecondary, marginBottom: 0 }]}>Password</Text>
+              {isLogin && (
+                <TouchableOpacity onPress={handleForgotPassword} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '600' }}>Forgot password?</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <View style={[styles.inputWrapper, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
               <Lock size={18} color={colors.textMuted} />
               <TextInput

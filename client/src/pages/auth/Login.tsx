@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,9 @@ import {
   Plus,
   Calendar as CalendarIcon,
   ChevronRight,
-  ArrowLeft
+  ArrowLeft,
+  Mail,
+  KeyRound
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ReCAPTCHA from "react-google-recaptcha";
@@ -40,10 +42,16 @@ const NIGERIAN_STATES = [
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [forgotSubmitted, setForgotSubmitted] = useState(false);
+  const [isResetMode, setIsResetMode] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [name, setName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [dob, setDob] = useState("");
@@ -59,16 +67,33 @@ export default function Login() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Capture referral code from URL
+    // Capture referral code or mode from URL
     const params = new URLSearchParams(window.location.search);
-    if (params.get('mode')?.toLowerCase() === 'register') {
+    const mode = params.get('mode')?.toLowerCase();
+    const hash = window.location.hash || '';
+
+    if (mode === 'register') {
       setIsLogin(false);
+    } else if (mode === 'forgot') {
+      setIsForgotPassword(true);
+    } else if (mode === 'reset' || hash.includes('type=recovery') || params.get('type') === 'recovery') {
+      setIsResetMode(true);
+      setIsForgotPassword(false);
     }
+
     const ref = params.get('ref');
     if (ref) {
       setReferralCode(ref);
       toast({ title: "Referral applied", description: `You'll receive a bonus for using code ${ref}` });
     }
+
+    // Listen for Supabase recovery event
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsResetMode(true);
+        setIsForgotPassword(false);
+      }
+    });
 
     fetch('/api/settings/public')
       .then(res => res.json())
@@ -78,6 +103,10 @@ export default function Login() {
         }
       })
       .catch(err => console.error('Failed to fetch site key:', err));
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleGoogleAuth = async () => {
@@ -217,6 +246,85 @@ export default function Login() {
     }
   };
 
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !email.includes('@')) {
+      toast({
+        title: "Valid Email Required",
+        description: "Please enter your registered email address.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const redirectUrl = `${window.location.origin}/auth/login?mode=reset`;
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: redirectUrl,
+      });
+      if (error) throw error;
+      setForgotSubmitted(true);
+      toast({
+        title: "Reset Link Sent",
+        description: `Check your inbox at ${email.trim()} for password recovery instructions.`
+      });
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Reset Request Failed",
+        description: err.message || "Unable to send password recovery link. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      toast({
+        title: "Password Too Short",
+        description: "Password must be at least 6 characters.",
+        variant: "destructive"
+      });
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      toast({
+        title: "Passwords Do Not Match",
+        description: "Please make sure your new passwords match.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      toast({
+        title: "Password Successfully Updated!",
+        description: "You can now sign in with your new password."
+      });
+      setIsResetMode(false);
+      setIsForgotPassword(false);
+      setIsLogin(true);
+      setPassword("");
+      setLocation("/app");
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Password Update Failed",
+        description: err.message || "Failed to update your password.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex bg-white overflow-hidden">
       {/* Left Column - Decorative Content (Desktop) */}
@@ -234,12 +342,24 @@ export default function Login() {
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex items-center gap-2 text-white mb-12"
+            className="flex items-center gap-3 text-white mb-12"
           >
-            <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/30">
-              <ShieldCheck className="h-6 w-6" />
+            <div className="h-11 w-11 bg-white/10 backdrop-blur-md rounded-xl flex items-center justify-center p-2 border border-white/20 shadow-lg shadow-black/20">
+              <img 
+                src="/assets/sabiright-icon.png" 
+                alt="SabiRight Logo" 
+                className="h-full w-full object-contain rounded-lg"
+                onError={(e) => { (e.target as HTMLImageElement).src = "/favicon.png"; }}
+              />
             </div>
-            <span className="text-2xl font-bold tracking-tighter">SabiRight</span>
+            <div>
+              <span className="text-2xl font-bold tracking-tight block leading-tight">
+                Sabi<span className="text-primary">Right</span>
+              </span>
+              <span className="text-xs text-slate-400 font-medium block">
+                Civic Intellect &amp; Justice Infrastructure
+              </span>
+            </div>
           </motion.div>
 
           <motion.div
@@ -283,8 +403,190 @@ export default function Login() {
       {/* Right Column - Auth Form */}
       <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-4 md:p-12 bg-slate-50/50">
         <div className="w-full max-w-md space-y-4 md:space-y-6">
+          {/* Mobile SabiRight Brand Logo & Title */}
+          <div className="flex lg:hidden flex-col items-center justify-center text-center pt-2 pb-1">
+            <Link href="/" className="inline-flex items-center gap-3 group transition-transform active:scale-95">
+              <div className="h-12 w-12 rounded-2xl bg-white shadow-md shadow-slate-200/80 flex items-center justify-center p-2 border border-slate-200/70">
+                <img 
+                  src="/assets/sabiright-icon.png" 
+                  alt="SabiRight Logo" 
+                  className="h-full w-full object-contain rounded-xl"
+                  onError={(e) => { (e.target as HTMLImageElement).src = "/favicon.png"; }}
+                />
+              </div>
+              <div className="text-left">
+                <span className="text-2xl font-extrabold tracking-tight text-slate-900 block leading-tight">
+                  Sabi<span className="text-primary">Right</span>
+                </span>
+                <span className="text-[11px] font-medium text-slate-500 block -mt-0.5">
+                  Civic Intellect &amp; Legal First Aid
+                </span>
+              </div>
+            </Link>
+          </div>
+
           <AnimatePresence mode="wait">
-            {isCompletingGoogleProfile ? (
+            {isResetMode ? (
+              <motion.div
+                key="reset-password-mode"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-4 md:space-y-6"
+              >
+                <div className="text-center lg:text-left space-y-1 md:space-y-2">
+                  <button 
+                    onClick={() => { setIsResetMode(false); setIsLogin(true); }}
+                    className="flex items-center gap-2 text-sm text-slate-500 hover:text-primary transition-colors mb-2 md:mb-4"
+                  >
+                    <ArrowLeft className="h-4 w-4" /> Back to Sign In
+                  </button>
+                  <h2 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+                    Set New Password
+                  </h2>
+                  <p className="text-sm md:text-base text-slate-500">
+                    Create a new, strong password to secure your account.
+                  </p>
+                </div>
+
+                <Card className="border-0 shadow-2xl shadow-slate-200/50 rounded-2xl md:rounded-3xl overflow-hidden">
+                  <CardContent className="p-5 md:p-8">
+                    <form onSubmit={handleUpdatePassword} className="space-y-4">
+                      <div className="space-y-1.5 md:space-y-2">
+                        <Label htmlFor="reset-new-password">New Password</Label>
+                        <div className="relative">
+                          <Input 
+                            id="reset-new-password" 
+                            type={showNewPassword ? "text" : "password"} 
+                            placeholder="At least 6 characters"
+                            value={newPassword} 
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value)} 
+                            required 
+                            className="h-11 md:h-12 pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowNewPassword(!showNewPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          >
+                            {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 md:space-y-2">
+                        <Label htmlFor="reset-confirm-password">Confirm New Password</Label>
+                        <div className="relative">
+                          <Input 
+                            id="reset-confirm-password" 
+                            type={showNewPassword ? "text" : "password"} 
+                            placeholder="Repeat new password"
+                            value={confirmNewPassword} 
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setConfirmNewPassword(e.target.value)} 
+                            required 
+                            className="h-11 md:h-12 pr-10"
+                          />
+                        </div>
+                      </div>
+
+                      <Button 
+                        type="submit" 
+                        className="w-full h-11 md:h-12 font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all text-sm md:text-base" 
+                        disabled={loading}
+                      >
+                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save New Password &amp; Continue
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ) : isForgotPassword ? (
+              <motion.div
+                key="forgot-password-mode"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-4 md:space-y-6"
+              >
+                <div className="text-center lg:text-left space-y-1 md:space-y-2">
+                  <button 
+                    onClick={() => { setIsForgotPassword(false); setForgotSubmitted(false); }}
+                    className="flex items-center gap-2 text-sm text-slate-500 hover:text-primary transition-colors mb-2 md:mb-4"
+                  >
+                    <ArrowLeft className="h-4 w-4" /> Back to Sign In
+                  </button>
+                  <h2 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+                    Reset Password
+                  </h2>
+                  <p className="text-sm md:text-base text-slate-500">
+                    Enter your email to receive recovery instructions.
+                  </p>
+                </div>
+
+                <Card className="border-0 shadow-2xl shadow-slate-200/50 rounded-2xl md:rounded-3xl overflow-hidden">
+                  <CardContent className="p-5 md:p-8">
+                    {!forgotSubmitted ? (
+                      <form onSubmit={handleForgotPassword} className="space-y-4">
+                        <div className="space-y-1.5 md:space-y-2">
+                          <Label htmlFor="forgot-email">Registered Email Address</Label>
+                          <div className="relative">
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                            <Input 
+                              id="forgot-email" 
+                              type="email" 
+                              placeholder="name@example.com" 
+                              value={email} 
+                              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)} 
+                              required 
+                              className="h-11 md:h-12 pl-10"
+                            />
+                          </div>
+                        </div>
+
+                        <Button 
+                          type="submit" 
+                          className="w-full h-11 md:h-12 font-bold shadow-lg shadow-primary/20 hover:shadow-primary/40 transition-all text-sm md:text-base" 
+                          disabled={loading}
+                        >
+                          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Send Recovery Link
+                        </Button>
+                      </form>
+                    ) : (
+                      <div className="space-y-4 text-center py-2">
+                        <div className="h-14 w-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-200">
+                          <CheckCircle2 className="h-8 w-8" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="font-bold text-lg text-slate-900">Check Your Email</h3>
+                          <p className="text-sm text-slate-600 leading-relaxed">
+                            We've dispatched a password recovery link to <strong className="text-slate-900">{email}</strong>. Please check your inbox and follow the instructions.
+                          </p>
+                        </div>
+                        <div className="pt-2 flex flex-col gap-2">
+                          <Button 
+                            variant="outline"
+                            onClick={handleForgotPassword}
+                            disabled={loading}
+                            className="w-full h-10 text-xs font-semibold"
+                          >
+                            {loading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : "Didn't receive it? Resend link"}
+                          </Button>
+                          <Button 
+                            variant="ghost"
+                            onClick={() => { setIsForgotPassword(false); setForgotSubmitted(false); }}
+                            className="w-full h-10 text-xs text-slate-500 hover:text-slate-900"
+                          >
+                            Return to Sign In
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ) : isCompletingGoogleProfile ? (
               <motion.div
                 key="complete-profile"
                 initial={{ opacity: 0, x: 20 }}
@@ -420,7 +722,11 @@ export default function Login() {
 
                 <Card className="border-0 shadow-2xl shadow-slate-200/50 rounded-2xl md:rounded-3xl overflow-hidden">
                   <CardContent className="p-5 md:p-8">
-                    {/* Google sign-in is hidden until the OAuth provider is configured. */}
+                    {/* Mobile Trust Indicator replacing removed Google Auth empty space */}
+                    <div className="flex lg:hidden items-center justify-center gap-2 py-2 px-3 bg-primary/5 border border-primary/15 rounded-xl text-primary text-xs font-medium mb-3">
+                      <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
+                      <span>Encrypted &amp; NDPA-Compliant Civic Platform</span>
+                    </div>
 
                     <form onSubmit={handleAuth} className="space-y-3 md:space-y-4">
                       <AnimatePresence mode="wait">
@@ -540,7 +846,21 @@ export default function Login() {
                       </div>
 
                       <div className="space-y-1.5 md:space-y-2">
-                        <Label htmlFor="password">Password</Label>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="password">Password</Label>
+                          {isLogin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsForgotPassword(true);
+                                setForgotSubmitted(false);
+                              }}
+                              className="text-xs font-semibold text-primary hover:text-primary/80 transition-colors"
+                            >
+                              Forgot password?
+                            </button>
+                          )}
+                        </div>
                         <div className="relative">
                           <Input 
                             id="password" 
