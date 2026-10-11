@@ -614,9 +614,12 @@ EXPO_PUBLIC_EAS_PROJECT_ID=YOUR_EAS_PROJECT_UUID
 
 When messaging SabiRight via **WhatsApp** or **Telegram**:
 
+On first contact, the SabiRight Agent introduces itself and asks the user to choose a preferred reply language, including Auto-detect. In Auto-detect mode, replies continue to follow the language of each user message. The SabiRight Agent introduces itself again on the user's first bot reply each day.
+
 | Command | Arguments | Action |
 |---|---|---|
 | `/start` | None | Introduces SabiRight civic features and starts session |
+| `/language` | None | Chooses a fixed reply language or enables automatic language matching |
 | `/help` | None | Lists available commands and support instructions |
 | `/link` | `<code>` | Pairs the messaging identity to a web account using an unexpired code |
 | `/balance` | None | Displays current credit balance and quick top-up options |

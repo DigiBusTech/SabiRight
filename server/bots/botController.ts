@@ -4,6 +4,13 @@ import { summarizeCaseForProfessional } from "../agent/legalAgent.js";
 import { generateAIResponse } from "../aiService.js";
 import PaystackService from "../paystackService.js";
 import type { IncomingBotMessage, BotResponse } from "./types.js";
+import {
+  getBotLanguageChoices,
+  getDailyBotIntroduction,
+  getLanguageOnboardingMessage,
+  getNigeriaLocalDate,
+  getTypedLanguageSelection
+} from "./onboarding.js";
 
 const BOT_AI_RESPONSE_BUDGET_MS = 7_000;
 const AUTO_DETECT_LANGUAGE = 'Auto-detect';
@@ -370,14 +377,14 @@ function localizedBotGreeting(name: string, language: string, isLinked: boolean)
   };
   const copy = greetings[language] || greetings.English;
   const intro = language === 'Nigerian Pidgin'
-    ? `👋 How far ${name}! Na Sabi be this, your Nigerian civic and legal first-aid assistant.`
+    ? `👋 How far ${name}! Na SabiRight Agent be this, your Nigerian civic and legal first-aid assistant.`
     : language === 'Hausa'
-      ? `👋 Sannu ${name}! Ni Sabi ce, mai taimaka kan haƙƙoƙin jama'a da dokokin Najeriya.`
+      ? `👋 Sannu ${name}! Ni ne SabiRight Agent, mai taimaka kan haƙƙoƙin jama'a da dokokin Najeriya.`
       : language === 'Yoruba'
-        ? `👋 Ẹ káàbọ̀ ${name}! Èmi ni Sabi, olùrànlọ́wọ́ fún ẹ̀tọ́ aráàlú àti òfin Nàìjíríà.`
+        ? `👋 Ẹ káàbọ̀ ${name}! Èmi ni SabiRight Agent, olùrànlọ́wọ́ fún ẹ̀tọ́ aráàlú àti òfin Nàìjíríà.`
         : language === 'Igbo'
-          ? `👋 Ndewo ${name}! Abụ m Sabi, onye enyemaka gbasara ikike na iwu Naịjirịa.`
-          : `👋 Hello ${name}! I'm Sabi, your Nigerian civic and legal first-aid assistant.`;
+          ? `👋 Ndewo ${name}! Abụ m SabiRight Agent, onye enyemaka gbasara ikike na iwu Naịjirịa.`
+          : `👋 Hello ${name}! I'm SabiRight Agent, your Nigerian civic and legal first-aid assistant.`;
   return `${intro}\n\n${isLinked ? copy.linked : copy.guest}\n\n${copy.prompt}`;
 }
 
@@ -562,7 +569,10 @@ const userLocks = new Map<string, Promise<unknown>>();
 export async function processBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   const key = msg.channelUserId;
   const prev = userLocks.get(key) || Promise.resolve();
-  const run = prev.catch(() => {}).then(() => handleBotMessage(msg));
+  const run = prev.catch(() => {}).then(async () => {
+    const response = await handleBotMessage(msg);
+    return addDailyIntroductionIfNeeded(msg, response);
+  });
   userLocks.set(key, run);
   try {
     return await run;
@@ -571,12 +581,49 @@ export async function processBotMessage(msg: IncomingBotMessage): Promise<BotRes
   }
 }
 
+async function markBotIntroductionForToday(userId: string): Promise<boolean> {
+  const today = getNigeriaLocalDate();
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ bot_last_intro_date: today })
+    .eq('id', userId)
+    .or(`bot_last_intro_date.is.null,bot_last_intro_date.lt.${today}`)
+    .select('id');
+  if (error) throw error;
+  return Boolean(data?.length);
+}
+
+async function addDailyIntroductionIfNeeded(
+  msg: IncomingBotMessage,
+  response: BotResponse
+): Promise<BotResponse> {
+  const profile = await resolveBotProfile(msg);
+  if (!profile?.bot_language_onboarded_at) return response;
+
+  const shouldIntroduce = await markBotIntroductionForToday(profile.id);
+  if (!shouldIntroduce) return response;
+
+  const rawText = msg.text.trim();
+  const alreadyIntroducesSabi =
+    rawText.toLowerCase() === '/start' ||
+    isBotGreeting(rawText) ||
+    msg.actionPayload === 'ACTION_START' ||
+    msg.actionPayload === 'ACTION_CONTINUE_GUEST';
+  if (alreadyIntroducesSabi) return response;
+
+  const introduction = getDailyBotIntroduction(
+    profile.display_name || msg.userName || 'Citizen',
+    profile.language || 'English'
+  );
+  return { ...response, text: `${introduction}\n\n${response.text}` };
+}
+
 async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   const linkMatch = (msg.text || '').trim().match(LINK_COMMAND);
   if (linkMatch) return handleLinkCommand(msg, linkMatch[1]);
 
   const rawText = (msg.text || '').trim();
-  const payload = msg.actionPayload;
+  let payload = msg.actionPayload;
   let profile = await resolveBotProfile(msg);
   if (!profile && payload === 'ACTION_CONTINUE_GUEST') {
     profile = await createBotGuestProfile(msg);
@@ -599,6 +646,21 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   const autoDetectLanguage = profile.bot_language_mode !== 'selected';
   const userLang = profile.language || 'English';
   const isLinked = profile.id !== msg.channelUserId;
+  if (!payload && !profile.bot_language_onboarded_at) {
+    payload = getTypedLanguageSelection(rawText);
+  }
+
+  if (!profile.bot_language_onboarded_at && !payload?.startsWith('SET_LANG_')) {
+    const greetingLanguage = autoDetectLanguage && isBotGreeting(rawText)
+      ? detectGreetingLanguage(rawText)
+      : userLang;
+    const name = profile.display_name || msg.userName || 'Citizen';
+    const includeIntro = await markBotIntroductionForToday(userId);
+    return {
+      text: getLanguageOnboardingMessage(name, greetingLanguage, includeIntro),
+      quickActions: getBotLanguageChoices()
+    };
+  }
 
   if (msg.location) {
     const { error } = await supabase.from('profiles').update({
@@ -827,14 +889,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     return {
       text: `🌐 *Language preference*\n\n` +
         `Choose a fixed reply language, or let Sabi match the language of each message:`,
-      quickActions: [
-        { id: 'auto', title: 'Auto-detect 🌐', payload: 'SET_LANG_AUTO' },
-        { id: 'pidgin', title: 'Nigerian Pidgin 🇳🇬', payload: 'SET_LANG_PIDGIN' },
-        { id: 'hausa', title: 'Hausa 🇳🇬', payload: 'SET_LANG_HAUSA' },
-        { id: 'yoruba', title: 'Yoruba 🇳🇬', payload: 'SET_LANG_YORUBA' },
-        { id: 'igbo', title: 'Igbo \u{1F1F3}\u{1F1EC}', payload: 'SET_LANG_IGBO' },
-        { id: 'english', title: 'English', payload: 'SET_LANG_ENGLISH' }
-      ]
+      quickActions: getBotLanguageChoices()
     };
   }
 
@@ -849,11 +904,22 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     };
     const targetLang = langMap[payload];
     if (!targetLang) throw new Error(`Unsupported bot language selection: ${payload}`);
+    const onboardingCompletedAt = new Date().toISOString();
     const update = targetLang === AUTO_DETECT_LANGUAGE
-      ? { bot_language_mode: 'auto', updated_at: new Date().toISOString() }
-      : { language: targetLang, bot_language_mode: 'selected', updated_at: new Date().toISOString() };
+      ? {
+          bot_language_mode: 'auto',
+          bot_language_onboarded_at: onboardingCompletedAt,
+          updated_at: onboardingCompletedAt
+        }
+      : {
+          language: targetLang,
+          bot_language_mode: 'selected',
+          bot_language_onboarded_at: onboardingCompletedAt,
+          updated_at: onboardingCompletedAt
+        };
     const { error } = await supabase.from('profiles').update(update).eq('id', userId);
     if (error) throw error;
+    profile.bot_language_onboarded_at = onboardingCompletedAt;
 
     const autoConfirmations: Record<string, string> = {
       'English': `✅ Auto-detect is on. I’ll reply in the language you use in each message.`,
