@@ -2,26 +2,27 @@
   "expo": {
     "name": "SabiRight",
     "slug": "sabiright",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "sabiright",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#020617",
     "splash": {
-      "image": "./assets/sabiright-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#020617"
     },
     "ios": {
       "supportsTablet": true,
+      "buildNumber": "2",
       "bundleIdentifier": "com.sabiright.app",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "SabiRight uses the microphone so you can speak your question."
       }
     },
     "android": {
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#020617"

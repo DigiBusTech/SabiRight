@@ -9,8 +9,10 @@ interface WhatsAppCredentials {
 }
 
 async function getWhatsAppCredentials(): Promise<WhatsAppCredentials | null> {
-  const tokenSetting = await storage.getAdminSetting('whatsapp_access_token');
-  const phoneIdSetting = await storage.getAdminSetting('whatsapp_phone_number_id');
+  const [tokenSetting, phoneIdSetting] = await Promise.all([
+    storage.getAdminSetting('whatsapp_access_token'),
+    storage.getAdminSetting('whatsapp_phone_number_id')
+  ]);
 
   const accessToken = tokenSetting?.value || process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = phoneIdSetting?.value || process.env.WHATSAPP_PHONE_NUMBER_ID;

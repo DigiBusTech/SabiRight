@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { supabaseStorage as storage } from "../../supabaseStorage.js";
-import { checkWhatsAppStatus, markWhatsAppAsRead } from "./whatsappService.js";
+import { checkWhatsAppStatus } from "./whatsappService.js";
 import { enqueueInboundBotEvent, drainInboundBotQueue } from "../inboundBotWorker.js";
 import crypto from "crypto";
 
@@ -88,13 +88,15 @@ whatsappRouter.post("/webhook", async (req: Request, res: Response) => {
           phoneNumber: `+${senderPhone}`
         }
       );
-      await markWhatsAppAsRead(String(message.id));
       if (!queued.duplicate) newlyQueued++;
     }
 
-    res.sendStatus(200);
     const result = await drainInboundBotQueue(Math.min(Math.max(newlyQueued, 1), 5));
-    if (result.failed > 0) console.warn(`[WhatsAppWebhook] ${result.failed} queued message(s) will be retried`);
+    if (result.failed > 0) {
+      console.warn(`[WhatsAppWebhook] ${result.failed} queued message(s) will be retried`);
+      return res.sendStatus(503);
+    }
+    return res.sendStatus(200);
   } catch (err) {
     console.error("[WhatsAppWebhook] Error handling incoming payload:", err);
     if (!res.headersSent) res.sendStatus(503);
