@@ -417,13 +417,21 @@ export async function transcribeAudio(
     if (!response.ok) {
       const detail = (await response.text()).slice(0, 300);
       console.error(`[Transcribe] N-ATLAS ASR ${modelId} returned ${response.status}: ${detail}`);
-      const message = response.status === 401 || response.status === 403
-        ? `N-ATLAS ASR access was denied for ${modelId}. Check the Hugging Face token and accept the model's access terms.`
+      const deniedByModelAccess = /gated|access denied|not authorized|authorization required|accept.*terms/i.test(detail);
+      const unavailableFromProvider = /no (?:inference )?provider|not supported by (?:any )?provider|model.*(?:not available|unsupported)/i.test(detail);
+      const message = response.status === 401 || response.status === 403 || deniedByModelAccess
+        ? `N-ATLAS ASR access was denied for ${modelId}. Accept the model's access terms on Hugging Face and configure a read token from an account with access.`
         : response.status === 503
           ? `N-ATLAS ASR model ${modelId} is loading or unavailable. Please retry shortly.`
-          : `N-ATLAS speech recognition failed (${response.status}). Please try again.`;
+          : unavailableFromProvider
+            ? `Hugging Face does not currently serve ${modelId} through the shared inference router. Configure a dedicated ASR endpoint in Admin Settings.`
+            : response.status === 400
+              ? `N-ATLAS rejected the audio request for ${modelId} (400). Check Hugging Face model access and that the configured endpoint supports ASR audio/WAV input.`
+              : `N-ATLAS speech recognition failed (${response.status}). Please try again.`;
       const error = new Error(message);
-      Object.assign(error, { statusCode: response.status === 401 || response.status === 403 ? 503 : 502 });
+      Object.assign(error, {
+        statusCode: response.status === 401 || response.status === 403 || deniedByModelAccess ? 503 : 502
+      });
       throw error;
     }
 

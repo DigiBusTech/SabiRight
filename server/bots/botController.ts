@@ -543,9 +543,7 @@ export async function getBotLanguage(channel: IncomingBotMessage['channel'], cha
     .eq('id', userId)
     .maybeSingle();
   if (error) throw error;
-  return profile?.bot_language_mode === 'selected'
-    ? profile.language || 'English'
-    : AUTO_DETECT_LANGUAGE;
+  return profile?.language || AUTO_DETECT_LANGUAGE;
 }
 
 async function refundBotCredit(userId: string, amount: number, idempotencyKey: string): Promise<void> {

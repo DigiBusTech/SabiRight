@@ -3137,7 +3137,7 @@ export default function AdminDashboard() {
                           category="ai"
                           isSecret={false}
                           placeholder="Leave blank to use NCAIR1 Hugging Face ASR models"
-                          description="Sovereign mode routes Yoruba, Igbo, Hausa, and Nigerian English to NCAIR1 ASR models; Pidgin uses Nigerian-accented English ASR as a best-effort fallback. Configure natlas_api_token with Hugging Face model access; an optional URL override may include a {model} placeholder."
+                          description="These NCAIR1 ASR models require Hugging Face access approval. Accept access for each model using the account behind natlas_api_token; set a dedicated ASR endpoint here if the shared router does not serve the model. An endpoint URL may include a {model} placeholder."
                         />
                       </div>
 
