@@ -73,7 +73,7 @@ function LoadingMessage() {
         </div>
         
         {/* Elegant cross-fading, sliding text - auto height to prevent cutting off on mobile */}
-        <div className="min-h-[20px] flex items-center">
+        <div className="min-h-5 flex items-center">
           <p key={index} className="text-xs font-semibold text-slate-600 animate-in fade-in slide-in-from-bottom-1 duration-500">
             {messages[index]}
           </p>

@@ -303,9 +303,9 @@ export default function Home() {
               />
 
               {/* Hardware Device Chassis Frame */}
-              <div className="relative rounded-[2rem] sm:rounded-[2.25rem] p-2 sm:p-2.5 bg-gradient-to-b from-slate-800 via-slate-900 to-slate-950 border border-slate-700/80 shadow-[0_30px_70px_-15px_rgba(15,23,42,0.85),0_0_1px_1px_rgba(255,255,255,0.12)_inset]">
+              <div className="relative rounded-[2rem] sm:rounded-[2.25rem] p-2 sm:p-2.5 bg-linear-to-b from-slate-800 via-slate-900 to-slate-950 border border-slate-700/80 shadow-[0_30px_70px_-15px_rgba(15,23,42,0.85),0_0_1px_1px_rgba(255,255,255,0.12)_inset]">
                 {/* Physical Glass Reflection Highlight Sheen */}
-                <div className="absolute top-0 inset-x-12 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent pointer-events-none" />
+                <div className="absolute top-0 inset-x-12 h-px bg-linear-to-r from-transparent via-white/40 to-transparent pointer-events-none" />
 
                 {/* Hardware Status Header (Mac/Terminal Micro-LEDs + System Status) */}
                 <div className="px-3.5 py-2.5 flex items-center justify-between text-[11px] text-slate-400 border-b border-white/5 bg-slate-950/70 rounded-t-[1.6rem]">
@@ -340,7 +340,7 @@ export default function Home() {
                       aria-pressed={activeChannelTab === 'whatsapp'}
                       className={`flex-1 py-2 sm:py-2.5 px-2 rounded-xl text-xs font-bold transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer relative ${
                         activeChannelTab === 'whatsapp'
-                          ? 'bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-700 text-white shadow-[0_4px_16px_rgba(16,185,129,0.4)] border-t border-white/30'
+                          ? 'bg-linear-to-r from-emerald-500 via-emerald-600 to-teal-700 text-white shadow-[0_4px_16px_rgba(16,185,129,0.4)] border-t border-white/30'
                           : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
@@ -357,7 +357,7 @@ export default function Home() {
                       aria-pressed={activeChannelTab === 'telegram'}
                       className={`flex-1 py-2 sm:py-2.5 px-2 rounded-xl text-xs font-bold transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer relative ${
                         activeChannelTab === 'telegram'
-                          ? 'bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-600 text-white shadow-[0_4px_16px_rgba(14,165,233,0.4)] border-t border-white/30'
+                          ? 'bg-linear-to-r from-sky-500 via-blue-500 to-indigo-600 text-white shadow-[0_4px_16px_rgba(14,165,233,0.4)] border-t border-white/30'
                           : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
@@ -374,7 +374,7 @@ export default function Home() {
                       aria-pressed={activeChannelTab === 'web'}
                       className={`flex-1 py-2 sm:py-2.5 px-2 rounded-xl text-xs font-bold transition-all duration-300 flex items-center justify-center gap-1.5 cursor-pointer relative ${
                         activeChannelTab === 'web'
-                          ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 text-white shadow-[0_4px_16px_rgba(37,99,235,0.4)] border-t border-white/30'
+                          ? 'bg-linear-to-r from-blue-600 via-indigo-600 to-blue-700 text-white shadow-[0_4px_16px_rgba(37,99,235,0.4)] border-t border-white/30'
                           : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
@@ -388,17 +388,17 @@ export default function Home() {
                 </div>
 
                 {/* Simulated Conversation Body Screen */}
-                <div className="bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900/95 p-4 sm:p-5 space-y-4 rounded-b-[1.75rem] border-t border-white/5 min-h-[420px] flex flex-col justify-between text-slate-100">
+                <div className="bg-linear-to-b from-slate-950 via-slate-950 to-slate-900/95 p-4 sm:p-5 space-y-4 rounded-b-[1.75rem] border-t border-white/5 min-h-[420px] flex flex-col justify-between text-slate-100">
                   <div className="space-y-4">
                     {/* Active Channel Identity Bar */}
                     <div className="flex items-center justify-between pb-3.5 border-b border-white/10 text-xs">
                       <div className="flex items-center gap-2.5">
                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center shadow-md relative ${
                           activeChannelTab === 'whatsapp'
-                            ? 'bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white'
+                            ? 'bg-linear-to-tr from-emerald-600 to-emerald-400 text-white'
                             : activeChannelTab === 'telegram'
-                            ? 'bg-gradient-to-tr from-sky-500 to-blue-500 text-white'
-                            : 'bg-gradient-to-tr from-blue-600 to-indigo-600 text-white'
+                            ? 'bg-linear-to-tr from-sky-500 to-blue-500 text-white'
+                            : 'bg-linear-to-tr from-blue-600 to-indigo-600 text-white'
                         }`}>
                           {activeChannelTab === 'whatsapp' ? (
                             <MessageSquare className="w-4 h-4" />
@@ -438,7 +438,7 @@ export default function Home() {
                       transition={{ duration: 0.25 }}
                       className="flex justify-end"
                     >
-                      <div className="bg-gradient-to-br from-slate-800 to-slate-800/90 text-white text-xs sm:text-[12.5px] px-4 py-3 rounded-2xl rounded-tr-xs max-w-[88%] leading-relaxed border border-slate-700/80 shadow-lg space-y-1.5">
+                      <div className="bg-linear-to-br from-slate-800 to-slate-800/90 text-white text-xs sm:text-[12.5px] px-4 py-3 rounded-2xl rounded-tr-xs max-w-[88%] leading-relaxed border border-slate-700/80 shadow-lg space-y-1.5">
                         <p className="text-slate-100 font-medium">{channelDemos[activeChannelTab].userMsg}</p>
                         <div className="flex items-center justify-end gap-1.5 text-[10px] text-slate-400 font-mono">
                           <span>{channelDemos[activeChannelTab].userTime}</span>
@@ -455,7 +455,7 @@ export default function Home() {
                       transition={{ duration: 0.35, delay: 0.1 }}
                       className="flex justify-start"
                     >
-                      <div className={`bg-gradient-to-b from-slate-900/95 via-slate-900 to-slate-950 border text-slate-100 text-xs sm:text-[12px] p-4 rounded-2xl rounded-tl-xs max-w-[96%] space-y-3 shadow-2xl backdrop-blur-xl ${channelDemos[activeChannelTab].theme.borderColor}`}>
+                      <div className={`bg-linear-to-b from-slate-900/95 via-slate-900 to-slate-950 border text-slate-100 text-xs sm:text-[12px] p-4 rounded-2xl rounded-tl-xs max-w-[96%] space-y-3 shadow-2xl backdrop-blur-xl ${channelDemos[activeChannelTab].theme.borderColor}`}>
                         {/* Header within Bot Response */}
                         <div className="flex items-center justify-between text-[10px] font-bold border-b border-white/5 pb-2">
                           <div className="flex items-center gap-1.5 text-blue-400">
@@ -532,7 +532,7 @@ export default function Home() {
                         className="w-full block"
                       >
                         <Button 
-                          className={`w-full h-11 sm:h-12 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 text-white shadow-lg transition-all duration-300 cursor-pointer bg-gradient-to-r ${channelDemos[activeChannelTab].theme.btnGradient} border-t border-white/25`}
+                          className={`w-full h-11 sm:h-12 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 text-white shadow-lg transition-all duration-300 cursor-pointer bg-linear-to-r ${channelDemos[activeChannelTab].theme.btnGradient} border-t border-white/25`}
                         >
                           <span>{channelDemos[activeChannelTab].actionText}</span>
                           <ExternalLink className="h-4 w-4" />
@@ -549,7 +549,7 @@ export default function Home() {
                       </Button>
                     ) : (
                       <Link href="/app" className="w-full block">
-                        <Button className={`w-full h-11 sm:h-12 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 text-white shadow-lg transition-all duration-300 cursor-pointer bg-gradient-to-r ${channelDemos[activeChannelTab].theme.btnGradient} border-t border-white/25`}>
+                        <Button className={`w-full h-11 sm:h-12 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 text-white shadow-lg transition-all duration-300 cursor-pointer bg-linear-to-r ${channelDemos[activeChannelTab].theme.btnGradient} border-t border-white/25`}>
                           <span>{channelDemos[activeChannelTab].actionText}</span>
                           <ArrowRight className="h-4 w-4" />
                         </Button>

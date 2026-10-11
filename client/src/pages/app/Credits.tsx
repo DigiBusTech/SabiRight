@@ -136,7 +136,7 @@ export default function Credits() {
           >
             {plan.popular && (
               <div className="absolute top-0 right-0">
-                <div className="bg-gradient-to-l from-amber-500 to-amber-600 text-white text-[10px] font-mono font-black uppercase tracking-wider px-3 py-1 rounded-bl-xl shadow-xs flex items-center gap-1">
+                <div className="bg-linear-to-l from-amber-500 to-amber-600 text-white text-[10px] font-mono font-black uppercase tracking-wider px-3 py-1 rounded-bl-xl shadow-xs flex items-center gap-1">
                   <Zap className="h-3 w-3 fill-current" />
                   Most Popular
                 </div>
@@ -176,7 +176,7 @@ export default function Credits() {
                 onClick={() => handlePurchase(plan)}
                 className={`w-full h-11 rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer ${
                   plan.popular 
-                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white shadow-amber-500/20' 
+                    ? 'bg-linear-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-white shadow-amber-500/20' 
                     : 'bg-primary hover:bg-primary/90 text-white shadow-blue-500/20'
                 }`}
               >
@@ -189,11 +189,11 @@ export default function Credits() {
 
       {/* How Credits Work */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <Card className="rounded-3xl border border-blue-200 dark:border-blue-900/40 bg-gradient-to-br from-blue-50/60 to-white dark:from-slate-900 dark:to-slate-900/60 shadow-sm p-2">
+        <Card className="rounded-3xl border border-blue-200 dark:border-blue-900/40 bg-linear-to-br from-blue-50/60 to-white dark:from-slate-900 dark:to-slate-900/60 shadow-sm p-2">
           <CardHeader>
             <CardTitle className="text-base font-extrabold flex items-center gap-2 text-slate-900 dark:text-white">
               <Zap className="h-5 w-5 text-primary" />
-              How Sovereign Credits Work
+              How AI Credits Work
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-xs text-slate-600 dark:text-slate-300">

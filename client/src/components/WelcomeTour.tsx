@@ -109,14 +109,14 @@ export default function WelcomeTour() {
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-hidden pointer-events-none">
+      <div className="fixed inset-0 z-100 flex items-center justify-center p-4 overflow-hidden pointer-events-none">
         <div style={highlightStyle} />
         
         <motion.div
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.9, y: 20 }}
-          className="w-full max-w-md pointer-events-auto relative z-[100]"
+          className="w-full max-w-md pointer-events-auto relative z-100"
         >
           <Card className="border-2 border-primary/20 shadow-2xl">
             <CardHeader className="flex flex-row items-center justify-between pb-2">

@@ -271,7 +271,7 @@ export default function Dashboard() {
       {/* Email Verification Alert Banner (if unverified) */}
       {profile?.emailVerificationStatus !== 'verified' && (
         <motion.div variants={itemVariants}>
-          <div className="rounded-2xl p-4 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 dark:border-amber-400/20 backdrop-blur-md shadow-xs">
+          <div className="rounded-2xl p-4 bg-linear-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 dark:border-amber-400/20 backdrop-blur-md shadow-xs">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-xl flex items-center justify-center shrink-0">
@@ -298,7 +298,7 @@ export default function Dashboard() {
 
       {/* Flagship Hero Command Section */}
       <motion.div variants={itemVariants} className="space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-white via-slate-50 to-blue-50/40 dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-950 border border-slate-200/80 dark:border-slate-800 shadow-xl relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 sm:p-7 rounded-3xl bg-linear-to-br from-white via-slate-50 to-blue-50/40 dark:from-slate-900 dark:via-slate-900/90 dark:to-slate-950 border border-slate-200/80 dark:border-slate-800 shadow-xl relative overflow-hidden">
           {/* Subtle Ambient Backlight Glow */}
           <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/10 dark:bg-blue-600/10 blur-[80px] pointer-events-none rounded-full" />
           
@@ -348,7 +348,7 @@ export default function Dashboard() {
 
             {/* Emergency SOS Shield Trigger */}
             <Link href="/app/civic">
-              <Button className="h-11 px-4 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs shadow-lg shadow-blue-500/25 border-t border-white/20 flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto">
+              <Button className="h-11 px-4 rounded-2xl bg-linear-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs shadow-lg shadow-blue-500/25 border-t border-white/20 flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto">
                 <Scale className="h-4 w-4" />
                 <span>Launch Legal First-Aid</span>
               </Button>
@@ -362,7 +362,7 @@ export default function Dashboard() {
         
         {/* Metric 1: Available AI Credits & Quota */}
         <motion.div variants={itemVariants} whileHover={{ y: -3 }} transition={{ duration: 0.2 }}>
-          <div className="h-full p-5 rounded-3xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-white dark:to-slate-900 border border-amber-500/25 dark:border-amber-500/20 shadow-lg flex flex-col justify-between">
+          <div className="h-full p-5 rounded-3xl bg-linear-to-br from-amber-500/10 via-amber-500/5 to-white dark:to-slate-900 border border-amber-500/25 dark:border-amber-500/20 shadow-lg flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
@@ -397,7 +397,7 @@ export default function Dashboard() {
 
         {/* Metric 2: Legal First Aid Status */}
         <motion.div variants={itemVariants} whileHover={{ y: -3 }} transition={{ duration: 0.2 }}>
-          <div className="h-full p-5 rounded-3xl bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-white dark:to-slate-900 border border-blue-500/25 dark:border-blue-500/20 shadow-lg flex flex-col justify-between">
+          <div className="h-full p-5 rounded-3xl bg-linear-to-br from-blue-500/10 via-blue-500/5 to-white dark:to-slate-900 border border-blue-500/25 dark:border-blue-500/20 shadow-lg flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-primary dark:text-blue-400">
@@ -434,10 +434,10 @@ export default function Dashboard() {
         <motion.div variants={itemVariants} whileHover={{ y: -3 }} transition={{ duration: 0.2 }}>
           <div className={`h-full p-5 rounded-3xl border shadow-lg flex flex-col justify-between ${
             trafficCard?.status === 'cleared'
-              ? 'bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-white dark:to-slate-900 border-emerald-500/25'
+              ? 'bg-linear-to-br from-emerald-500/10 via-emerald-500/5 to-white dark:to-slate-900 border-emerald-500/25'
               : trafficCard?.status === 'active'
-              ? 'bg-gradient-to-br from-rose-500/10 via-rose-500/5 to-white dark:to-slate-900 border-rose-500/25'
-              : 'bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-white dark:to-slate-900 border-amber-500/25'
+              ? 'bg-linear-to-br from-rose-500/10 via-rose-500/5 to-white dark:to-slate-900 border-rose-500/25'
+              : 'bg-linear-to-br from-amber-500/10 via-amber-500/5 to-white dark:to-slate-900 border-amber-500/25'
           }`}>
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -487,7 +487,7 @@ export default function Dashboard() {
 
         {/* Metric 4: Verified Legal Directory Proximity */}
         <motion.div variants={itemVariants} whileHover={{ y: -3 }} transition={{ duration: 0.2 }}>
-          <div className="h-full p-5 rounded-3xl bg-gradient-to-br from-indigo-500/10 via-indigo-500/5 to-white dark:to-slate-900 border border-indigo-500/25 dark:border-indigo-500/20 shadow-lg flex flex-col justify-between">
+          <div className="h-full p-5 rounded-3xl bg-linear-to-br from-indigo-500/10 via-indigo-500/5 to-white dark:to-slate-900 border border-indigo-500/25 dark:border-indigo-500/20 shadow-lg flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400">
@@ -735,7 +735,7 @@ export default function Dashboard() {
 
       {/* Refer & Earn Passport Card */}
       <motion.div variants={itemVariants} whileHover={{ scale: 1.005 }}>
-        <div className="rounded-3xl bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white p-5 sm:p-7 border border-white/20 shadow-2xl relative overflow-hidden">
+        <div className="rounded-3xl bg-linear-to-r from-blue-700 via-indigo-700 to-slate-900 text-white p-5 sm:p-7 border border-white/20 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-72 h-72 bg-white/10 blur-[60px] pointer-events-none rounded-full" />
           
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">

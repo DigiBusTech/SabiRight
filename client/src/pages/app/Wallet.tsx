@@ -265,7 +265,7 @@ export default function Wallet() {
       </div>
 
       {/* Flagship Hyper-Realistic Sovereign Wallet Card */}
-      <Card className="rounded-3xl bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-950 text-white border border-white/20 shadow-2xl overflow-hidden relative">
+      <Card className="rounded-3xl bg-linear-to-r from-blue-700 via-indigo-700 to-slate-950 text-white border border-white/20 shadow-2xl overflow-hidden relative">
         <div className="absolute top-0 right-0 w-80 h-80 bg-white/10 blur-[60px] pointer-events-none rounded-full" />
         <CardContent className="p-6 sm:p-8 relative z-10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
