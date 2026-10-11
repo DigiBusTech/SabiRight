@@ -1,12 +1,8 @@
-export const CHAT_RESPONSE_LANGUAGES = [
-  "English",
-  "Nigerian Pidgin",
-  "Hausa",
-  "Yoruba",
-  "Igbo"
-] as const;
+import { CHAT_RESPONSE_LANGUAGES } from "../shared/chatExperience.js";
+import type { ChatResponseLanguage } from "../shared/chatExperience.js";
 
-export type ChatResponseLanguage = typeof CHAT_RESPONSE_LANGUAGES[number];
+export { CHAT_RESPONSE_LANGUAGES, isChatResponseLanguage } from "../shared/chatExperience.js";
+export type { ChatResponseLanguage } from "../shared/chatExperience.js";
 
 export function parseChatLanguageMarker(response: string): {
   language: ChatResponseLanguage | null;
@@ -22,8 +18,4 @@ export function parseChatLanguageMarker(response: string): {
     language,
     text: response.replace(/\[\[SABIRIGHT_LANGUAGE:[^\]]+\]\]/gi, "").trim()
   };
-}
-
-export function isChatResponseLanguage(language: string): language is ChatResponseLanguage {
-  return CHAT_RESPONSE_LANGUAGES.includes(language as ChatResponseLanguage);
 }

@@ -21,6 +21,8 @@ export interface UserProfile {
   state?: string | null;
   city?: string | null;
   language?: string | null;
+  botLanguageMode?: string | null;
+  languageChoiceEnabledAt?: string | Date | null;
   isAdmin: boolean;
   isVendor: boolean;
   emailVerified: boolean;

@@ -18,6 +18,23 @@ import { SurveyDialog } from "../../components/SurveyDialog";
 import { SabiContributorModal } from "../../components/SabiContributorModal";
 import { recordLanguageInteraction } from "../../lib/innovationAnalytics";
 import {
+  AUTO_DETECT_LANGUAGE,
+  CHAT_RESPONSE_LANGUAGES,
+  getChatHelpNudge,
+  getChatLanguageFromPayload,
+  getChatWelcomeText,
+  getFirstQueryGuide,
+  getHelpResponse,
+  getLanguageBeforeFirstQueryNotice,
+  getLanguagePicker,
+  getLanguagePreferenceConfirmation,
+  getLocalizedActionTitle,
+  getWelcomeActions,
+  isChatResponseLanguage,
+  type ChatAction,
+  type ChatLanguagePreference
+} from "../../../../shared/chatExperience";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
@@ -33,6 +50,7 @@ interface Message {
   text?: string;
   content?: string;
   timestamp?: string;
+  actions?: ChatAction[];
 }
 
 interface ChatSession {
@@ -103,6 +121,20 @@ export default function CivicGuard() {
       return localStorage.getItem("sabiright_preferred_language") || "English";
     } catch {
       return "English";
+    }
+  });
+  const [languageMode, setLanguageMode] = useState<"auto" | "selected">(() => {
+    try {
+      return localStorage.getItem("sabiright_chat_language_mode") === "selected" ? "selected" : "auto";
+    } catch {
+      return "auto";
+    }
+  });
+  const [languageChoiceEnabled, setLanguageChoiceEnabled] = useState(() => {
+    try {
+      return localStorage.getItem("sabiright_language_choice_enabled") === "true";
+    } catch {
+      return false;
     }
   });
   
@@ -177,6 +209,119 @@ export default function CivicGuard() {
     window.speechSynthesis.speak(utterance);
   };
 
+  const appendLocalAssistantMessage = (text: string, actions?: ChatAction[]) => {
+    setMessages(previous => [...previous, { role: "ai", text, actions }]);
+  };
+
+  const showHelpMenu = () => {
+    const help = getHelpResponse(preferredLanguage);
+    appendLocalAssistantMessage(help.text, help.actions);
+  };
+
+  const showLanguageMenu = () => {
+    const picker = getLanguagePicker(preferredLanguage);
+    appendLocalAssistantMessage(picker.text, picker.actions);
+  };
+
+  const saveLanguagePreference = async (language: ChatLanguagePreference): Promise<boolean> => {
+    if (!languageChoiceEnabled) {
+      toast({
+        title: "ASK YOUR FIRST QUESTION",
+        description: getFirstQueryGuide(preferredLanguage),
+        variant: "destructive"
+      });
+      return false;
+    }
+
+    try {
+      const token = await user?.getIdToken();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const response = await fetch("/api/ai/civic/language", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ language })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not save the reply language.");
+
+      const nextMode = language === AUTO_DETECT_LANGUAGE ? "auto" : "selected";
+      setLanguageMode(nextMode);
+      if (language !== AUTO_DETECT_LANGUAGE) setPreferredLanguage(language);
+      try {
+        localStorage.setItem("sabiright_chat_language_mode", nextMode);
+        if (language !== AUTO_DETECT_LANGUAGE) {
+          localStorage.setItem("sabiright_preferred_language", language);
+        }
+      } catch (error) {
+        console.warn("[Civic] Could not cache the selected reply language:", error);
+      }
+      if (data.saved) void refreshProfile();
+      return true;
+    } catch (error: any) {
+      toast({
+        title: "LANGUAGE NOT SAVED",
+        description: error.message || "Please try choosing your reply language again.",
+        variant: "destructive"
+      });
+      return false;
+    }
+  };
+
+  const handleChatAction = async (action: ChatAction) => {
+    const selectedLanguage = getChatLanguageFromPayload(action.payload);
+    if (selectedLanguage) {
+      if (await saveLanguagePreference(selectedLanguage)) {
+        appendLocalAssistantMessage(getLanguagePreferenceConfirmation(
+          selectedLanguage === AUTO_DETECT_LANGUAGE ? preferredLanguage : selectedLanguage,
+          selectedLanguage === AUTO_DETECT_LANGUAGE
+        ));
+      }
+      return;
+    }
+
+    switch (action.payload) {
+      case "ACTION_HELP":
+        showHelpMenu();
+        break;
+      case "ACTION_LANG":
+        if (languageChoiceEnabled) {
+          showLanguageMenu();
+        } else {
+          appendLocalAssistantMessage(getLanguageBeforeFirstQueryNotice(preferredLanguage));
+        }
+        break;
+      case "ACTION_URGENT":
+        setIsUrgent(true);
+        setInput("");
+        break;
+      case "ACTION_BALANCE":
+      case "ACTION_TOPUP":
+        setLocation("/app/credits");
+        break;
+      case "ACTION_PLANS":
+        setLocation("/app/plans");
+        break;
+      case "ACTION_BOOKINGS":
+        setLocation("/app/bookings");
+        break;
+      case "ACTION_LINK":
+        setLocation("/app/settings");
+        break;
+      case "ACTION_DIRECTORY":
+      case "ACTION_LAWYER":
+      case "ACTION_PROFESSIONAL":
+        setLocation("/app/marketplace");
+        break;
+      case "ACTION_START":
+        setCurrentChatId(null);
+        setMessages([]);
+        break;
+      default:
+        break;
+    }
+  };
+
   const { data: storageInfo } = useQuery({
     queryKey: [`storage-${user?.uid}`],
     queryFn: async () => {
@@ -194,14 +339,22 @@ export default function CivicGuard() {
   const limitFormatted = (storageLimit / 1024).toFixed(0) + ' KB';
 
   useEffect(() => {
-    if (!profile?.language) return;
-    setPreferredLanguage(profile.language);
+    if (!profile) return;
+    const enabled = !!profile.languageChoiceEnabledAt;
+    const selected = enabled && profile.botLanguageMode === "selected" && isChatResponseLanguage(profile.language);
+    setLanguageChoiceEnabled(enabled);
+    setLanguageMode(selected ? "selected" : "auto");
+    if (isChatResponseLanguage(profile.language)) setPreferredLanguage(profile.language);
     try {
-      localStorage.setItem("sabiright_preferred_language", profile.language);
+      localStorage.setItem("sabiright_language_choice_enabled", String(enabled));
+      localStorage.setItem("sabiright_chat_language_mode", selected ? "selected" : "auto");
+      if (isChatResponseLanguage(profile.language)) {
+        localStorage.setItem("sabiright_preferred_language", profile.language);
+      }
     } catch (error) {
-      console.warn("[Civic] Could not cache the saved reply language:", error);
+      console.warn("[Civic] Could not cache the saved language preference:", error);
     }
-  }, [profile?.language]);
+  }, [profile?.language, profile?.botLanguageMode, profile?.languageChoiceEnabledAt]);
 
   const { data: sessions, isLoading: isLoadingSessions } = useQuery<ChatSession[]>({
     queryKey: ['sabiguard-chats', user?.uid],
@@ -509,7 +662,81 @@ export default function CivicGuard() {
   };
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    const txt = input.trim();
+    if (!txt) return;
+
+    if (/^\/start$/i.test(txt)) {
+      setInput("");
+      setCurrentChatId(null);
+      const actions = getWelcomeActions(preferredLanguage, true);
+      setMessages([{
+        role: "ai",
+        text: getChatWelcomeText(
+          profile?.displayName || user?.displayName || "Citizen",
+          preferredLanguage,
+          true,
+          languageMode
+        ),
+        actions
+      }]);
+      return;
+    }
+
+    if (/^\/help$/i.test(txt)) {
+      setInput("");
+      const help = getHelpResponse(preferredLanguage);
+      setMessages(previous => [
+        ...previous,
+        { role: "user", text: txt },
+        { role: "ai", text: help.text, actions: help.actions }
+      ]);
+      return;
+    }
+
+    const commandAction: Record<string, string> = {
+      "/urgent": "ACTION_URGENT",
+      "/balance": "ACTION_BALANCE",
+      "/credits": "ACTION_BALANCE",
+      "/topup": "ACTION_TOPUP",
+      "/packages": "ACTION_TOPUP",
+      "/plans": "ACTION_PLANS",
+      "/professional": "ACTION_PROFESSIONAL",
+      "/lawyer": "ACTION_LAWYER",
+      "/directory": "ACTION_DIRECTORY",
+      "/professionals": "ACTION_DIRECTORY",
+      "/bookings": "ACTION_BOOKINGS",
+      "/unlink": "ACTION_LINK"
+    };
+    const command = txt.toLowerCase();
+    if (commandAction[command] || /^link(?:\s|$)/i.test(txt)) {
+      setInput("");
+      await handleChatAction({
+        id: command,
+        title: command,
+        payload: commandAction[command] || "ACTION_LINK"
+      });
+      return;
+    }
+
+    if (/^\/language$/i.test(txt)) {
+      setInput("");
+      if (!languageChoiceEnabled) {
+        setMessages(previous => [
+          ...previous,
+          { role: "user", text: txt },
+          { role: "ai", text: getLanguageBeforeFirstQueryNotice(preferredLanguage) }
+        ]);
+      } else {
+        const picker = getLanguagePicker(preferredLanguage);
+        setMessages(previous => [
+          ...previous,
+          { role: "user", text: txt },
+          { role: "ai", text: picker.text, actions: picker.actions }
+        ]);
+      }
+      return;
+    }
+
     if ((credits?.availableCredits || 0) < 1) {
       toast({ 
         title: "NOT COMPLETED", 
@@ -519,28 +746,66 @@ export default function CivicGuard() {
       });
       return;
     }
-    const txt = input; setInput(""); setIsTyping(true);
+    setInput(""); setIsTyping(true);
     let cid = currentChatId;
     if (!cid) { const nc = await createChatMutation.mutateAsync(txt.slice(0, 30)); cid = nc.id; setCurrentChatId(cid); }
     setMessages(p => [...p, { role: "user", text: txt }]);
     try {
       const token = await user?.getIdToken();
-      const res = await fetch('/api/ai/civic/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({ message: txt, chatId: cid, city: profile?.city || "Lagos", isUrgent, language: preferredLanguage }) });
+      const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) requestHeaders.Authorization = `Bearer ${token}`;
+      const res = await fetch('/api/ai/civic/chat', {
+        method: 'POST',
+        headers: requestHeaders,
+        body: JSON.stringify({
+          message: txt,
+          chatId: cid,
+          city: profile?.city || "Lagos",
+          isUrgent,
+          language: languageMode === "selected" ? preferredLanguage : AUTO_DETECT_LANGUAGE,
+          languageMode,
+          languageChoiceEnabled
+        })
+      });
       const d = await res.json();
       if (!res.ok) {
         throw new Error(d.error || "AI service error");
       }
-      setMessages(p => [...p, { role: "ai", text: d.response }]);
-      if (typeof d.detectedLanguage === "string" && ["English", "Nigerian Pidgin", "Hausa", "Yoruba", "Igbo"].includes(d.detectedLanguage)) {
-        setPreferredLanguage(d.detectedLanguage);
-        try {
-          localStorage.setItem("sabiright_preferred_language", d.detectedLanguage);
-        } catch (error) {
-          console.warn("[Civic] Could not cache the detected reply language:", error);
+      const replyLanguage = isChatResponseLanguage(d.detectedLanguage)
+        ? d.detectedLanguage
+        : preferredLanguage;
+      setMessages(p => [...p, {
+        role: "ai",
+        text: d.response,
+        ...(d.firstQuestion
+          ? {
+              actions: [
+                { id: "language", title: getLocalizedActionTitle(replyLanguage, "language"), payload: "ACTION_LANG" },
+                { id: "help", title: getLocalizedActionTitle(replyLanguage, "help"), payload: "ACTION_HELP" }
+              ]
+            }
+          : {})
+      }]);
+      if (isChatResponseLanguage(d.detectedLanguage)) {
+        if (languageMode === "auto") {
+          setPreferredLanguage(d.detectedLanguage);
+          try {
+            localStorage.setItem("sabiright_preferred_language", d.detectedLanguage);
+          } catch (error) {
+            console.warn("[Civic] Could not cache the detected reply language:", error);
+          }
         }
         recordLanguageInteraction(d.detectedLanguage);
-        if (d.languagePreferenceSaved) void refreshProfile();
       }
+      if (d.languageChoiceEnabled === true) {
+        setLanguageChoiceEnabled(true);
+        try {
+          localStorage.setItem("sabiright_language_choice_enabled", "true");
+        } catch (error) {
+          console.warn("[Civic] Could not cache language-choice availability:", error);
+        }
+      }
+      if (d.languagePreferenceSaved || d.languageChoiceEnabled) void refreshProfile();
       refetchCredits();
       queryClient.invalidateQueries({ queryKey: ['sabiguard-messages', cid] });
 
@@ -621,13 +886,43 @@ export default function CivicGuard() {
             <div><h2 className="font-bold text-sm text-slate-800 dark:text-slate-100">SabiRight AI Agent</h2><p className="text-[10px] text-slate-500 dark:text-slate-400">{isUrgent ? "🚨 Urgent Assistance Mode" : "Law-based Guidance"}</p></div>
           </div>
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
-            <div
+            <label
               className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-[11px] font-bold text-slate-700 dark:text-slate-200"
-              title="The Agent detects the language of each message and saves the latest detected language as your preference."
+              title={languageChoiceEnabled
+                ? "Choose a fixed reply language or return to automatic language detection."
+                : getFirstQueryGuide(preferredLanguage)}
             >
               <Languages className="h-3.5 w-3.5 text-primary" />
-              <span>Auto · {preferredLanguage}</span>
-            </div>
+              <select
+                aria-label="Reply language"
+                value={languageMode === "auto" ? AUTO_DETECT_LANGUAGE : preferredLanguage}
+                disabled={!languageChoiceEnabled}
+                onChange={event => {
+                  const language = event.target.value;
+                  if (language === AUTO_DETECT_LANGUAGE || isChatResponseLanguage(language)) {
+                    void saveLanguagePreference(language).then(saved => {
+                      if (saved) {
+                        toast({
+                          title: "LANGUAGE UPDATED",
+                          description: getLanguagePreferenceConfirmation(
+                            language === AUTO_DETECT_LANGUAGE ? preferredLanguage : language,
+                            language === AUTO_DETECT_LANGUAGE
+                          )
+                        });
+                      }
+                    });
+                  }
+                }}
+                className="max-w-[150px] cursor-pointer bg-transparent outline-none disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value={AUTO_DETECT_LANGUAGE}>
+                  {getLanguagePicker(preferredLanguage).actions[0]?.title || AUTO_DETECT_LANGUAGE}
+                </option>
+                {CHAT_RESPONSE_LANGUAGES.map(language => (
+                  <option key={language} value={language}>{language}</option>
+                ))}
+              </select>
+            </label>
 
             {/* Auto-Speak (Voice Readout) Toggle button */}
             <Button 
@@ -665,7 +960,22 @@ export default function CivicGuard() {
         </div>
         <div className="flex-1 overflow-y-auto p-4" ref={scrollContainerRef} key={currentChatId || 'new'}>
           <div className="space-y-6">
-          {messages.length === 0 && (<div className="text-center text-slate-400 dark:text-slate-500 mt-20"><ShieldCheck className="h-10 w-10 mx-auto mb-4 opacity-20" /><p className="text-sm">How can I help you with Nigerian law today?</p></div>)}
+          {messages.length === 0 && (
+            <div className="mx-auto mt-12 max-w-xl text-center text-slate-500 dark:text-slate-400">
+              <ShieldCheck className="h-10 w-10 mx-auto mb-4 opacity-30 text-primary" />
+              <div className="text-sm leading-relaxed">
+                <ReactMarkdown>
+                  {getChatWelcomeText(
+                    profile?.displayName || user?.displayName || "Citizen",
+                    preferredLanguage,
+                    true,
+                    languageMode
+                  )}
+                </ReactMarkdown>
+              </div>
+              <p className="mt-4 text-xs opacity-80">{getChatHelpNudge(preferredLanguage)}</p>
+            </div>
+          )}
           {messages.map((m, i) => (
             <div key={i} className={cn("flex gap-3 max-w-[90%] animate-in fade-in slide-in-from-bottom-2 duration-300", m.role === "user" ? "ml-auto flex-row-reverse" : "")}>
               <Avatar className={cn("h-8 w-8 shrink-0 shadow-sm", m.role === "ai" ? "bg-primary" : "bg-slate-200 dark:bg-slate-800")}><AvatarFallback className="text-[10px]">{m.role === "ai" ? "AI" : "U"}</AvatarFallback></Avatar>
@@ -690,6 +1000,22 @@ export default function CivicGuard() {
                 )}
 
                 <ReactMarkdown>{(m.text || m.content || "").replace("[SHOW_PROFESSIONALS]", "")}</ReactMarkdown>
+                {m.role === "ai" && m.actions?.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2 not-prose">
+                    {m.actions.map(action => (
+                      <Button
+                        key={`${action.id}-${action.payload}`}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-auto min-h-8 whitespace-normal px-2.5 py-1.5 text-xs"
+                        onClick={() => { void handleChatAction(action); }}
+                      >
+                        {action.title}
+                      </Button>
+                    ))}
+                  </div>
+                ) : null}
                 {m.role === "ai" && ((m.text || m.content || "").includes("[SHOW_PROFESSIONALS]")) && suggestedProfessionals && suggestedProfessionals.length > 0 && (
                   <div className="mt-4 border-t pt-4 border-slate-200">
                     <p className="text-xs font-bold text-slate-500 mb-3 flex items-center gap-1"><Store className="h-3.5 w-3.5" /> Suggested Professionals in your area</p>

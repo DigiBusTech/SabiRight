@@ -1,45 +1,47 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  getBotLanguageChoices,
-  getDailyBotIntroduction,
-  getLanguageOnboardingMessage,
-  getNigeriaLocalDate,
-  getTypedLanguageSelection
-} from "./onboarding.js";
+  getChatWelcomeText,
+  getFirstQueryGuide,
+  getHelpResponse,
+  getLanguagePicker
+} from "../../shared/chatExperience.js";
+import { getDailyBotIntroduction, getNigeriaLocalDate } from "./onboarding.js";
 
-test("offers language choices with automatic language matching", () => {
+test("welcome copy includes the first-contact greeting, connection status, and auto-detect prompt", () => {
+  const welcome = getChatWelcomeText("Ada", "English", true);
+  assert.match(welcome, /Hello Ada! I'm SabiRight Agent/);
+  assert.match(welcome, /Your SabiRight account is connected/);
+  assert.match(welcome, /automatically follow the language you use/);
+});
+
+test("first-query guide offers language choice and help after the answer", () => {
+  const guide = getFirstQueryGuide("Igbo");
+  assert.match(guide, /Asụsụ/);
+  assert.match(guide, /\/help/);
+});
+
+test("language picker provides auto-detect and all supported explicit choices", () => {
+  const picker = getLanguagePicker("Yoruba");
+  assert.match(picker.text, /Yan èdè ìdáhùn/);
   assert.deepEqual(
-    getBotLanguageChoices().map(choice => choice.payload),
-    [
-      "SET_LANG_AUTO",
-      "SET_LANG_PIDGIN",
-      "SET_LANG_HAUSA",
-      "SET_LANG_YORUBA",
-      "SET_LANG_IGBO",
-      "SET_LANG_ENGLISH"
-    ]
+    picker.actions.map(action => action.payload),
+    ["SET_LANG_AUTO", "SET_LANG_ENGLISH", "SET_LANG_PIDGIN", "SET_LANG_HAUSA", "SET_LANG_YORUBA", "SET_LANG_IGBO"]
   );
 });
 
-test("accepts typed language names during first-contact onboarding", () => {
-  assert.equal(getTypedLanguageSelection(" Igbo "), "SET_LANG_IGBO");
-  assert.equal(getTypedLanguageSelection("Nigerian   Pidgin"), "SET_LANG_PIDGIN");
-  assert.equal(getTypedLanguageSelection("auto-detect"), "SET_LANG_AUTO");
-  assert.equal(getTypedLanguageSelection("How do I report an issue?"), undefined);
+test("help lists all commands and supplies selectable menu actions", () => {
+  const help = getHelpResponse("Hausa");
+  assert.match(help.text, /\/help/);
+  assert.match(help.text, /\/language/);
+  assert.match(help.text, /link CODE/);
+  assert.equal(help.actions.length, 10);
+  assert.equal(help.actions.find(action => action.payload === "ACTION_LANG")?.title, "🌐 Harshe");
 });
 
 test("uses Nigeria's local calendar day for daily introductions", () => {
   assert.equal(getNigeriaLocalDate(new Date("2026-10-11T22:30:00.000Z")), "2026-10-11");
   assert.equal(getNigeriaLocalDate(new Date("2026-10-11T23:30:00.000Z")), "2026-10-12");
-});
-
-test("introduces Sabi and asks for the preferred language before the first chat", () => {
-  const prompt = getLanguageOnboardingMessage("Ada", "Igbo", true);
-  assert.match(prompt, /Abụ m SabiRight Agent/);
-  assert.match(prompt, /họrọ asụsụ/);
-  assert.match(prompt, /ziga ya ọzọ/);
-  assert.doesNotMatch(getLanguageOnboardingMessage("Ada", "Igbo", false), /Abụ m SabiRight Agent/);
 });
 
 test("localizes the daily introduction and safely falls back to English", () => {

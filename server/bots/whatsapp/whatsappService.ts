@@ -137,13 +137,37 @@ export async function sendWhatsAppMessage(to: string, response: BotResponse): Pr
         body: { text: messageBody },
         action: { buttons: replyActions.map(a => ({ type: 'reply', reply: { id: a.payload.slice(0, 256), title: a.title.slice(0, 20) } })) }
       };
+    } else if (
+      response.listMenu &&
+      response.listMenu.items.length > 0 &&
+      response.listMenu.items.length <= 10 &&
+      messageBody.length <= 1024
+    ) {
+      interactive = {
+        type: 'list',
+        body: { text: messageBody },
+        action: {
+          button: response.listMenu.buttonText.slice(0, 20),
+          sections: [{
+            title: response.listMenu.title.slice(0, 24),
+            rows: response.listMenu.items.map(item => ({
+              id: item.id.slice(0, 200),
+              title: item.title.slice(0, 24),
+              ...(item.description ? { description: item.description.slice(0, 72) } : {})
+            }))
+          }]
+        }
+      };
     } else if (replyActions.length > 3 && messageBody.length <= 1024) {
       interactive = {
         type: 'list',
         body: { text: messageBody },
         action: {
-          button: 'Options',
-          sections: [{ title: 'Choose', rows: replyActions.slice(0, 10).map(a => ({ id: a.payload.slice(0, 200), title: a.title.slice(0, 24) })) }]
+          button: response.listMenu?.buttonText.slice(0, 20) || 'Options',
+          sections: [{
+            title: response.listMenu?.title.slice(0, 24) || 'Choose',
+            rows: replyActions.slice(0, 10).map(a => ({ id: a.payload.slice(0, 200), title: a.title.slice(0, 24) }))
+          }]
         }
       };
     }

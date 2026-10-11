@@ -22,6 +22,11 @@ import {
   normalizeWhatsAppBotUrl
 } from "./botPublicLinks.js";
 import {
+  AUTO_DETECT_LANGUAGE,
+  getFirstQueryGuide,
+  isChatResponseLanguage
+} from "../shared/chatExperience.js";
+import {
   generateAIResponse,
   invalidateMoatContextCache,
   isNAtlasSovereignMode,
@@ -3328,16 +3333,88 @@ User message: ${message}`;
     }
   });
 
+  app.post("/api/ai/civic/language", optionalUserAuth, async (req, res, next) => {
+    try {
+      const language = typeof req.body?.language === "string" ? req.body.language : "";
+      if (language !== AUTO_DETECT_LANGUAGE && !isChatResponseLanguage(language)) {
+        return res.status(400).json({ error: "Unsupported reply language" });
+      }
+
+      const userId = req.userId;
+      if (!userId) return res.status(401).json({ error: "User authentication is required" });
+
+      if (userId !== "guest-citizen") {
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("language_choice_enabled_at")
+          .eq("id", userId)
+          .maybeSingle();
+        if (profileError) throw profileError;
+        if (!profile?.language_choice_enabled_at) {
+          return res.status(409).json({
+            error: "Reply language selection becomes available after your first civic question.",
+            code: "LANGUAGE_CHOICE_NOT_READY"
+          });
+        }
+
+        const autoDetect = language === AUTO_DETECT_LANGUAGE;
+        const { error: updateError } = await supabase.from("profiles")
+          .update({
+            ...(autoDetect ? {} : { language }),
+            bot_language_mode: autoDetect ? "auto" : "selected",
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", userId);
+        if (updateError) throw updateError;
+      }
+
+      res.json({
+        language,
+        mode: language === AUTO_DETECT_LANGUAGE ? "auto" : "selected",
+        saved: userId !== "guest-citizen"
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // AI Civic Chat API (SabiRight Citizen Education) - Unified to use Autonomous Agent
   app.post("/api/ai/civic/chat", optionalUserAuth, async (req, res, next) => {
     let cost = 1;
     try {
-      const { message, sessionId, chatId } = req.body;
-      const language = "Auto-detect";
+      const { message, sessionId, chatId, languageMode: requestedLanguageMode } = req.body;
+      let language = AUTO_DETECT_LANGUAGE;
       const userId = req.userId;
       
       if (!userId || !message) {
         return res.status(400).json({ error: 'User ID and message required' });
+      }
+
+      let languageChoiceEnabled = false;
+      if (userId === "guest-citizen") {
+        languageChoiceEnabled = req.body?.languageChoiceEnabled === true;
+        if (
+          languageChoiceEnabled &&
+          requestedLanguageMode === "selected" &&
+          isChatResponseLanguage(req.body?.language)
+        ) {
+          language = req.body.language;
+        }
+      } else {
+        const { data: languageProfile, error: languageProfileError } = await supabase
+          .from("profiles")
+          .select("language,bot_language_mode,language_choice_enabled_at")
+          .eq("id", userId)
+          .maybeSingle();
+        if (languageProfileError) throw languageProfileError;
+        languageChoiceEnabled = !!languageProfile?.language_choice_enabled_at;
+        if (
+          languageChoiceEnabled &&
+          languageProfile?.bot_language_mode === "selected" &&
+          isChatResponseLanguage(languageProfile.language)
+        ) {
+          language = languageProfile.language;
+        }
       }
 
       const featureAccess = await validateFeatureAccess(userId, 'ai_chat');
@@ -3402,6 +3479,9 @@ User message: ${message}`;
       const primarySetting = await storage.getAdminSetting('ai_provider');
       const activeProvider = (primarySetting?.value || 'groq').toLowerCase();
 
+      const languageInstruction = language === AUTO_DETECT_LANGUAGE
+        ? `Detect the language of this latest user message. Answer entirely in that language and begin with exactly one metadata line [[SABIRIGHT_LANGUAGE:English]], replacing English with the detected language. Do not use a previous turn's language when this message uses another supported language.`
+        : `Reply entirely in ${language}, even if the latest message uses another language, and begin with exactly one metadata line [[SABIRIGHT_LANGUAGE:${language}]].`;
       let finalResponse = "";
 
       // In sovereign mode, all user-facing chat must go through the unified provider router.
@@ -3432,10 +3512,7 @@ User message: ${message}`;
             });
           }
 
-          const directiveText =
-            `[Detect the language of this latest user message. Answer in that language, and begin with exactly one metadata line ` +
-            `[[SABIRIGHT_LANGUAGE:English]] using the detected language from English, Nigerian Pidgin, Hausa, Yoruba, or Igbo. ` +
-            `Do not use a previous turn's language if this message is in a different supported language.]\n${message}`;
+          const directiveText = `[${languageInstruction}]\n${message}`;
 
           const events = runner.runAsync({
             userId,
@@ -3474,7 +3551,7 @@ STRICT OPERATING RULES:
 6. CONVERSATION: Use recent chat history to understand follow-up questions. Keep a natural, focused back-and-forth; do not append menus, unrelated suggestions, or routine professional referrals. Ask one short clarifying question only when needed.
 7. RESPONSE STYLE: Answer directly in 1–3 short sentences or up to 3 brief bullets, usually under 90 words. For urgent or immediate-safety situations, use no more than 2 short sentences and 50 words. Include citations only when supported by source material. Use plain text only: no headings (#), no tables, no emojis, no repeated greeting.
 8. PROFESSIONAL REFERRAL: If professional help is relevant, ask first whether the user wants help finding one. Show the professional directory only after an explicit yes. Do not describe a professional as verified unless the returned directory record supports that status.
-9. AUTOMATIC LANGUAGE: Detect the primary language of the latest user message, supporting English, Nigerian Pidgin, Hausa, Yoruba, and Igbo. Reply entirely in that language, including scope notices and clarifying questions. Start with exactly one metadata line in this format, selecting the detected language: [[SABIRIGHT_LANGUAGE:English]]. The metadata is internal; never discuss it. If the message language is unclear, use the last saved language or English.`;
+9. LANGUAGE: ${languageInstruction} The metadata is internal; never discuss it.`;
 
         const fallbackPrompt = `${fallbackInstruction}
 
@@ -3489,20 +3566,35 @@ AI:`;
 
       const parsedLanguage = parseChatLanguageMarker(finalResponse);
       finalResponse = parsedLanguage.text;
+      const isAutoDetectMode = language === AUTO_DETECT_LANGUAGE;
+      const isFirstQuestion = !languageChoiceEnabled;
+      let languageChoiceEnabledAfterReply = languageChoiceEnabled;
+      if (isFirstQuestion) {
+        finalResponse = `${finalResponse}\n\n${getFirstQueryGuide(parsedLanguage.language || "English")}`;
+      }
       let languagePreferenceSaved = false;
-      if (parsedLanguage.language && userId !== 'guest-citizen') {
+      if (userId !== 'guest-citizen') {
+        const profileUpdate: Record<string, string> = { updated_at: new Date().toISOString() };
+        if (isFirstQuestion) {
+          profileUpdate.language_choice_enabled_at = new Date().toISOString();
+          profileUpdate.bot_language_mode = 'auto';
+        }
+        if (isAutoDetectMode && parsedLanguage.language) {
+          profileUpdate.language = parsedLanguage.language;
+          profileUpdate.bot_language_mode = 'auto';
+        }
+
         const { error: languageSaveError } = await supabase.from('profiles')
-          .update({
-            language: parsedLanguage.language,
-            bot_language_mode: 'auto',
-            updated_at: new Date().toISOString()
-          })
+          .update(profileUpdate)
           .eq('id', userId);
         if (languageSaveError) {
           console.error('[Civic Chat] Could not save detected language preference:', languageSaveError);
         } else {
-          languagePreferenceSaved = true;
+          languagePreferenceSaved = isAutoDetectMode && !!parsedLanguage.language;
+          languageChoiceEnabledAfterReply = true;
         }
+      } else if (isFirstQuestion) {
+        languageChoiceEnabledAfterReply = true;
       }
 
       // Save to chat if sid provided
@@ -3521,6 +3613,8 @@ AI:`;
         response: finalResponse,
         detectedLanguage: parsedLanguage.language,
         languagePreferenceSaved,
+        languageChoiceEnabled: languageChoiceEnabledAfterReply,
+        firstQuestion: isFirstQuestion,
         creditsRemaining: Math.max(0, balance.availableCredits - cost)
       });
     } catch (err: any) {

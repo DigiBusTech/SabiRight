@@ -72,8 +72,8 @@ STRICT OPERATING RULES:
 
   if (/^(?:auto(?:-detect)?|detect)$/i.test(targetLanguage.trim())) {
     systemInstruction += `\n\n10. AUTOMATIC LANGUAGE: Detect the primary language of each latest user message, supporting English, Nigerian Pidgin, Hausa, Yoruba, and Igbo. Reply entirely in that language; do not let a prior turn override the current message. Start with exactly one metadata line in this format, selecting the detected language: [[SABIRIGHT_LANGUAGE:English]]. The metadata is internal; never discuss it. If the message language is unclear, use the user's last saved language or English.`;
-  } else if (targetLanguage && targetLanguage.toLowerCase() !== 'english') {
-    systemInstruction += `\n\n8. MULTILINGUAL OUTPUT: Respond strictly in ${targetLanguage}, using natural phrasing while preserving uncertainty.`;
+  } else {
+    systemInstruction += `\n\n10. SELECTED LANGUAGE: Respond entirely in ${targetLanguage}, even if the latest user message uses another language. Start with exactly one metadata line: [[SABIRIGHT_LANGUAGE:${targetLanguage}]]. The marker is internal; never discuss it.`;
   }
 
   return new LlmAgent({
