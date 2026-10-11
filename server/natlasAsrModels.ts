@@ -5,22 +5,31 @@ const ASR_MODELS = {
   nigerianEnglish: 'NCAIR1/NigerianAccentedEnglish'
 } as const;
 
-export function selectNAtlasAsrModel(language?: string): string {
+export const NATLAS_ASR_ENDPOINT_SETTINGS = {
+  yoruba: 'natlas_asr_endpoint_yoruba',
+  igbo: 'natlas_asr_endpoint_igbo',
+  hausa: 'natlas_asr_endpoint_hausa',
+  nigerianEnglish: 'natlas_asr_endpoint_english'
+} as const;
+
+export type NAtlasAsrLanguage = keyof typeof NATLAS_ASR_ENDPOINT_SETTINGS;
+
+export function selectNAtlasAsrLanguage(language?: string): NAtlasAsrLanguage {
   const normalized = (language || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .trim()
     .toLowerCase();
 
-  if (/^(yo|yor|yoruba)(-|$)/.test(normalized)) return ASR_MODELS.yoruba;
-  if (/^(ig|ibo|igbo)(-|$)/.test(normalized)) return ASR_MODELS.igbo;
-  if (/^(ha|hau|hausa)(-|$)/.test(normalized)) return ASR_MODELS.hausa;
-  if (/^(en|eng|english|pcm|pidgin|nigerian pidgin|naija)(-|$)/.test(normalized)) {
-    return ASR_MODELS.nigerianEnglish;
+  if (/^(yo|yor|yoruba)(?:$|[-_\s(])/.test(normalized)) return 'yoruba';
+  if (/^(ig|ibo|igbo)(?:$|[-_\s(])/.test(normalized)) return 'igbo';
+  if (/^(ha|hau|hausa)(?:$|[-_\s(])/.test(normalized)) return 'hausa';
+  if (/^(en|eng|english|pcm|pidgin|nigerian pidgin|naija)(?:$|[-_\s(])/.test(normalized)) {
+    return 'nigerianEnglish';
   }
 
   if (!normalized || /^(auto(?:-detect)?|detect|unknown)$/.test(normalized)) {
-    return ASR_MODELS.nigerianEnglish;
+    return 'nigerianEnglish';
   }
 
   const error = new Error(
@@ -28,4 +37,9 @@ export function selectNAtlasAsrModel(language?: string): string {
   );
   Object.assign(error, { statusCode: 400 });
   throw error;
+}
+
+export function selectNAtlasAsrModel(language?: string): string {
+  const asrLanguage = selectNAtlasAsrLanguage(language);
+  return asrLanguage === 'nigerianEnglish' ? ASR_MODELS.nigerianEnglish : ASR_MODELS[asrLanguage];
 }

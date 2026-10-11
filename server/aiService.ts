@@ -1,7 +1,11 @@
 import { spawn } from "node:child_process";
 import ffmpegPackage from "ffmpeg-static";
 import { supabaseStorage as storage } from "./supabaseStorage.js";
-import { selectNAtlasAsrModel } from "./natlasAsrModels.js";
+import {
+  NATLAS_ASR_ENDPOINT_SETTINGS,
+  selectNAtlasAsrLanguage,
+  selectNAtlasAsrModel
+} from "./natlasAsrModels.js";
 
 const NATLAS_REQUEST_TIMEOUT_MS = 25_000;
 const NATLAS_ASR_REQUEST_TIMEOUT_MS = 50_000;
@@ -374,6 +378,7 @@ export async function transcribeAudio(
 
   const sovereignMode = await isNAtlasSovereignMode();
   if (sovereignMode) {
+    const asrLanguage = selectNAtlasAsrLanguage(language);
     const modelId = selectNAtlasAsrModel(language);
     const tokenSetting = await storage.getAdminSetting('natlas_api_token')
       || await storage.getAdminSetting('huggingface_api_key');
@@ -390,8 +395,21 @@ export async function transcribeAudio(
     }
 
     const normalizedAudio = await transcodeAudioToNAtlasWav(audio);
-    const asrSetting = await storage.getAdminSetting('natlas_asr_endpoint');
-    const configuredEndpoint = asrSetting?.value?.trim();
+    const languageEndpointSettings = await Promise.all(
+      Object.values(NATLAS_ASR_ENDPOINT_SETTINGS).map(settingKey => storage.getAdminSetting(settingKey))
+    );
+    const [yorubaEndpoint, igboEndpoint, hausaEndpoint, englishEndpoint] = languageEndpointSettings;
+    const endpointByLanguage = {
+      yoruba: yorubaEndpoint?.value?.trim(),
+      igbo: igboEndpoint?.value?.trim(),
+      hausa: hausaEndpoint?.value?.trim(),
+      nigerianEnglish: englishEndpoint?.value?.trim()
+    };
+    const languageEndpointsConfigured = Object.values(endpointByLanguage).some(Boolean);
+    const legacySetting = languageEndpointsConfigured
+      ? null
+      : await storage.getAdminSetting('natlas_asr_endpoint');
+    const configuredEndpoint = endpointByLanguage[asrLanguage] || legacySetting?.value?.trim();
     const endpoint = configuredEndpoint
       ? configuredEndpoint.replaceAll('{model}', modelId)
       : `${DEFAULT_NATLAS_ASR_ENDPOINT}/${modelId.split('/').map(encodeURIComponent).join('/')}`;

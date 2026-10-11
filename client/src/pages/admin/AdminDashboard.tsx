@@ -3131,14 +3131,62 @@ export default function AdminDashboard() {
                           placeholder="https://router.huggingface.co/v1/chat/completions"
                           description="Hugging Face chat-completion router or a dedicated OpenAI-compatible endpoint"
                         />
-                        <ApiKeyField
-                          label="N-ATLAS ASR Endpoint Override (Optional)"
-                          id="natlas_asr_endpoint"
-                          category="ai"
-                          isSecret={false}
-                          placeholder="Leave blank to use NCAIR1 Hugging Face ASR models"
-                          description="These NCAIR1 ASR models require Hugging Face access approval. Accept access for each model using the account behind natlas_api_token; set a dedicated ASR endpoint here if the shared router does not serve the model. An endpoint URL may include a {model} placeholder."
-                        />
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">N-ATLAS ASR Endpoints by Language</h4>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Add each dedicated Hugging Face endpoint URL. English and Nigerian Pidgin share the Nigerian-accented English model. Unset languages use the shared Hugging Face router.
+                          </p>
+                        </div>
+                        <div className="grid md:grid-cols-2 gap-4">
+                          <ApiKeyField
+                            label="Igbo ASR Endpoint"
+                            id="natlas_asr_endpoint_igbo"
+                            category="ai"
+                            isSecret={false}
+                            placeholder="https://<igbo-endpoint>.endpoints.huggingface.cloud"
+                            description="Used for Igbo voice recordings."
+                          />
+                          <ApiKeyField
+                            label="Yoruba ASR Endpoint"
+                            id="natlas_asr_endpoint_yoruba"
+                            category="ai"
+                            isSecret={false}
+                            placeholder="https://<yoruba-endpoint>.endpoints.huggingface.cloud"
+                            description="Used for Yoruba voice recordings."
+                          />
+                          <ApiKeyField
+                            label="Hausa ASR Endpoint"
+                            id="natlas_asr_endpoint_hausa"
+                            category="ai"
+                            isSecret={false}
+                            placeholder="https://<hausa-endpoint>.endpoints.huggingface.cloud"
+                            description="Used for Hausa voice recordings."
+                          />
+                          <ApiKeyField
+                            label="English / Pidgin ASR Endpoint"
+                            id="natlas_asr_endpoint_english"
+                            category="ai"
+                            isSecret={false}
+                            placeholder="https://<english-endpoint>.endpoints.huggingface.cloud"
+                            description="Used for English and Nigerian Pidgin voice recordings."
+                          />
+                        </div>
+                        <details className="text-xs text-slate-500">
+                          <summary className="cursor-pointer font-medium">Legacy shared endpoint fallback</summary>
+                          <div className="mt-2">
+                            <ApiKeyField
+                              label="Shared ASR Endpoint (Legacy)"
+                              id="natlas_asr_endpoint"
+                              category="ai"
+                              isSecret={false}
+                              placeholder="Optional shared endpoint URL"
+                              description="Used only when none of the language-specific endpoints above are configured. Supports a {model} placeholder."
+                            />
+                          </div>
+                        </details>
                       </div>
 
                       {natlasTestResult && (
