@@ -138,10 +138,9 @@ function userSafeFailureResponse(error?: unknown): BotResponse {
   return {
     text: isTranscriptionFailure
       ? "⚠️ I couldn't transcribe that voice note. Please try a shorter recording or type your question instead."
-      : "⚠️ I couldn't complete that response. Please try again shortly, or type /urgent if you are in an emergency.",
+      : "⚠️ SabiRight Agent is temporarily unavailable. Your question was not answered; please try again shortly or type /urgent if you are in an emergency.",
     quickActions: [
-      { id: "urgent", title: "🚨 Urgent Mode", payload: "ACTION_URGENT" },
-      { id: "start", title: "🏠 Main Menu", payload: "ACTION_START" }
+      { id: "urgent", title: "🚨 Urgent Mode", payload: "ACTION_URGENT" }
     ]
   };
 }

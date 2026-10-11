@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback } from "../../components/ui/avatar";
 import { 
   Send, Sparkles, User, ShieldCheck, Mic, MicOff, Loader2, AlertCircle, Plus,
   MessageSquare, History, Trash2, Download, Store, MapPin,
-  Volume2, VolumeX
+  Volume2, VolumeX, Languages
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { useAuth } from "../../context/AuthContext";
@@ -85,7 +85,7 @@ function LoadingMessage() {
 }
 
 export default function CivicGuard() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -98,7 +98,13 @@ export default function CivicGuard() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [, setLocation] = useLocation();
-  const [preferredLanguage, setPreferredLanguage] = useState("English");
+  const [preferredLanguage, setPreferredLanguage] = useState(() => {
+    try {
+      return localStorage.getItem("sabiright_preferred_language") || "English";
+    } catch {
+      return "English";
+    }
+  });
   
   const [isAutoSpeak, setIsAutoSpeak] = useState(false);
   const [currentlySpeakingIndex, setCurrentlySpeakingIndex] = useState<number | null>(null);
@@ -187,28 +193,15 @@ export default function CivicGuard() {
   const storageFormatted = (storageUsed / 1024).toFixed(1) + ' KB';
   const limitFormatted = (storageLimit / 1024).toFixed(0) + ' KB';
 
-  const { data: publicSettings = {} } = useQuery<any>({
-    queryKey: ['/api/settings/public'],
-    queryFn: async () => {
-      const res = await fetch('/api/settings/public');
-      if (!res.ok) return {};
-      return res.json();
+  useEffect(() => {
+    if (!profile?.language) return;
+    setPreferredLanguage(profile.language);
+    try {
+      localStorage.setItem("sabiright_preferred_language", profile.language);
+    } catch (error) {
+      console.warn("[Civic] Could not cache the saved reply language:", error);
     }
-  });
-
-  // Get dynamic active languages list
-  const activeLangsList = (() => {
-    const raw = publicSettings['active_languages'];
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed;
-      } catch (e) {
-        // Fallback
-      }
-    }
-    return ["English", "Nigerian Pidgin", "Hausa", "Yoruba", "Igbo"];
-  })();
+  }, [profile?.language]);
 
   const { data: sessions, isLoading: isLoadingSessions } = useQuery<ChatSession[]>({
     queryKey: ['sabiguard-chats', user?.uid],
@@ -486,7 +479,7 @@ export default function CivicGuard() {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({ audioBase64, mimeType: blob.type || 'audio/webm', language: preferredLanguage }),
+            body: JSON.stringify({ audioBase64, mimeType: blob.type || 'audio/webm', language: 'Auto-detect' }),
             signal: AbortSignal.timeout(90_000)
           });
           const data = await response.json().catch(() => ({}));
@@ -538,7 +531,16 @@ export default function CivicGuard() {
         throw new Error(d.error || "AI service error");
       }
       setMessages(p => [...p, { role: "ai", text: d.response }]);
-      recordLanguageInteraction(preferredLanguage);
+      if (typeof d.detectedLanguage === "string" && ["English", "Nigerian Pidgin", "Hausa", "Yoruba", "Igbo"].includes(d.detectedLanguage)) {
+        setPreferredLanguage(d.detectedLanguage);
+        try {
+          localStorage.setItem("sabiright_preferred_language", d.detectedLanguage);
+        } catch (error) {
+          console.warn("[Civic] Could not cache the detected reply language:", error);
+        }
+        recordLanguageInteraction(d.detectedLanguage);
+        if (d.languagePreferenceSaved) void refreshProfile();
+      }
       refetchCredits();
       queryClient.invalidateQueries({ queryKey: ['sabiguard-messages', cid] });
 
@@ -619,18 +621,13 @@ export default function CivicGuard() {
             <div><h2 className="font-bold text-sm text-slate-800 dark:text-slate-100">SabiRight AI Agent</h2><p className="text-[10px] text-slate-500 dark:text-slate-400">{isUrgent ? "🚨 Urgent Assistance Mode" : "Law-based Guidance"}</p></div>
           </div>
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
-            {/* Language Selector Dropdown */}
-            <select
-              value={preferredLanguage}
-              onChange={(e) => setPreferredLanguage(e.target.value)}
-              className="text-[11px] font-bold h-8 border border-slate-200 dark:border-slate-700 rounded-lg px-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 outline-none focus:border-primary cursor-pointer transition-all shadow-xs hover:border-slate-300 dark:hover:border-slate-600 flex-1 sm:flex-none"
+            <div
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 text-[11px] font-bold text-slate-700 dark:text-slate-200"
+              title="The Agent detects the language of each message and saves the latest detected language as your preference."
             >
-              {activeLangsList.includes("English") && <option value="English">English 🇬🇧</option>}
-              {activeLangsList.includes("Nigerian Pidgin") && <option value="Nigerian Pidgin">Pidgin 🇳🇬</option>}
-              {activeLangsList.includes("Hausa") && <option value="Hausa">Hausa 🇳🇬</option>}
-              {activeLangsList.includes("Yoruba") && <option value="Yoruba">Yoruba 🇳🇬</option>}
-              {activeLangsList.includes("Igbo") && <option value="Igbo">Igbo 🇳🇬</option>}
-            </select>
+              <Languages className="h-3.5 w-3.5 text-primary" />
+              <span>Auto · {preferredLanguage}</span>
+            </div>
 
             {/* Auto-Speak (Voice Readout) Toggle button */}
             <Button 

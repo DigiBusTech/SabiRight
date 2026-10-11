@@ -20,6 +20,7 @@ export interface UserProfile {
   gender?: string | null;
   state?: string | null;
   city?: string | null;
+  language?: string | null;
   isAdmin: boolean;
   isVendor: boolean;
   emailVerified: boolean;

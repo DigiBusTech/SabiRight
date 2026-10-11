@@ -87,6 +87,7 @@ export const supabaseStorage: IStorage = {
         gender: data.gender,
         state: data.state,
         city: data.city,
+        language: data.language,
         isAdmin: !!data.is_admin,
         isVendor: !!data.is_vendor,
         emailVerified: !!data.email_verified,
@@ -122,6 +123,7 @@ export const supabaseStorage: IStorage = {
     if (updates.gender !== undefined) payload.gender = updates.gender;
     if (updates.state !== undefined) payload.state = updates.state;
     if (updates.city !== undefined) payload.city = updates.city;
+    if (updates.language !== undefined) payload.language = updates.language;
     if (updates.isAdmin !== undefined) payload.is_admin = updates.isAdmin;
     if (updates.isVendor !== undefined) payload.is_vendor = updates.isVendor;
     if (updates.vendorMode !== undefined) payload.vendor_mode = updates.vendorMode;

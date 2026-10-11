@@ -2,14 +2,12 @@ import { supabase, supabaseStorage as storage } from "../supabaseStorage.js";
 import crypto from "crypto";
 import { summarizeCaseForProfessional } from "../agent/legalAgent.js";
 import { generateAIResponse } from "../aiService.js";
+import { parseChatLanguageMarker } from "../chatLanguage.js";
 import PaystackService from "../paystackService.js";
 import type { IncomingBotMessage, BotResponse } from "./types.js";
 import {
-  getBotLanguageChoices,
   getDailyBotIntroduction,
-  getLanguageOnboardingMessage,
-  getNigeriaLocalDate,
-  getTypedLanguageSelection
+  getNigeriaLocalDate
 } from "./onboarding.js";
 import { getProfessionalLabel, getRecommendedProfessionalRole } from "./professionalRouting.js";
 import {
@@ -18,7 +16,7 @@ import {
   recordAnalyticsEvent
 } from "../innovationAnalytics.js";
 
-const BOT_AI_RESPONSE_BUDGET_MS = 7_000;
+const BOT_AI_RESPONSE_BUDGET_MS = 15_000;
 const AUTO_DETECT_LANGUAGE = 'Auto-detect';
 type ChatTurn = { role: string; content: string; eventId?: string };
 const userChatBuffers: Map<string, ChatTurn[]> = new Map();
@@ -330,27 +328,18 @@ async function searchNearbyProfessionals(
 
 const LINK_COMMAND = /^\/?link\s+([A-Za-z0-9]{6,10})$/i;
 const BOT_GREETING = /^(?:hi|hello|hey|hiya|yo|howfa|how\s+far|how\s+far\s+are\s+you|wetin\s+dey|good\s+morning|good\s+afternoon|good\s+evening)[\s.!?,]*$/i;
-const BOT_RESPONSE_LANGUAGES = ['English', 'Nigerian Pidgin', 'Hausa', 'Yoruba', 'Igbo'] as const;
-
-function parseAutoDetectedLanguage(response: string): { language: string | null; text: string } {
-  const marker = response.match(/\[\[SABIRIGHT_LANGUAGE:\s*(English|Nigerian Pidgin|Hausa|Yoruba|Igbo)\s*\]\]/i);
-  const language = marker
-    ? BOT_RESPONSE_LANGUAGES.find(candidate => candidate.toLowerCase() === marker[1].trim().toLowerCase()) || null
-    : null;
-  return {
-    language,
-    text: response.replace(/\[\[SABIRIGHT_LANGUAGE:[^\]]+\]\]/gi, '').trim()
-  };
-}
 
 function isBotGreeting(text: string): boolean {
   return BOT_GREETING.test(text.trim());
 }
 
 function detectGreetingLanguage(text: string): string {
-  return /^(?:howfa|how\s+far|how\s+far\s+are\s+you|wetin\s+dey)[\s.!?,]*$/i.test(text.trim())
-    ? 'Nigerian Pidgin'
-    : 'English';
+  const normalized = text.trim().toLowerCase();
+  if (/^(?:howfa|how\s+far|how\s+far\s+are\s+you|wetin\s+dey)[\s.!?,]*$/i.test(normalized)) return 'Nigerian Pidgin';
+  if (/^(?:sannu|ina kwana|ina yini|barka da zuwa)[\s.!?,]*$/i.test(normalized)) return 'Hausa';
+  if (/^(?:ẹ\s*k[aá]àbọ̀|b[aá]wo\s*ni|ẹ\s*ṣ[eẹ]|ẹ\s*ku\s*aar[oọ])[\s.!?,]*$/i.test(normalized)) return 'Yoruba';
+  if (/^(?:ndewo|kedu|ka\s*emesia|nd[uụ]\s*o)[\s.!?,]*$/i.test(normalized)) return 'Igbo';
+  return 'English';
 }
 
 function localizedBotGreeting(name: string, language: string, isLinked: boolean): string {
@@ -358,27 +347,27 @@ function localizedBotGreeting(name: string, language: string, isLinked: boolean)
     'English': {
       linked: '✅ Your SabiRight account is connected.',
       guest: 'You are using guest chat. Tap Link Account to connect your SabiRight account.',
-      prompt: 'Send a civic question or choose an option below.'
+      prompt: 'Send a Nigerian civic or legal question. I automatically follow the language you use.'
     },
     'Nigerian Pidgin': {
       linked: '✅ Your SabiRight account don connect.',
       guest: 'You dey use guest chat. Tap Link Account to connect your SabiRight account.',
-      prompt: 'Send your civic question or choose one option below.'
+      prompt: 'Send your Nigerian civic or legal question. I go follow the language you use for every message.'
     },
     'Hausa': {
       linked: '✅ An haɗa asusunka na SabiRight.',
       guest: 'Kana amfani da baƙo. Danna Link Account don haɗa asusunka na SabiRight.',
-      prompt: 'Aiko da tambayarka ko zaɓi ɗaya daga cikin zaɓuɓɓukan da ke ƙasa.'
+      prompt: 'Aiko tambayarka kan al\'amuran jama\'a ko doka a Najeriya. Zan bi harshen da kake amfani da shi.'
     },
     'Yoruba': {
       linked: '✅ A ti so akọọlẹ SabiRight rẹ pọ.',
       guest: 'O nlo iwiregbe alejo. Tẹ Link Account lati so akọọlẹ SabiRight rẹ pọ.',
-      prompt: 'Fi ìbéèrè rẹ ránṣẹ́ tàbí yan ọ̀kan lára àwọn àṣàyàn tó wà ní ìsàlẹ̀.'
+      prompt: 'Fi ìbéèrè nípa ẹ̀tọ́ aráàlú tàbí òfin Nàìjíríà ránṣẹ́. Màá tẹ̀lé èdè tí o bá lò.'
     },
     'Igbo': {
       linked: '✅ Ejikọtala akaụntụ SabiRight gị.',
       guest: 'Ị na-eji nkata ọbịa. Pịa Link Account iji jikọọ akaụntụ SabiRight gị.',
-      prompt: 'Zipu ajụjụ gị ma ọ bụ họrọ otu n’ime nhọrọ ndị dị n’okpuru.'
+      prompt: 'Ziga ajụjụ gbasara ikike obodo ma ọ bụ iwu Naịjirịa. Aga m eso asụsụ i ji dee ozi ọ bụla.'
     }
   };
   const copy = greetings[language] || greetings.English;
@@ -649,23 +638,26 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   }
 
   const userId = profile.id;
-  const autoDetectLanguage = profile.bot_language_mode !== 'selected';
+  const autoDetectLanguage = true;
   const userLang = profile.language || 'English';
   const isLinked = profile.id !== msg.channelUserId;
-  if (!payload && !profile.bot_language_onboarded_at) {
-    payload = getTypedLanguageSelection(rawText);
-  }
 
-  if (!profile.bot_language_onboarded_at && !payload?.startsWith('SET_LANG_')) {
-    const greetingLanguage = autoDetectLanguage && isBotGreeting(rawText)
-      ? detectGreetingLanguage(rawText)
-      : userLang;
-    const name = profile.display_name || msg.userName || 'Citizen';
-    const includeIntro = await markBotIntroductionForToday(userId);
-    return {
-      text: getLanguageOnboardingMessage(name, greetingLanguage, includeIntro),
-      quickActions: getBotLanguageChoices()
-    };
+  if (!profile.bot_language_onboarded_at || profile.bot_language_mode !== 'auto') {
+    const onboardingCompletedAt = profile.bot_language_onboarded_at || new Date().toISOString();
+    const initialLanguage = isBotGreeting(rawText) ? detectGreetingLanguage(rawText) : userLang;
+    const { error: languageModeError } = await supabase.from('profiles').update({
+      ...(isBotGreeting(rawText) ? { language: initialLanguage } : {}),
+      bot_language_mode: 'auto',
+      bot_language_onboarded_at: onboardingCompletedAt,
+      updated_at: new Date().toISOString()
+    }).eq('id', userId);
+    if (languageModeError) {
+      console.error('[BotController] Could not enable automatic language detection:', languageModeError);
+    } else {
+      profile.bot_language_mode = 'auto';
+      profile.bot_language_onboarded_at = onboardingCompletedAt;
+      if (isBotGreeting(rawText)) profile.language = initialLanguage;
+    }
   }
 
   if (msg.location) {
@@ -900,8 +892,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   if (payload === 'ACTION_LANG' || rawText.toLowerCase() === '/language') {
     return {
       text: `🌐 *Language preference*\n\n` +
-        `Choose a fixed reply language, or let Sabi match the language of each message:`,
-      quickActions: getBotLanguageChoices()
+        `Automatic language matching is on. I will reply in the language of each message and save the latest detected language (${userLang}) as your preferred language.`,
     };
   }
 
@@ -917,44 +908,29 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     const targetLang = langMap[payload];
     if (!targetLang) throw new Error(`Unsupported bot language selection: ${payload}`);
     const onboardingCompletedAt = new Date().toISOString();
-    const update = targetLang === AUTO_DETECT_LANGUAGE
-      ? {
-          bot_language_mode: 'auto',
-          bot_language_onboarded_at: onboardingCompletedAt,
-          updated_at: onboardingCompletedAt
-        }
-      : {
-          language: targetLang,
-          bot_language_mode: 'selected',
-          bot_language_onboarded_at: onboardingCompletedAt,
-          updated_at: onboardingCompletedAt
-        };
+    const update = {
+      ...(targetLang === AUTO_DETECT_LANGUAGE ? {} : { language: targetLang }),
+      bot_language_mode: 'auto',
+      bot_language_onboarded_at: onboardingCompletedAt,
+      updated_at: onboardingCompletedAt
+    };
     const { error } = await supabase.from('profiles').update(update).eq('id', userId);
     if (error) throw error;
     profile.bot_language_onboarded_at = onboardingCompletedAt;
+    profile.bot_language_mode = 'auto';
+    if (targetLang !== AUTO_DETECT_LANGUAGE) profile.language = targetLang;
 
     const autoConfirmations: Record<string, string> = {
-      'English': `✅ Auto-detect is on. I’ll reply in the language you use in each message.`,
-      'Nigerian Pidgin': `✅ Auto-detect dey on. I go reply for the language wey you use each time.`,
-      'Hausa': `✅ An kunna gano harshe ta atomatik. Zan amsa da harshen da ka yi amfani da shi.`,
-      'Yoruba': `✅ A ti tan ìdáhùn aládàáṣiṣẹ́. Màá dáhùn ní èdè tí o bá lò.`,
-      'Igbo': `✅ Agbanwula nchọpụta asụsụ na-akpaghị aka. M ga-aza n'asụsụ i jiri dee ozi gị.`
-    };
-    const confirmations: Record<string, string> = {
-      'Nigerian Pidgin': `✅ I don set your reply language to Nigerian Pidgin. How I fit help you today?`,
-      'Hausa': `✅ An saita harshen amsa zuwa Hausa. Ta yaya zan taimaka da tambayarka?`,
-      'Yoruba': `✅ A ti yan Yorùbá gẹ́gẹ́ bí èdè ìdáhùn. Báwo ni mo ṣe lè ràn yín lọ́wọ́?`,
-      'Igbo': `✅ E debela asụsụ nzaghachi gị na Igbo. Kedu ka m ga-esi nyere gị aka?`,
-      'English': `✅ Language set to English. How can I help with your civic question?`
+      'English': `✅ Auto-detect is on. I’ll follow the language you use in each message.`,
+      'Nigerian Pidgin': `✅ Auto-detect dey on. I go follow the language wey you use for each message.`,
+      'Hausa': `✅ An kunna gano harshe ta atomatik. Zan bi harshen da kake amfani da shi a kowane saƙo.`,
+      'Yoruba': `✅ A ti tan ìdáhùn aládàáṣiṣẹ́. Màá tẹ̀lé èdè tí o bá lò nínú gbogbo ìfiránṣẹ́.`,
+      'Igbo': `✅ Agbanwula nchọpụta asụsụ na-akpaghị aka. Aga m eso asụsụ i ji dee ozi ọ bụla.`
     };
     return {
       text: targetLang === AUTO_DETECT_LANGUAGE
         ? autoConfirmations[userLang] || autoConfirmations.English
-        : confirmations[targetLang],
-      quickActions: [
-        { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
-        { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' }
-      ]
+        : `✅ ${targetLang} is saved as your current preferred language. I will still detect and follow the language you use in each new message.`
     };
   }
 
@@ -1298,16 +1274,14 @@ PERSONA AND LOCALIZATION:
 STRICT OPERATING RULES:
 1. GREETINGS: Respond warmly to a greeting. For all other messages, answer the enquiry directly without repeating the introduction.
 2. CIVIC GUIDE & DE-ESCALATION: For physical encounters, prioritize immediate safety and offer only general, non-confrontational steps. Do not guarantee safety or outcomes.
-3. SOURCE-BASED LEGAL INFORMATION: For legal answers, cite the exact statute and section supported by the supplied reference material; cite its page if no section is identifiable. Prefer a relevant Constitutional section when the source supports it, but do not force a citation. Never guess or fabricate legal citations, statutory wording, legal rights, or outcomes. Reference material may be incomplete or unverified.
-4. UNCERTAINTY: If reliable supporting material is unavailable or unclear, say that you cannot verify the legal point; do not fill the gap from memory or present a guess as fact. Recommend checking a current authoritative source or consulting qualified Nigerian counsel.
-5. RESPONSE STYLE: Answer directly in 1–3 short sentences or up to 3 brief bullets, usually under 90 words. For urgent or immediate-safety situations, use no more than 2 short sentences and 50 words. Keep citations short and include them only when supported by the available source.
-6. PROFESSIONAL REFERRAL: If specialist help is useful, recommend /professional to find a professional matched to the user's latest enquiry. Match tax questions to a tax agent, company/business registration to a CAC agent, accounting/bookkeeping to an accountant, and legal disputes to a lawyer. Do not call a tax agent a lawyer. Users can type /lawyer to search specifically for a lawyer.`;
+3. CONTEXT AND SCOPE: Answer Nigerian civic and legal questions only when supported by the supplied MOAT/reference context and relevant conversation history. If the question is unrelated or the context does not support it, briefly say SabiRight Agent is limited to Nigerian civic guidance grounded in its supplied references, then invite a related question. Do not answer unsupported questions from general model knowledge.
+4. SOURCE-BASED LEGAL INFORMATION: Cite the exact statute and section supported by the supplied reference material; cite its page if no section is identifiable. Prefer a relevant Constitutional section when the source supports it, but do not force a citation. Never guess or fabricate legal citations, statutory wording, legal rights, or outcomes. Reference material may be incomplete or unverified.
+5. UNCERTAINTY: If reliable supporting material is unavailable or unclear, say that you cannot verify the legal point; do not fill the gap from memory or present a guess as fact. Recommend checking a current authoritative source or consulting qualified Nigerian counsel.
+6. CONVERSATION: Use recent history to understand follow-up questions. Keep a natural, focused back-and-forth; do not append menus, unrelated suggestions, or routine professional referrals. Ask one short clarifying question only when needed.
+7. RESPONSE STYLE: Answer directly in 1–3 short sentences or up to 3 brief bullets, usually under 90 words. For urgent or immediate-safety situations, use no more than 2 short sentences and 50 words. Keep citations short and include them only when supported by the available source.
+8. PROFESSIONAL REFERRAL: If specialist help is useful, ask the user first whether they want help finding one. Match tax questions to a tax agent, company/business registration to a CAC agent, accounting/bookkeeping to an accountant, and legal disputes to a lawyer. Do not call a tax agent a lawyer.
+9. AUTOMATIC LANGUAGE MATCHING: Detect the primary language of the latest user message and answer entirely in that language. Support English, Nigerian Pidgin, Hausa, Yoruba, and Igbo. For code-mixed messages, use the dominant language; if unclear, use the last saved language (${userLang}) or English. Start with exactly one metadata line: [[SABIRIGHT_LANGUAGE:English]], replacing English with the detected language. This marker is internal; never mention it in the answer.`;
 
-    if (autoDetectLanguage) {
-      fallbackInstruction += `\n7. AUTOMATIC LANGUAGE MATCHING: Detect the primary language in the user's latest message and answer in that language. Support English, Nigerian Pidgin, Hausa, Yoruba, and Igbo. For code-mixed messages, use the dominant language. If the language is unclear, use English. At the very start of your response, emit exactly one metadata line in this format, choosing the detected language: [[SABIRIGHT_LANGUAGE:English]] (the value must be exactly one of English, Nigerian Pidgin, Hausa, Yoruba, or Igbo). This marker is for SabiRight processing only; never mention it in the answer itself.`;
-    } else {
-      fallbackInstruction += `\n7. LANGUAGE PREFERENCE: Conduct the entire response in ${userLang}, using natural phrasing while preserving uncertainty.`;
-    }
     if (safetyConcern) {
       fallbackInstruction += '\nURGENT STYLE: Put immediate safety first, avoid confrontation advice, keep the response to at most 2 short sentences and 50 words, and include a legal citation only if the supplied reference directly supports it.';
     }
@@ -1322,14 +1296,14 @@ AI:`;
     const generatedResponse = await generateAIResponse(fallbackPrompt, false, {
       maxLatencyMs: BOT_AI_RESPONSE_BUDGET_MS
     });
-    const parsedResponse = autoDetectLanguage && generatedResponse
-      ? parseAutoDetectedLanguage(generatedResponse)
-      : { language: null, text: generatedResponse || '' };
+    const parsedResponse = generatedResponse
+      ? parseChatLanguageMarker(generatedResponse)
+      : { language: null, text: '' };
     let finalResponse = parsedResponse.text;
 
     if (!finalResponse) {
       await refundBotCredit(userId, cost, creditKey);
-      finalResponse = `I couldn't generate a reliable response to that enquiry. Your credits have been refunded.${fallbackGuidance} Please try again or type /professional to find a suitable professional.`;
+      finalResponse = `A reliable answer could not be generated. Your credits have been refunded.${fallbackGuidance} Please try again shortly.`;
     } else {
       const analyticsLanguage = autoDetectLanguage ? parsedResponse.language : userLang;
       if (analyticsLanguage && (ANALYTICS_LANGUAGES as readonly string[]).includes(analyticsLanguage)) {
@@ -1379,18 +1353,12 @@ AI:`;
       });
     }
 
-    const enquiryForReferral = [...history].reverse().find(turn =>
-      turn.role === 'user' && !/^\/(?:professional|lawyer|directory|professionals|more)\b/i.test(turn.content)
-    )?.content || rawText;
-    const recommendedRole = getRecommendedProfessionalRole(enquiryForReferral);
+    const quickActions = safetyConcern
+      ? [{ id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' }]
+      : undefined;
     return {
       text: finalResponse,
-      quickActions: [
-        { id: 'balance', title: '💳 Balance', payload: 'ACTION_BALANCE' },
-        { id: 'professional', title: `👥 ${getProfessionalLabel(recommendedRole)}`.slice(0, 20), payload: `PROS_ROLE_${recommendedRole}` },
-        { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
-        { id: 'lang', title: '🌐 Language', payload: 'ACTION_LANG' }
-      ]
+      ...(quickActions ? { quickActions } : {})
     };
   } catch (error: any) {
     console.error("[BotController] Agent Error:", error);
@@ -1403,12 +1371,8 @@ AI:`;
       refundNotice = 'I could not confirm the credit refund; please contact support if your balance does not update.';
     }
     return {
-      text: `⚠️ The answer service did not respond in time. ${refundNotice}${fallbackGuidance} You can try again or type /professional to find a suitable professional.`,
-      quickActions: [
-        { id: 'professional', title: `👥 ${getProfessionalLabel(getRecommendedProfessionalRole(rawText))}`.slice(0, 20), payload: `PROS_ROLE_${getRecommendedProfessionalRole(rawText)}` },
-        { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
-        { id: 'balance', title: '💳 Balance', payload: 'ACTION_BALANCE' }
-      ]
+      text: `A temporary service issue interrupted this reply. ${refundNotice}${fallbackGuidance} Please try again shortly.`,
+      ...(safetyConcern ? { quickActions: [{ id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' }] } : {})
     };
   }
 }

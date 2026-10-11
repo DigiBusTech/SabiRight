@@ -12,6 +12,7 @@ import PaystackService from "./paystackService.js";
 import { whatsappRouter } from "./bots/whatsapp/whatsappRoutes.js";
 import { telegramRouter } from "./bots/telegram/telegramRoutes.js";
 import { drainInboundBotQueue } from "./bots/inboundBotWorker.js";
+import { parseChatLanguageMarker } from "./chatLanguage.js";
 import {
   getInnovationAnalytics,
   recordAnalyticsEvent
@@ -3331,7 +3332,8 @@ User message: ${message}`;
   app.post("/api/ai/civic/chat", optionalUserAuth, async (req, res, next) => {
     let cost = 1;
     try {
-      const { message, sessionId, chatId, language } = req.body;
+      const { message, sessionId, chatId } = req.body;
+      const language = "Auto-detect";
       const userId = req.userId;
       
       if (!userId || !message) {
@@ -3409,7 +3411,7 @@ User message: ${message}`;
         geminiKey
       ) {
         try {
-          const agent = await getLegalAgent(language || "English");
+          const agent = await getLegalAgent(language);
           const runner = new Runner({
             appName: "SabiRight",
             agent,
@@ -3430,9 +3432,10 @@ User message: ${message}`;
             });
           }
 
-          const directiveText = language && language.toLowerCase() !== 'english'
-            ? `[Preferred Output Language: ${language} - conduct this response strictly in ${language}]. ${message}`
-            : message;
+          const directiveText =
+            `[Detect the language of this latest user message. Answer in that language, and begin with exactly one metadata line ` +
+            `[[SABIRIGHT_LANGUAGE:English]] using the detected language from English, Nigerian Pidgin, Hausa, Yoruba, or Igbo. ` +
+            `Do not use a previous turn's language if this message is in a different supported language.]\n${message}`;
 
           const events = runner.runAsync({
             userId,
@@ -3460,20 +3463,18 @@ User message: ${message}`;
 
       // If ADK was skipped or produced empty text, execute via platform provider (Groq, etc.)
       if (!finalResponse) {
-        let fallbackInstruction = `You are the SabiRight Agent, a general civic information responder for Nigerians. Provide clear, cautious information; you are not a substitute for advice from a qualified Nigerian lawyer.
+        let fallbackInstruction = `You are the SabiRight Agent, a Nigerian civic information assistant. Provide clear, cautious information; you are not a substitute for advice from a qualified Nigerian lawyer.
 
 STRICT OPERATING RULES:
 1. NO GREETING: The app has already greeted the user. Never introduce yourself or say hello; answer the question directly.
 2. CIVIC GUIDE & DE-ESCALATION: For physical encounters, prioritize immediate safety and offer only general, non-confrontational steps. Do not guarantee safety or outcomes.
-3. SOURCE-BASED LEGAL INFORMATION: For legal answers, cite the exact statute and section supported by the supplied reference material; cite its page if no section is identifiable. Prefer a relevant Constitutional section when supported, but do not force a citation. Never guess or fabricate citations, statutory wording, legal rights, or outcomes. Reference material may be incomplete or unverified.
-4. UNCERTAINTY: If reliable supporting material is unavailable or unclear, say that you cannot verify the legal point; do not fill the gap from memory or present a guess as fact. Recommend checking a current authoritative source or consulting qualified Nigerian counsel.
-5. RESPONSE STYLE: Answer directly in 1–3 short sentences or up to 3 brief bullets, usually under 90 words. For urgent or immediate-safety situations, use no more than 2 short sentences and 50 words. Include citations only when supported by source material. Use plain text only: no headings (#), no tables, no emojis, no repeated greeting.
-6. PROFESSIONAL REFERRAL LOGIC: If a situation requires a professional, ask the user first whether they want help finding one.
-7. TRIGGERING CARDS: Only if the user explicitly confirms, end the response with the exact phrase "[SHOW_PROFESSIONALS]" to show directory results. Do not describe a professional as verified unless the returned directory record supports that status.`;
-
-        if (language && language.toLowerCase() !== 'english') {
-          fallbackInstruction += `\n8. MULTILINGUAL OUTPUT: Conduct the entire response in ${language}, using natural phrasing while preserving uncertainty.`;
-        }
+3. CONTEXT AND SCOPE: Answer civic and legal questions about Nigeria only when supported by the supplied MOAT/reference context. If the user asks about an unrelated topic or the provided context does not support the answer, say briefly that SabiRight Agent is limited to Nigerian civic guidance grounded in its provided references, and invite a related question. Do not answer unsupported questions from general model knowledge.
+4. SOURCE-BASED LEGAL INFORMATION: Cite the exact statute and section supported by the supplied reference material; cite its page if no section is identifiable. Prefer a relevant Constitutional section when supported, but do not force a citation. Never guess or fabricate citations, statutory wording, legal rights, or outcomes. Reference material may be incomplete or unverified.
+5. UNCERTAINTY: If reliable supporting material is unavailable or unclear, say that you cannot verify the legal point; do not fill the gap from memory or present a guess as fact. Recommend checking a current authoritative source or consulting qualified Nigerian counsel.
+6. CONVERSATION: Use recent chat history to understand follow-up questions. Keep a natural, focused back-and-forth; do not append menus, unrelated suggestions, or routine professional referrals. Ask one short clarifying question only when needed.
+7. RESPONSE STYLE: Answer directly in 1–3 short sentences or up to 3 brief bullets, usually under 90 words. For urgent or immediate-safety situations, use no more than 2 short sentences and 50 words. Include citations only when supported by source material. Use plain text only: no headings (#), no tables, no emojis, no repeated greeting.
+8. PROFESSIONAL REFERRAL: If professional help is relevant, ask first whether the user wants help finding one. Show the professional directory only after an explicit yes. Do not describe a professional as verified unless the returned directory record supports that status.
+9. AUTOMATIC LANGUAGE: Detect the primary language of the latest user message, supporting English, Nigerian Pidgin, Hausa, Yoruba, and Igbo. Reply entirely in that language, including scope notices and clarifying questions. Start with exactly one metadata line in this format, selecting the detected language: [[SABIRIGHT_LANGUAGE:English]]. The metadata is internal; never discuss it. If the message language is unclear, use the last saved language or English.`;
 
         const fallbackPrompt = `${fallbackInstruction}
 
@@ -3481,7 +3482,27 @@ ${formattedHistory ? `Here is the conversation history:\n${formattedHistory}` : 
 User: ${message}
 AI:`;
 
-        finalResponse = await generateAIResponse(fallbackPrompt) || "Hello! I am your SabiRight AI Agent. I'm currently experiencing high traffic, please try asking again in a few moments.";
+        const generatedResponse = await generateAIResponse(fallbackPrompt);
+        if (!generatedResponse?.trim()) throw new Error("The AI provider returned no response");
+        finalResponse = generatedResponse;
+      }
+
+      const parsedLanguage = parseChatLanguageMarker(finalResponse);
+      finalResponse = parsedLanguage.text;
+      let languagePreferenceSaved = false;
+      if (parsedLanguage.language && userId !== 'guest-citizen') {
+        const { error: languageSaveError } = await supabase.from('profiles')
+          .update({
+            language: parsedLanguage.language,
+            bot_language_mode: 'auto',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', userId);
+        if (languageSaveError) {
+          console.error('[Civic Chat] Could not save detected language preference:', languageSaveError);
+        } else {
+          languagePreferenceSaved = true;
+        }
       }
 
       // Save to chat if sid provided
@@ -3496,7 +3517,12 @@ AI:`;
         }
       }
 
-      res.json({ response: finalResponse, creditsRemaining: Math.max(0, balance.availableCredits - cost) });
+      res.json({
+        response: finalResponse,
+        detectedLanguage: parsedLanguage.language,
+        languagePreferenceSaved,
+        creditsRemaining: Math.max(0, balance.availableCredits - cost)
+      });
     } catch (err: any) {
       console.error('[Civic Chat Agent] Error:', err.message, err.stack);
       try {
