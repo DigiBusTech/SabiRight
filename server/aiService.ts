@@ -24,20 +24,31 @@ const ffmpegPath: string | null = typeof ffmpegPackage === 'string'
   : ffmpegPackage.default;
 let moatCache: { data: any[]; expiresAt: number } | undefined;
 let moatLoad: Promise<any[]> | undefined;
+let moatCacheVersion = 0;
 
 async function loadMoatData(): Promise<any[]> {
   if (moatCache && moatCache.expiresAt > Date.now()) return moatCache.data;
   if (!moatLoad) {
-    moatLoad = storage.getMoatData()
+    const loadVersion = moatCacheVersion;
+    const load = storage.getMoatData()
       .then(data => {
-        moatCache = { data, expiresAt: Date.now() + MOAT_CACHE_TTL_MS };
+        if (loadVersion === moatCacheVersion) {
+          moatCache = { data, expiresAt: Date.now() + MOAT_CACHE_TTL_MS };
+        }
         return data;
       })
       .finally(() => {
-        moatLoad = undefined;
+        if (moatLoad === load) moatLoad = undefined;
       });
+    moatLoad = load;
   }
   return moatLoad;
+}
+
+export function invalidateMoatContextCache(): void {
+  moatCacheVersion++;
+  moatCache = undefined;
+  moatLoad = undefined;
 }
 
 function createTranscriptionError(message: string, statusCode: number) {

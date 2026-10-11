@@ -77,6 +77,8 @@ const formatDate = (date: any) => {
   return isNaN(d.getTime()) ? new Date() : d;
 };
 
+const MOAT_PAGE_SIZE = 25;
+
 export const USER_FEATURES = [
   { id: "ai_chat", label: "Right-To-Know AI Chat" },
   { id: "civic_alerts", label: "Real-time Civic & Traffic Alerts" },
@@ -259,6 +261,10 @@ export default function AdminDashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [localSettings, setLocalSettings] = useState<Record<string, string>>({});
+  const [moatPage, setMoatPage] = useState(0);
+  const [selectedMoatIds, setSelectedMoatIds] = useState<Set<string>>(() => new Set());
+  const [editingMoat, setEditingMoat] = useState<any>(null);
+  const [editMoatForm, setEditMoatForm] = useState<any>(null);
   const [isTestingNAtlas, setIsTestingNAtlas] = useState(false);
   const [natlasTestResult, setNatlasTestResult] = useState<any>(null);
   const [setupKey, setSetupKey] = useState("");
@@ -713,6 +719,17 @@ export default function AdminDashboard() {
       return res.ok ? res.json() : [];
     }
   });
+  const moatPageCount = Math.max(1, Math.ceil(moatItems.length / MOAT_PAGE_SIZE));
+  const currentMoatPage = Math.min(moatPage, moatPageCount - 1);
+  const visibleMoatItems = moatItems.slice(
+    currentMoatPage * MOAT_PAGE_SIZE,
+    (currentMoatPage + 1) * MOAT_PAGE_SIZE
+  );
+  const allMoatItemsSelected = moatItems.length > 0 && moatItems.every((item: any) => selectedMoatIds.has(item.id));
+
+  useEffect(() => {
+    setMoatPage(page => Math.min(page, moatPageCount - 1));
+  }, [moatPageCount]);
 
   const { data: faqs = [] } = useQuery({
     queryKey: ['admin-faqs'],
@@ -1549,9 +1566,68 @@ export default function AdminDashboard() {
       if (!res.ok) throw new Error('Failed');
       return res.json();
     },
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-moat'] });
+      setSelectedMoatIds(current => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+      toast({ title: "Deleted", description: "MOAT entry deleted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const bulkDeleteMoat = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch('/api/admin/moat/bulk-delete', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ids })
+      });
+      if (!res.ok) {
+        const result = await res.json().catch(() => ({}));
+        throw new Error(result.error || 'Failed to delete selected MOAT entries.');
+      }
+      return res.json();
+    },
+    onSuccess: (result: { deleted: number }) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-moat'] });
+      setSelectedMoatIds(new Set());
+      toast({ title: "Deleted", description: `${result.deleted} MOAT entr${result.deleted === 1 ? 'y' : 'ies'} deleted.` });
+    },
+    onError: (error: Error) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-moat'] });
+      setSelectedMoatIds(new Set());
+      toast({ title: "Bulk delete failed", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const updateMoat = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Record<string, unknown> }) => {
+      const headers = await getAdminHeaders();
+      const res = await fetch(`/api/admin/moat/${id}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(updates)
+      });
+      if (!res.ok) {
+        const result = await res.json().catch(() => ({}));
+        throw new Error(result.error || 'Failed to update MOAT entry.');
+      }
+      return res.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-moat'] });
-      toast({ title: "Deleted", description: "MOAT entry deleted" });
+      setEditingMoat(null);
+      setEditMoatForm(null);
+      toast({ title: "Updated", description: "MOAT entry updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Update failed", description: error.message, variant: "destructive" });
     }
   });
 
@@ -7545,6 +7621,7 @@ export default function AdminDashboard() {
                         <SelectContent>
                           <SelectItem value="constitution">Constitution</SelectItem>
                           <SelectItem value="police_act">Police Act</SelectItem>
+                          <SelectItem value="legal_reference">Legal Reference</SelectItem>
                           <SelectItem value="case_documents">Case Documents</SelectItem>
                           <SelectItem value="forum">Forum Data</SelectItem>
                           <SelectItem value="marketplace">Marketplace Data</SelectItem>
@@ -7582,33 +7659,191 @@ export default function AdminDashboard() {
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle>Existing MOAT Data ({moatItems.length})</CardTitle>
+              <CardHeader className="gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <CardTitle>Existing MOAT Data ({moatItems.length})</CardTitle>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        aria-label="Select all MOAT entries"
+                        checked={allMoatItemsSelected ? true : selectedMoatIds.size > 0 ? 'indeterminate' : false}
+                        onCheckedChange={checked => setSelectedMoatIds(
+                          checked === true ? new Set(moatItems.map((item: any) => item.id)) : new Set()
+                        )}
+                      />
+                      <Label className="text-sm">Select all {moatItems.length}</Label>
+                    </div>
+                    {selectedMoatIds.size > 0 && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        disabled={bulkDeleteMoat.isPending}
+                        onClick={() => {
+                          const ids = [...selectedMoatIds].filter(id => moatItems.some((item: any) => item.id === id));
+                          if (ids.length && confirm(`Delete ${ids.length} selected MOAT entr${ids.length === 1 ? 'y' : 'ies'}? This cannot be undone.`)) {
+                            bulkDeleteMoat.mutate(ids);
+                          }
+                        }}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {bulkDeleteMoat.isPending ? 'Deleting...' : `Delete selected (${selectedMoatIds.size})`}
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {moatItems.length === 0 ? (
                     <p className="text-center py-8 text-slate-400">No MOAT data uploaded yet</p>
                   ) : (
-                    moatItems.map((item: any) => (
-                      <div key={item.id} className="p-4 border rounded-lg flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-bold">{item.title}</p>
-                            <Badge variant="outline">{item.category}</Badge>
+                    <>
+                      {visibleMoatItems.map((item: any) => (
+                        <div key={item.id} className="p-4 border rounded-lg flex gap-3 items-start">
+                          <Checkbox
+                            aria-label={`Select ${item.title}`}
+                            checked={selectedMoatIds.has(item.id)}
+                            onCheckedChange={checked => setSelectedMoatIds(current => {
+                              const next = new Set(current);
+                              if (checked === true) next.add(item.id);
+                              else next.delete(item.id);
+                              return next;
+                            })}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                              <p className="font-bold">{item.title}</p>
+                              <Badge variant="outline">{item.category}</Badge>
+                            </div>
+                            <p className="text-xs text-slate-500 mb-2">{item.source ? `Source: ${item.source}` : 'Source not specified'}</p>
+                            <p className="text-sm text-slate-600 line-clamp-3">{item.content}</p>
                           </div>
-                          <p className="text-xs text-slate-500 mb-2">Source: {item.source}</p>
-                          <p className="text-sm text-slate-600 line-clamp-3">{item.content}</p>
+                          <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditingMoat(item);
+                                setEditMoatForm({
+                                  title: item.title || '',
+                                  content: item.content || '',
+                                  source: item.source || '',
+                                  category: item.category || '',
+                                  metadata: item.metadata
+                                });
+                              }}
+                            >
+                              <Edit className="mr-1 h-4 w-4" />
+                              Edit
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => {
+                              if (confirm('Delete this MOAT item?')) deleteMoat.mutate(item.id);
+                            }}>
+                              <Trash2 className="mr-1 h-4 w-4" />
+                              Delete
+                            </Button>
+                          </div>
                         </div>
-                        <Button size="sm" variant="destructive" className="ml-4" onClick={() => {
-                          if (confirm('Delete this MOAT item?')) deleteMoat.mutate(item.id);
-                        }}>Delete</Button>
+                      ))}
+                      <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-slate-500">
+                          Showing {currentMoatPage * MOAT_PAGE_SIZE + 1}–{Math.min((currentMoatPage + 1) * MOAT_PAGE_SIZE, moatItems.length)} of {moatItems.length}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentMoatPage === 0}
+                            onClick={() => setMoatPage(page => Math.max(0, page - 1))}
+                          >
+                            <ChevronLeft className="mr-1 h-4 w-4" />
+                            Previous
+                          </Button>
+                          <span className="text-sm tabular-nums">Page {currentMoatPage + 1} of {moatPageCount}</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={currentMoatPage >= moatPageCount - 1}
+                            onClick={() => setMoatPage(page => Math.min(moatPageCount - 1, page + 1))}
+                          >
+                            Next
+                            <ChevronRight className="ml-1 h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                    ))
+                    </>
                   )}
                 </div>
               </CardContent>
             </Card>
+
+            <Dialog
+              open={!!editingMoat}
+              onOpenChange={open => {
+                if (!open) {
+                  setEditingMoat(null);
+                  setEditMoatForm(null);
+                }
+              }}
+            >
+              <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit MOAT Entry</DialogTitle>
+                  <DialogDescription>Update the title, category, source, or reference content.</DialogDescription>
+                </DialogHeader>
+                {editMoatForm && (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-moat-title">Title</Label>
+                      <Input
+                        id="edit-moat-title"
+                        value={editMoatForm.title}
+                        onChange={event => setEditMoatForm((current: any) => ({ ...current, title: event.target.value }))}
+                      />
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-moat-category">Category</Label>
+                        <Input
+                          id="edit-moat-category"
+                          value={editMoatForm.category}
+                          onChange={event => setEditMoatForm((current: any) => ({ ...current, category: event.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-moat-source">Source / Reference</Label>
+                        <Input
+                          id="edit-moat-source"
+                          value={editMoatForm.source}
+                          onChange={event => setEditMoatForm((current: any) => ({ ...current, source: event.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-moat-content">Content</Label>
+                      <Textarea
+                        id="edit-moat-content"
+                        className="min-h-[280px]"
+                        value={editMoatForm.content}
+                        onChange={event => setEditMoatForm((current: any) => ({ ...current, content: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+                )}
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setEditingMoat(null)}>Cancel</Button>
+                  <Button
+                    disabled={!editMoatForm?.title.trim() || !editMoatForm?.content.trim() || !editMoatForm?.category.trim() || updateMoat.isPending}
+                    onClick={() => editingMoat && editMoatForm && updateMoat.mutate({
+                      id: editingMoat.id,
+                      updates: editMoatForm
+                    })}
+                  >
+                    {updateMoat.isPending ? 'Saving...' : 'Save changes'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </TabsContent>
 

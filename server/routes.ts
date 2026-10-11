@@ -18,6 +18,7 @@ import {
 } from "./botPublicLinks.js";
 import {
   generateAIResponse,
+  invalidateMoatContextCache,
   isNAtlasSovereignMode,
   MAX_TRANSCRIPTION_AUDIO_BYTES,
   transcribeAudio
@@ -2532,7 +2533,45 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
   app.post("/api/admin/moat", adminAuth, async (req, res, next) => {
     try {
       const item = await storage.createMoatData(req.body);
+      invalidateMoatContextCache();
       res.json(item);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch("/api/admin/moat/:id", adminAuth, async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { title, content, category, source, metadata } = req.body || {};
+      if (
+        typeof title !== 'string' || !title.trim() ||
+        typeof content !== 'string' || !content.trim() ||
+        typeof category !== 'string' || !category.trim() ||
+        typeof source !== 'string'
+      ) {
+        return res.status(400).json({ error: 'Title, content, category, and source are required.' });
+      }
+      await storage.updateMoatData(id, { title: title.trim(), content, category: category.trim(), source, ...(metadata !== undefined ? { metadata } : {}) });
+      invalidateMoatContextCache();
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/admin/moat/bulk-delete", adminAuth, async (req, res, next) => {
+    try {
+      const ids = req.body?.ids;
+      if (!Array.isArray(ids) || ids.length === 0 || ids.some(id => typeof id !== 'string' || !id.trim())) {
+        return res.status(400).json({ error: 'Provide one or more valid MOAT IDs to delete.' });
+      }
+      try {
+        await storage.deleteMoatDataMany([...new Set(ids)]);
+      } finally {
+        invalidateMoatContextCache();
+      }
+      res.json({ success: true, deleted: new Set(ids).size });
     } catch (error) {
       next(error);
     }
@@ -2542,6 +2581,7 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
     try {
       const { id } = req.params;
       await storage.deleteMoatData(id);
+      invalidateMoatContextCache();
       res.json({ success: true });
     } catch (error) {
       next(error);

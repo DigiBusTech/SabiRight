@@ -456,7 +456,9 @@ export interface ISupabaseStorageEngine {
   updateChatStorageUsed(userId: string, bytes: number): Promise<void>;
   getMoatData(category?: string): Promise<MoatData[]>;
   createMoatData(data: Omit<MoatData, 'id' | 'createdAt'>): Promise<MoatData>;
+  updateMoatData(id: string, updates: Partial<Pick<MoatData, 'title' | 'content' | 'category' | 'source' | 'metadata'>>): Promise<void>;
   deleteMoatData(id: string): Promise<void>;
+  deleteMoatDataMany(ids: string[]): Promise<void>;
 
   // Professionals
   getProfessionals(filters?: { status?: string; role?: string; city?: string; verified?: boolean }): Promise<Professional[]>;

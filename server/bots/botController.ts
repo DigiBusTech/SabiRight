@@ -11,6 +11,7 @@ import {
   getNigeriaLocalDate,
   getTypedLanguageSelection
 } from "./onboarding.js";
+import { getProfessionalLabel, getRecommendedProfessionalRole } from "./professionalRouting.js";
 
 const BOT_AI_RESPONSE_BUDGET_MS = 7_000;
 const AUTO_DETECT_LANGUAGE = 'Auto-detect';
@@ -672,7 +673,7 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     profile.bot_location_latitude = msg.location.latitude;
     profile.bot_location_longitude = msg.location.longitude;
     return {
-      text: '✅ Location received and saved for travel-time matching. Choose a professional category or send `/lawyer` to search.',
+      text: '✅ Location received and saved for travel-time matching. Choose a professional category or send `/professional` to get a recommendation based on your enquiry. Use `/lawyer` to search specifically for a lawyer.',
       quickActions: [
         { id: 'directory', title: '📂 Find Professionals', payload: 'ACTION_DIRECTORY' },
         { id: 'lawyer', title: '👨‍⚖️ Find Lawyers', payload: 'ACTION_LAWYER' },
@@ -733,15 +734,25 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
   }
 
   const moreMatch = rawText.match(/^\/?more\s+(lawyer|cac_agent|tax_agent|accountant)\s+(\d+)$/i);
+  const professionalCommand = /^\/?professional$/i.test(rawText);
   if (
     payload === 'ACTION_LAWYER' ||
     rawText.toLowerCase() === '/lawyer' ||
+    payload === 'ACTION_PROFESSIONAL' ||
+    professionalCommand ||
     payload?.startsWith('PROS_ROLE_') ||
     !!moreMatch
   ) {
+    const latestEnquiry = [...history].reverse().find(turn =>
+      turn.role === 'user' && !/^\/(?:professional|lawyer|directory|professionals|more)\b/i.test(turn.content)
+    )?.content || rawText;
     const role = moreMatch
       ? moreMatch[1].toLowerCase()
-      : payload?.startsWith('PROS_ROLE_') ? payload.replace('PROS_ROLE_', '') : 'lawyer';
+      : payload?.startsWith('PROS_ROLE_')
+        ? payload.replace('PROS_ROLE_', '')
+        : payload === 'ACTION_PROFESSIONAL' || professionalCommand
+          ? getRecommendedProfessionalRole(latestEnquiry)
+          : 'lawyer';
     const offset = moreMatch ? Math.max(0, Number(moreMatch[2])) : 0;
     const location = Number.isFinite(profile.bot_location_latitude) && Number.isFinite(profile.bot_location_longitude)
       ? { latitude: profile.bot_location_latitude, longitude: profile.bot_location_longitude }
@@ -1169,7 +1180,8 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
         `• */topup* - Buy extra credits via direct payment link\n` +
         `• */plans* - View & subscribe to monthly membership plans\n` +
         `• */urgent* - Emergency constitutional advice during stops/checkpoints\n` +
-        `• */lawyer* - Find verified nearby legal advocates\n` +
+        `• */professional* - Find the professional best matched to your latest enquiry\n` +
+        `• */lawyer* - Search specifically for a lawyer\n` +
         `• */directory* - Browse professional directory categories\n` +
         `• */bookings* - View your active case leads & booking statuses\n` +
         `• */language* - Choose a fixed language or enable automatic language matching\n` +
@@ -1284,7 +1296,7 @@ STRICT OPERATING RULES:
 3. SOURCE-BASED LEGAL INFORMATION: For legal answers, cite the exact statute and section supported by the supplied reference material; cite its page if no section is identifiable. Prefer a relevant Constitutional section when the source supports it, but do not force a citation. Never guess or fabricate legal citations, statutory wording, legal rights, or outcomes. Reference material may be incomplete or unverified.
 4. UNCERTAINTY: If reliable supporting material is unavailable or unclear, say that you cannot verify the legal point; do not fill the gap from memory or present a guess as fact. Recommend checking a current authoritative source or consulting qualified Nigerian counsel.
 5. RESPONSE STYLE: Answer directly in 1–3 short sentences or up to 3 brief bullets, usually under 90 words. For urgent or immediate-safety situations, use no more than 2 short sentences and 50 words. Keep citations short and include them only when supported by the available source.
-6. ADVOCATE REFERRAL: If the dispute needs formal representation, inform the user they can type /lawyer to search the professional directory.`;
+6. PROFESSIONAL REFERRAL: If specialist help is useful, recommend /professional to find a professional matched to the user's latest enquiry. Match tax questions to a tax agent, company/business registration to a CAC agent, accounting/bookkeeping to an accountant, and legal disputes to a lawyer. Do not call a tax agent a lawyer. Users can type /lawyer to search specifically for a lawyer.`;
 
     if (autoDetectLanguage) {
       fallbackInstruction += `\n7. AUTOMATIC LANGUAGE MATCHING: Detect the primary language in the user's latest message and answer in that language. Support English, Nigerian Pidgin, Hausa, Yoruba, and Igbo. For code-mixed messages, use the dominant language. If the language is unclear, use English. At the very start of your response, emit exactly one metadata line in this format, choosing the detected language: [[SABIRIGHT_LANGUAGE:English]] (the value must be exactly one of English, Nigerian Pidgin, Hausa, Yoruba, or Igbo). This marker is for SabiRight processing only; never mention it in the answer itself.`;
@@ -1312,7 +1324,7 @@ AI:`;
 
     if (!finalResponse) {
       await refundBotCredit(userId, cost, creditKey);
-      finalResponse = `I couldn't generate a reliable response to that enquiry. Your credits have been refunded.${fallbackGuidance} Please try again or type /lawyer to find a verified professional.`;
+      finalResponse = `I couldn't generate a reliable response to that enquiry. Your credits have been refunded.${fallbackGuidance} Please try again or type /professional to find a suitable professional.`;
     } else {
       if (autoDetectLanguage && parsedResponse.language) {
         const { error: languageError } = await supabase.from('profiles')
@@ -1347,11 +1359,15 @@ AI:`;
       });
     }
 
+    const enquiryForReferral = [...history].reverse().find(turn =>
+      turn.role === 'user' && !/^\/(?:professional|lawyer|directory|professionals|more)\b/i.test(turn.content)
+    )?.content || rawText;
+    const recommendedRole = getRecommendedProfessionalRole(enquiryForReferral);
     return {
       text: finalResponse,
       quickActions: [
         { id: 'balance', title: '💳 Balance', payload: 'ACTION_BALANCE' },
-        { id: 'lawyer', title: '👨‍⚖️ Connect Lawyer', payload: 'ACTION_LAWYER' },
+        { id: 'professional', title: `👥 ${getProfessionalLabel(recommendedRole)}`.slice(0, 20), payload: `PROS_ROLE_${recommendedRole}` },
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
         { id: 'lang', title: '🌐 Language', payload: 'ACTION_LANG' }
       ]
@@ -1367,9 +1383,9 @@ AI:`;
       refundNotice = 'I could not confirm the credit refund; please contact support if your balance does not update.';
     }
     return {
-      text: `⚠️ The answer service did not respond in time. ${refundNotice}${fallbackGuidance} You can try again or type /lawyer to look for an advocate in your area.`,
+      text: `⚠️ The answer service did not respond in time. ${refundNotice}${fallbackGuidance} You can try again or type /professional to find a suitable professional.`,
       quickActions: [
-        { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
+        { id: 'professional', title: `👥 ${getProfessionalLabel(getRecommendedProfessionalRole(rawText))}`.slice(0, 20), payload: `PROS_ROLE_${getRecommendedProfessionalRole(rawText)}` },
         { id: 'urgent', title: '🚨 Urgent Mode', payload: 'ACTION_URGENT' },
         { id: 'balance', title: '💳 Balance', payload: 'ACTION_BALANCE' }
       ]

@@ -732,9 +732,21 @@ export const supabaseStorage: IStorage = {
     return item;
   },
 
+  async updateMoatData(id: string, updates: Record<string, unknown>): Promise<void> {
+    const { error } = await supabase.from('moat_data').update(updates).eq('id', id);
+    if (error) throw new Error(`Could not update MOAT data: ${error.message}`);
+  },
+
   async deleteMoatData(id: string): Promise<void> {
     const { error } = await supabase.from('moat_data').delete().eq('id', id);
     if (error) throw new Error(`Could not delete MOAT data: ${error.message}`);
+  },
+
+  async deleteMoatDataMany(ids: string[]): Promise<void> {
+    for (let offset = 0; offset < ids.length; offset += 200) {
+      const { error } = await supabase.from('moat_data').delete().in('id', ids.slice(offset, offset + 200));
+      if (error) throw new Error(`Could not bulk delete MOAT data: ${error.message}`);
+    }
   },
 
   // Professionals & Marketplace
