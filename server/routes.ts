@@ -5239,22 +5239,47 @@ AI:`;
 
       // Automatically fetch the user's SabiGuard chat to generate a Pre-Case File summary
       let preCaseSummary = "";
+      let caseFileId: string | null = null;
+      let caseRef: string | null = null;
       try {
         let targetChatId = chatId;
-        if (!targetChatId) {
+        let messages: any[] = [];
+        if (targetChatId) {
+          messages = await storage.getSabiGuardMessages(targetChatId);
+        }
+        if (!messages || messages.length === 0) {
           const chats = await storage.getSabiGuardChats(userId);
           if (chats && chats.length > 0) {
             targetChatId = chats[0].id;
+            messages = await storage.getSabiGuardMessages(targetChatId);
           }
         }
-        if (targetChatId) {
-          const messages = await storage.getSabiGuardMessages(targetChatId);
-          if (messages && messages.length > 0) {
-            preCaseSummary = await summarizeCaseForProfessional(messages, userId);
-          }
+        if (messages && messages.length > 0) {
+          preCaseSummary = await summarizeCaseForProfessional(messages, userId);
         }
       } catch (err) {
         console.error('Failed to generate pre-case summary:', err);
+      }
+
+      // Persist the pre-case file in pre_case_files table
+      if (preCaseSummary) {
+        try {
+          const suffix = Math.random().toString(36).substring(2, 8);
+          caseFileId = `cf-${Date.now()}-${suffix}`;
+          caseRef = `CASE-${Date.now().toString().slice(-6).toUpperCase()}`;
+          await supabase.from('pre_case_files').insert({
+            id: caseFileId,
+            case_ref: caseRef,
+            user_id: userId,
+            channel: 'web',
+            issue_summary: preCaseSummary.slice(0, 500),
+            raw_chat_history: [],
+            intake_notes: preCaseSummary,
+            created_at: new Date().toISOString()
+          });
+        } catch (caseFileErr) {
+          console.error('Failed to persist pre-case file row:', caseFileErr);
+        }
       }
 
       const fullDescription = preCaseSummary ? `${description}\n\n---\n\n${preCaseSummary}` : description;
@@ -5263,12 +5288,27 @@ AI:`;
         serviceId,
         userId,
         vendorId,
+        caseFileId,
+        channel: 'web',
         totalAmount: totalAmount.toString(),
         description: fullDescription,
         scheduledDate: scheduledDate ? new Date(scheduledDate).toISOString() : null
       });
 
-      res.json(booking);
+      // Dispatch real-time notification to the professional
+      try {
+        await storage.sendNotification({
+          userId: vendorId,
+          type: 'new_case_lead',
+          title: `🚨 New Consultation Lead (${caseRef || booking.id})`,
+          message: `A client has requested a consultation with an auto-generated pre-case brief.`,
+          data: { bookingId: booking.id, caseFileId, caseRef }
+        });
+      } catch (notifyErr) {
+        console.warn('Failed to send notification to professional:', notifyErr);
+      }
+
+      res.json({ ...booking, caseFileId, caseRef });
     } catch (error) {
       next(error);
     }

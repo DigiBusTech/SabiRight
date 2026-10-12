@@ -1022,6 +1022,9 @@ export const supabaseStorage: IStorage = {
       user_id: data.userId,
       vendor_id: data.vendorId,
       service_id: data.serviceId || null,
+      case_file_id: data.caseFileId || null,
+      channel: data.channel || 'web',
+      contact_phone: data.contactPhone || null,
       title: data.title || 'Legal Consultation',
       description: data.description || '',
       status: 'pending',
@@ -1035,7 +1038,7 @@ export const supabaseStorage: IStorage = {
   async getBookingsByUserId(userId: string): Promise<any[]> {
     const { data } = await supabase
       .from('direct_bookings')
-      .select('*')
+      .select('*, pre_case_files(*)')
       .or(`user_id.eq.${userId},vendor_id.eq.${userId}`)
       .order('created_at', { ascending: false });
     return (data || []).map((b: any) => ({
@@ -1043,8 +1046,12 @@ export const supabaseStorage: IStorage = {
       userId: b.user_id,
       vendorId: b.vendor_id,
       serviceId: b.service_id,
+      caseFileId: b.case_file_id,
+      caseFile: b.pre_case_files || null,
       title: b.title,
       description: b.description,
+      channel: b.channel || 'web',
+      contactPhone: b.contact_phone,
       status: b.status,
       agreedFee: b.agreed_fee,
       createdAt: new Date(b.created_at)
