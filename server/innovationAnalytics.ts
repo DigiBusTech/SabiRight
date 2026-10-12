@@ -101,15 +101,33 @@ async function fetchAllPages<T>(
   }
 }
 
-export async function getInnovationAnalytics(startDate: string, endDate: string) {
-  const endExclusive = new Date(`${endDate}T00:00:00.000Z`);
-  endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
-  const endExclusiveIso = endExclusive.toISOString();
+export async function getInnovationAnalytics(startDate: string, endDate: string, options?: { hours?: number }) {
+  const now = new Date();
+  const isHourly = typeof options?.hours === "number" && options.hours > 0;
+  const hoursCount = isHourly ? options!.hours! : 24;
+
+  let startIso: string;
+  let endIso: string;
+  let actualStartDate = startDate;
+  let actualEndDate = endDate;
+
+  if (isHourly) {
+    const sinceTime = new Date(now.getTime() - hoursCount * 3600 * 1000);
+    startIso = sinceTime.toISOString();
+    endIso = now.toISOString();
+    actualStartDate = sinceTime.toISOString().slice(0, 10);
+    actualEndDate = now.toISOString().slice(0, 10);
+  } else {
+    startIso = `${startDate}T00:00:00.000Z`;
+    const endExclusive = new Date(`${endDate}T00:00:00.000Z`);
+    endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+    endIso = endExclusive.toISOString();
+  }
 
   const [profiles, links, botMessages, events, impactMetrics] = await Promise.all([
-    fetchAllPages<AnalyticsProfile>((from, to) =>
+    fetchAllPages<AnalyticsProfile & { created_at?: string }>((from, to) =>
       supabase.from("profiles")
-        .select("id,auth_id,channel,gender,dob,state,language")
+        .select("id,auth_id,channel,gender,dob,state,language,created_at")
         .order("id")
         .range(from, to)
     ),
@@ -123,8 +141,8 @@ export async function getInnovationAnalytics(startDate: string, endDate: string)
     fetchAllPages<{ channel: string; channel_user_id: string; received_at: string }>((from, to) =>
       supabase.from("inbound_bot_messages")
         .select("channel,channel_user_id,received_at")
-        .gte("received_at", `${startDate}T00:00:00.000Z`)
-        .lt("received_at", endExclusiveIso)
+        .gte("received_at", startIso)
+        .lt("received_at", endIso)
         .order("id")
         .range(from, to)
     ),
@@ -134,19 +152,22 @@ export async function getInnovationAnalytics(startDate: string, endDate: string)
       visitor_id: string;
       language: string | null;
       event_date: string;
-    }>((from, to) =>
-      supabase.from("analytics_events")
-        .select("channel,event_type,visitor_id,language,event_date")
-        .gte("event_date", startDate)
-        .lte("event_date", endDate)
-        .order("id")
-        .range(from, to)
-    ),
+      created_at?: string;
+    }>((from, to) => {
+      let query = supabase.from("analytics_events")
+        .select("channel,event_type,visitor_id,language,event_date,created_at");
+      if (isHourly) {
+        query = query.gte("created_at", startIso).lt("created_at", endIso);
+      } else {
+        query = query.gte("event_date", startDate).lte("event_date", endDate);
+      }
+      return query.order("id").range(from, to);
+    }),
     fetchAllPages<{ metric_key: string; channel: string | null; created_at: string }>((from, to) =>
       supabase.from("impact_metrics")
         .select("metric_key,channel,created_at")
-        .gte("created_at", `${startDate}T00:00:00.000Z`)
-        .lt("created_at", endExclusiveIso)
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
         .order("id")
         .range(from, to)
     )
@@ -263,8 +284,126 @@ export async function getInnovationAnalytics(startDate: string, endDate: string)
     }
   }
 
+  // Build hourly timeline for user testing activity
+  const currentHourStart = new Date(now);
+  currentHourStart.setMinutes(0, 0, 0);
+
+  const hourlySlots: Array<{
+    startTime: number;
+    endTime: number;
+    hour: string;
+    label: string;
+    date: string;
+    web: Set<string>;
+    native_app: Set<string>;
+    whatsapp: Set<string>;
+    telegram: Set<string>;
+    allUsers: Set<string>;
+    interactionsCount: number;
+  }> = [];
+
+  for (let offset = hoursCount - 1; offset >= 0; offset--) {
+    const slotStart = new Date(currentHourStart.getTime() - offset * 3600 * 1000);
+    const slotEnd = new Date(slotStart.getTime() + 3600 * 1000);
+    const hourLabel = `${String(slotStart.getHours()).padStart(2, "0")}:00`;
+    const dateLabel = slotStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+    const fullLabel = `${dateLabel} ${hourLabel}`;
+
+    hourlySlots.push({
+      startTime: slotStart.getTime(),
+      endTime: slotEnd.getTime(),
+      hour: hourLabel,
+      label: fullLabel,
+      date: slotStart.toISOString().slice(0, 10),
+      web: new Set(),
+      native_app: new Set(),
+      whatsapp: new Set(),
+      telegram: new Set(),
+      allUsers: new Set(),
+      interactionsCount: 0
+    });
+  }
+
+  const findSlot = (timestamp: string | Date | number | undefined | null) => {
+    if (!timestamp) return undefined;
+    const t = new Date(timestamp).getTime();
+    if (Number.isNaN(t)) return undefined;
+    return hourlySlots.find(s => t >= s.startTime && t < s.endTime);
+  };
+
+  for (const event of events) {
+    const t = event.created_at || (event.event_date ? `${event.event_date}T12:00:00.000Z` : null);
+    const slot = findSlot(t);
+    if (slot) {
+      if (event.event_type === "visit") {
+        slot[event.channel].add(event.visitor_id);
+      }
+      slot.allUsers.add(`${event.channel}:${event.visitor_id}`);
+      slot.interactionsCount++;
+    }
+  }
+
+  for (const msg of botMessages) {
+    const slot = findSlot(msg.received_at);
+    if (slot && (msg.channel === "whatsapp" || msg.channel === "telegram")) {
+      slot[msg.channel].add(msg.channel_user_id);
+      slot.allUsers.add(`${msg.channel}:${msg.channel_user_id}`);
+      slot.interactionsCount++;
+    }
+  }
+
+  for (const metric of impactMetrics) {
+    const slot = findSlot(metric.created_at);
+    if (slot) {
+      slot.interactionsCount++;
+    }
+  }
+
+  const hourlyData = hourlySlots.map(slot => ({
+    hour: slot.hour,
+    label: slot.label,
+    date: slot.date,
+    web: slot.web.size,
+    native_app: slot.native_app.size,
+    whatsapp: slot.whatsapp.size,
+    telegram: slot.telegram.size,
+    testingUsers: slot.allUsers.size,
+    interactions: slot.interactionsCount
+  }));
+
+  const activeTestingHours = hourlyData.filter(h => h.testingUsers > 0 || h.interactions > 0).length;
+  const distinctTestingUsers = new Set<string>();
+  hourlySlots.forEach(s => s.allUsers.forEach(u => distinctTestingUsers.add(u)));
+
+  let peakHour = "None";
+  let peakHourUsers = 0;
+  for (const h of hourlyData) {
+    if (h.testingUsers > peakHourUsers) {
+      peakHourUsers = h.testingUsers;
+      peakHour = `${h.label} (${h.testingUsers} testers)`;
+    }
+  }
+
+  const testingActivity = {
+    filterHours: isHourly ? options!.hours! : null,
+    windowHours: hoursCount,
+    activeTestingHours,
+    activePercentage: Math.round((activeTestingHours / hoursCount) * 100),
+    totalTestingUsers: distinctTestingUsers.size,
+    totalInteractions: hourlyData.reduce((acc, h) => acc + h.interactions, 0),
+    peakHour,
+    peakHourUsers,
+    hourly: hourlyData
+  };
+
   return {
-    period: { startDate, endDate },
+    period: {
+      startDate: actualStartDate,
+      endDate: actualEndDate,
+      hours: isHourly ? options!.hours! : null,
+      label: isHourly ? `Last ${options!.hours!} hours` : `${actualStartDate} to ${actualEndDate}`
+    },
+    testingActivity,
     accounts: {
       totalProfiles: profiles.length,
       webRegisteredUsers,

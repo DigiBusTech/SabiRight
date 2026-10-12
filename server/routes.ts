@@ -2012,6 +2012,8 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
   });
 
   app.get("/api/admin/innovation-analytics", adminAuth, async (req, res, next) => {
+    const rawHours = req.query.hours ? Number(req.query.hours) : undefined;
+    const hours = (rawHours && !isNaN(rawHours) && rawHours > 0 && rawHours <= 168) ? rawHours : undefined;
     const today = new Date().toISOString().slice(0, 10);
     const defaultStart = new Date();
     defaultStart.setUTCDate(defaultStart.getUTCDate() - 29);
@@ -2022,15 +2024,15 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
       const parsed = new Date(`${value}T00:00:00.000Z`);
       return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
     };
-    if (!validDate(startDate) || !validDate(endDate) || startDate > endDate) {
+    if (!hours && (!validDate(startDate) || !validDate(endDate) || startDate > endDate)) {
       return res.status(400).json({ error: "Provide a valid startDate and endDate in YYYY-MM-DD format" });
     }
-    if ((Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) / 86400000 > 3660) {
+    if (!hours && (Date.parse(`${endDate}T00:00:00.000Z`) - Date.parse(`${startDate}T00:00:00.000Z`)) / 86400000 > 3660) {
       return res.status(400).json({ error: "The reporting range cannot exceed 10 years" });
     }
 
     try {
-      const analytics = await getInnovationAnalytics(startDate, endDate);
+      const analytics = await getInnovationAnalytics(startDate, endDate, { hours });
       res.json(analytics);
     } catch (error) {
       next(error);

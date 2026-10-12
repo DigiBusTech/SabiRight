@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  Clock,
   Download,
   FileText,
   RefreshCw,
@@ -34,7 +35,7 @@ import {
 type Channel = "web" | "native_app" | "whatsapp" | "telegram";
 
 interface InnovationAnalyticsData {
-  period: { startDate: string; endDate: string };
+  period: { startDate: string; endDate: string; hours?: number | null; label?: string };
   accounts: {
     totalProfiles: number;
     webRegisteredUsers: number;
@@ -47,6 +48,27 @@ interface InnovationAnalyticsData {
     botEvents: number;
     byChannel: Record<Channel, number>;
     daily: Array<Record<Channel | "date", string | number>>;
+  };
+  testingActivity?: {
+    filterHours: number | null;
+    windowHours: number;
+    activeTestingHours: number;
+    activePercentage: number;
+    totalTestingUsers: number;
+    totalInteractions: number;
+    peakHour: string;
+    peakHourUsers: number;
+    hourly: Array<{
+      hour: string;
+      label: string;
+      date: string;
+      web: number;
+      native_app: number;
+      whatsapp: number;
+      telegram: number;
+      testingUsers: number;
+      interactions: number;
+    }>;
   };
   languageUsage: Array<{ language: string; userDays: number }>;
   languageByChannel: Array<Record<Channel | "language", string | number>>;
@@ -114,12 +136,20 @@ export default function InnovationAnalytics() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const { toast } = useToast();
 
+  const isHourlyRange = range === "12h" || range === "24h";
+
   const { data, isLoading, isFetching, error, refetch } = useQuery<InnovationAnalyticsData>({
-    queryKey: ["admin-innovation-analytics", startDate, endDate],
+    queryKey: ["admin-innovation-analytics", startDate, endDate, range],
     queryFn: async () => {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
-      const params = new URLSearchParams({ startDate, endDate });
+      const params = new URLSearchParams();
+      if (range === "12h" || range === "24h") {
+        params.set("hours", range.replace("h", ""));
+      } else {
+        params.set("startDate", startDate);
+        params.set("endDate", endDate);
+      }
       const response = await fetch(`/api/admin/innovation-analytics?${params}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
@@ -128,7 +158,7 @@ export default function InnovationAnalytics() {
       return result;
     },
     staleTime: 60_000,
-    enabled: startDate <= endDate
+    enabled: range === "12h" || range === "24h" || startDate <= endDate
   });
 
   const accountChartData = useMemo(() => (Object.keys(channelLabels) as Channel[]).map(channel => ({
@@ -149,7 +179,11 @@ export default function InnovationAnalytics() {
       return;
     }
     setCustomRange(false);
-    if (value !== "all") {
+    if (value === "12h" || value === "24h") {
+      const start = new Date(Date.now() - (value === "12h" ? 12 : 24) * 3600 * 1000);
+      setStartDate(formatLocalDate(start));
+      setEndDate(formatLocalDate(new Date()));
+    } else if (value !== "all") {
       setStartDate(getRangeStart(Number(value)));
       setEndDate(formatLocalDate(new Date()));
     } else {
@@ -160,9 +194,32 @@ export default function InnovationAnalytics() {
 
   const exportRows = (): Array<Array<string | number>> => {
     if (!data) return [];
+    const periodLabel = isHourlyRange
+      ? `Last ${range} (Active Testing Window)`
+      : `${data.period.startDate} to ${data.period.endDate}`;
+
     const rows: Array<Array<string | number>> = [
       ["Innovation Analytics"],
-      ["Period", `${data.period.startDate} to ${data.period.endDate}`],
+      ["Period", periodLabel],
+      ...(data.testingActivity ? [
+        [],
+        ["User testing activity & hours used", ""],
+        ["Hours used for testing", `${data.testingActivity.activeTestingHours} of ${data.testingActivity.windowHours} hours (${data.testingActivity.activePercentage}% active)`],
+        ["Distinct testing users", data.testingActivity.totalTestingUsers],
+        ["Total testing interactions", data.testingActivity.totalInteractions],
+        ["Peak testing window", data.testingActivity.peakHour],
+        [],
+        ["Testing hour", "Web", "Native app", "WhatsApp", "Telegram", "Active testers", "Interactions"],
+        ...data.testingActivity.hourly.map(h => [
+          h.label,
+          h.web,
+          h.native_app,
+          h.whatsapp,
+          h.telegram,
+          h.testingUsers,
+          h.interactions
+        ])
+      ] : []),
       [],
       ["Registered profile source", "Count"],
       ...accountChartData.map(row => [row.name, row.users]),
@@ -215,7 +272,10 @@ export default function InnovationAnalytics() {
 
   const exportCsv = () => {
     const csv = exportRows().map(row => row.map(csvCell).join(",")).join("\r\n");
-    downloadFile(`sabiright-innovation-analytics-${startDate}-to-${endDate}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
+    const filename = isHourlyRange
+      ? `sabiright-innovation-analytics-past-${range}-testing.csv`
+      : `sabiright-innovation-analytics-${startDate}-to-${endDate}.csv`;
+    downloadFile(filename, `\uFEFF${csv}`, "text/csv;charset=utf-8");
   };
 
   const exportPdf = async () => {
@@ -294,7 +354,10 @@ export default function InnovationAnalytics() {
       doc.text("PERIOD:", marginX + 75, currentY + 18);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(30, 41, 59);
-      doc.text(`${startDate} to ${endDate} (${range === "custom" ? "Custom" : `Last ${range}d`})`, marginX + 89, currentY + 18);
+      const periodDisplay = isHourlyRange
+        ? `Last ${range} (Active Testing Window)`
+        : `${startDate} to ${endDate} (${range === "custom" ? "Custom" : `Last ${range}d`})`;
+      doc.text(periodDisplay, marginX + 89, currentY + 18);
 
       doc.setFont("helvetica", "bold");
       doc.setTextColor(15, 118, 110);
@@ -306,6 +369,7 @@ export default function InnovationAnalytics() {
       currentY += 25;
 
       const visualSectionIds = [
+        ...(data.testingActivity ? ["analytics-section-testing"] : []),
         "analytics-section-overview",
         "analytics-section-audience",
         "analytics-section-languages-demographics",
@@ -443,8 +507,9 @@ export default function InnovationAnalytics() {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(7);
         doc.setTextColor(148, 163, 184);
+        const footerPeriod = isHourlyRange ? `Last ${range}` : `${startDate} to ${endDate}`;
         doc.text(
-          `SabiRight Innovation Analytics  •  Period: ${startDate} to ${endDate}  •  Sabi AI Technologies Ltd`,
+          `SabiRight Innovation Analytics  •  Period: ${footerPeriod}  •  Sabi AI Technologies Ltd`,
           marginX,
           291.5
         );
@@ -456,7 +521,10 @@ export default function InnovationAnalytics() {
         );
       }
 
-      doc.save(`sabiright-innovation-analytics-${startDate}-to-${endDate}.pdf`);
+      const pdfFilename = isHourlyRange
+        ? `sabiright-innovation-analytics-past-${range}-testing.pdf`
+        : `sabiright-innovation-analytics-${startDate}-to-${endDate}.pdf`;
+      doc.save(pdfFilename);
       toast({
         title: "PDF Export Complete",
         description: `Visual analytics report downloaded for ${startDate} to ${endDate}.`
@@ -491,6 +559,8 @@ export default function InnovationAnalytics() {
             <Select value={range} onValueChange={applyRange}>
               <SelectTrigger aria-label="Reporting period"><SelectValue /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="12h">Last 12 hours</SelectItem>
+                <SelectItem value="24h">Last 24 hours</SelectItem>
                 <SelectItem value="7">Last 7 days</SelectItem>
                 <SelectItem value="30">Last 30 days</SelectItem>
                 <SelectItem value="90">Last 90 days</SelectItem>
@@ -537,6 +607,74 @@ export default function InnovationAnalytics() {
       {isLoading && <div className="p-8 text-center text-sm text-slate-500">Loading innovation analytics…</div>}
       {data && (
         <div id="analytics-report-container" className="space-y-6">
+          {data.testingActivity && (
+            <Card id="analytics-section-testing" className="border-teal-100 bg-gradient-to-br from-teal-50/40 via-white to-slate-50/50">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-lg bg-teal-600/10 p-2 text-teal-700">
+                      <Clock className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-base text-slate-900">User Testing Activity & Hours Used</CardTitle>
+                      <p className="text-xs text-slate-500">
+                        Hours used to get participants testing, active participant counts, and peak testing telemetry.
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className="w-fit border-teal-200 bg-teal-50 font-medium text-teal-800">
+                    {data.period.hours ? `Filter: Past ${data.period.hours} Hours` : "Recent 24 Hours Activity"}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-lg border bg-white p-3 shadow-xs">
+                    <p className="text-xs font-medium text-slate-500">Hours Used for Testing</p>
+                    <p className="mt-1 text-2xl font-bold text-teal-700">
+                      {data.testingActivity.activeTestingHours} <span className="text-sm font-normal text-slate-500">/ {data.testingActivity.windowHours} hrs</span>
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">{data.testingActivity.activePercentage}% of window with active testing</p>
+                  </div>
+                  <div className="rounded-lg border bg-white p-3 shadow-xs">
+                    <p className="text-xs font-medium text-slate-500">Active Testing Users</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-900">
+                      {data.testingActivity.totalTestingUsers.toLocaleString()}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">Distinct testers across all channels</p>
+                  </div>
+                  <div className="rounded-lg border bg-white p-3 shadow-xs">
+                    <p className="text-xs font-medium text-slate-500">Total Test Interactions</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-900">
+                      {data.testingActivity.totalInteractions.toLocaleString()}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">Inbound events, visits & civic queries</p>
+                  </div>
+                  <div className="rounded-lg border bg-white p-3 shadow-xs">
+                    <p className="text-xs font-medium text-slate-500">Peak Testing Window</p>
+                    <p className="mt-1 truncate text-lg font-bold text-slate-900" title={data.testingActivity.peakHour}>
+                      {data.testingActivity.peakHour}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">Highest activity hour</p>
+                  </div>
+                </div>
+
+                <ChartCard title={`Hourly testing activity by channel (${data.testingActivity.windowHours}-hour window)`}>
+                  <BarChart data={data.testingActivity.hourly}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="hour" minTickGap={10} />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip labelFormatter={(_, payload) => payload?.[0]?.payload?.label} />
+                    <Legend />
+                    {(Object.keys(channelLabels) as Channel[]).map(channel => (
+                      <Bar key={channel} dataKey={channel} name={channelLabels[channel]} fill={channelColors[channel]} stackId="hourly-testing" />
+                    ))}
+                  </BarChart>
+                </ChartCard>
+              </CardContent>
+            </Card>
+          )}
+
           <div id="analytics-section-overview" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <MetricCard title="Registered profiles" value={data.accounts.totalProfiles} description="All profiles, across source channels" icon={<Users className="h-4 w-4 text-blue-600" />} />
             <MetricCard title="Authenticated web users" value={data.accounts.webRegisteredUsers} description="Web-source profiles with an auth account" icon={<Users className="h-4 w-4 text-violet-600" />} />
