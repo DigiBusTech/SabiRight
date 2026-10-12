@@ -628,3 +628,4 @@ VALUES (
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, type = EXCLUDED.type, location = EXCLUDED.location, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, verified = true;
 
 -- End of migration
+

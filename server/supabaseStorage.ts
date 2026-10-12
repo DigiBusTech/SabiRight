@@ -1082,7 +1082,29 @@ export const supabaseStorage: IStorage = {
   },
 
   async getBookingDetails(id: string): Promise<any | null> {
-    return await this.getBookingById(id);
+    const booking = await this.getBookingById(id);
+    if (!booking) return null;
+    let serviceName = 'Legal Consultation';
+    if (booking.serviceId) {
+      try {
+        const s = await this.getVendorServiceById(booking.serviceId);
+        if (s?.name) serviceName = s.name;
+      } catch {}
+    }
+    let customerName = booking.title || 'Civic Client';
+    if (booking.userId) {
+      try {
+        const u = await this.getUserProfile(booking.userId);
+        if (u?.displayName) customerName = u.displayName;
+      } catch {}
+    }
+    return {
+      booking: {
+        ...booking,
+        customerName,
+        service: { name: serviceName }
+      }
+    };
   },
 
   async getVendorLeads(vendorId: string): Promise<any[]> {
