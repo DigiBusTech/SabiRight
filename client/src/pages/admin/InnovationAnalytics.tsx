@@ -21,6 +21,7 @@ import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -110,6 +111,8 @@ export default function InnovationAnalytics() {
   const [endDate, setEndDate] = useState(() => formatLocalDate(new Date()));
   const [customRange, setCustomRange] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const { toast } = useToast();
 
   const { data, isLoading, isFetching, error, refetch } = useQuery<InnovationAnalyticsData>({
     queryKey: ["admin-innovation-analytics", startDate, endDate],
@@ -217,29 +220,258 @@ export default function InnovationAnalytics() {
 
   const exportPdf = async () => {
     if (!data) return;
+    setIsExportingPdf(true);
+    setExportError(null);
     try {
-      const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      const [{ jsPDF }, { default: autoTable }, html2canvasModule] = await Promise.all([
         import("jspdf"),
-        import("jspdf-autotable")
+        import("jspdf-autotable"),
+        import("html2canvas")
       ]);
-      const doc = new jsPDF();
-      doc.setFontSize(18);
-      doc.text("SabiRight Innovation Analytics", 14, 18);
-      doc.setFontSize(10);
-      doc.text(`Reporting period: ${startDate} to ${endDate}`, 14, 26);
-      const tableRows = exportRows().slice(2)
+      const html2canvas = html2canvasModule.default || html2canvasModule;
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4"
+      });
+
+      const marginX = 12;
+      const printableWidth = 210 - marginX * 2; // 186 mm
+      const pageHeight = 297;
+      const bottomMargin = 16;
+      const maxPageY = pageHeight - bottomMargin; // 281 mm
+
+      const drawHeader = (pageDoc: typeof doc) => {
+        pageDoc.setFillColor(15, 118, 110);
+        pageDoc.rect(marginX, 8, printableWidth, 1.2, "F");
+
+        pageDoc.setFont("helvetica", "bold");
+        pageDoc.setFontSize(8.5);
+        pageDoc.setTextColor(30, 41, 59);
+        pageDoc.text("SabiRight Innovation Analytics Report", marginX, 13);
+
+        pageDoc.setFont("helvetica", "normal");
+        pageDoc.setFontSize(8);
+        pageDoc.setTextColor(100, 116, 139);
+        pageDoc.text("Sabi AI Technologies Ltd", 210 - marginX, 13, { align: "right" });
+      };
+
+      drawHeader(doc);
+
+      let currentY = 18;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.setTextColor(15, 23, 42);
+      doc.text("Innovation Analytics & Channel Reach", marginX, currentY + 3);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text(
+        "Multi-channel reach, registered user attributions, local language telemetry, and participant demographics.",
+        marginX,
+        currentY + 9
+      );
+
+      // Meta info banner
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(marginX, currentY + 12, printableWidth, 9, 1.5, 1.5, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(15, 118, 110);
+      doc.text("ORGANIZATION:", marginX + 3, currentY + 18);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(30, 41, 59);
+      doc.text("Sabi AI Technologies Ltd", marginX + 27, currentY + 18);
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(15, 118, 110);
+      doc.text("PERIOD:", marginX + 75, currentY + 18);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(30, 41, 59);
+      doc.text(`${startDate} to ${endDate} (${range === "custom" ? "Custom" : `Last ${range}d`})`, marginX + 89, currentY + 18);
+
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(15, 118, 110);
+      doc.text("GENERATED:", marginX + 142, currentY + 18);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(30, 41, 59);
+      doc.text(new Date().toLocaleDateString("en-GB"), marginX + 162, currentY + 18);
+
+      currentY += 25;
+
+      const visualSectionIds = [
+        "analytics-section-overview",
+        "analytics-section-audience",
+        "analytics-section-languages-demographics",
+        "analytics-section-social"
+      ];
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      for (const sectionId of visualSectionIds) {
+        const element = document.getElementById(sectionId);
+        if (!element) continue;
+
+        const canvas = await html2canvas(element, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: "#ffffff",
+          windowWidth: 1280,
+          onclone: (clonedDoc) => {
+            const svgs = clonedDoc.querySelectorAll("svg");
+            svgs.forEach((svg) => {
+              svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+            });
+          }
+        });
+
+        const imgData = canvas.toDataURL("image/png");
+        const imgHeightMm = (canvas.height / canvas.width) * printableWidth;
+
+        if (currentY + imgHeightMm > maxPageY) {
+          doc.addPage();
+          drawHeader(doc);
+          currentY = 18;
+        }
+
+        doc.addImage(imgData, "PNG", marginX, currentY, printableWidth, imgHeightMm, undefined, "FAST");
+        currentY += imgHeightMm + 4;
+      }
+
+      if (currentY + 22 > maxPageY) {
+        doc.addPage();
+        drawHeader(doc);
+        currentY = 18;
+      }
+
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(marginX, currentY, printableWidth, 18, 1.5, 1.5, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(15, 118, 110);
+      doc.text("TELEMETRY & METHODOLOGY NOTES:", marginX + 3, currentY + 5);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(71, 85, 105);
+      doc.text(
+        "• Visitor metrics employ pseudonymous daily identifiers and exclude administrative endpoints. Offline visits are synchronized on reconnection.",
+        marginX + 3,
+        currentY + 9.5
+      );
+      doc.text(
+        "• Language metrics measure distinct visitor-language interaction days across channels (Yoruba, Hausa, Igbo, Nigerian Pidgin, English).",
+        marginX + 3,
+        currentY + 13.5
+      );
+      doc.text(
+        "• Social-channel linked accounts represent distinct SabiRight user accounts authenticated with WhatsApp or Telegram bot identities.",
+        marginX + 3,
+        currentY + 17
+      );
+
+      // Appendix: Granular Tabular Audit Table
+      doc.addPage();
+      drawHeader(doc);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(14);
+      doc.setTextColor(15, 23, 42);
+      doc.text("Appendix: Granular Audit Records & Numerical Breakdown", marginX, 23);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(
+        "Complete tabular breakdown of platform telemetry, visitor distributions, languages, and participant demographics.",
+        marginX,
+        28
+      );
+
+      const tableRows = exportRows()
+        .slice(2)
         .filter(row => row.length > 0)
         .map(row => [String(row[0] ?? ""), row.slice(1).map(String).join(" | ")]);
+
       autoTable(doc, {
-        head: [["Metric", "Value / details"]],
+        head: [["Metric / Dimension", "Value / Aggregated Count"]],
         body: tableRows,
-        startY: 32
+        startY: 32,
+        margin: { left: marginX, right: marginX, bottom: bottomMargin },
+        theme: "striped",
+        headStyles: {
+          fillColor: [15, 118, 110],
+          textColor: [255, 255, 255],
+          fontSize: 8.5,
+          fontStyle: "bold",
+          cellPadding: 2.5
+        },
+        bodyStyles: {
+          fontSize: 7.5,
+          textColor: [30, 41, 59],
+          cellPadding: 2
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252]
+        },
+        columnStyles: {
+          0: { cellWidth: 95 },
+          1: { cellWidth: 91 }
+        },
+        didDrawPage: () => {
+          drawHeader(doc);
+        }
       });
+
+      const totalPages = doc.getNumberOfPages();
+      for (let p = 1; p <= totalPages; p++) {
+        doc.setPage(p);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.3);
+        doc.line(marginX, 287, 210 - marginX, 287);
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+          `SabiRight Innovation Analytics  •  Period: ${startDate} to ${endDate}  •  Sabi AI Technologies Ltd`,
+          marginX,
+          291.5
+        );
+        doc.text(
+          `Page ${p} of ${totalPages}`,
+          210 - marginX,
+          291.5,
+          { align: "right" }
+        );
+      }
+
       doc.save(`sabiright-innovation-analytics-${startDate}-to-${endDate}.pdf`);
-      setExportError(null);
+      toast({
+        title: "PDF Export Complete",
+        description: `Visual analytics report downloaded for ${startDate} to ${endDate}.`
+      });
     } catch (exportFailure) {
       console.error("[Innovation Analytics] PDF export failed:", exportFailure);
-      setExportError(exportFailure instanceof Error ? exportFailure.message : "PDF export failed");
+      const errMsg = exportFailure instanceof Error ? exportFailure.message : "PDF export failed";
+      setExportError(errMsg);
+      toast({
+        title: "PDF Export Failed",
+        description: errMsg,
+        variant: "destructive"
+      });
+    } finally {
+      setIsExportingPdf(false);
     }
   };
 
@@ -280,8 +512,13 @@ export default function InnovationAnalytics() {
           <Button variant="outline" onClick={exportCsv} disabled={!data}>
             <Download className="mr-2 h-4 w-4" /> CSV
           </Button>
-          <Button onClick={() => void exportPdf()} disabled={!data}>
-            <FileText className="mr-2 h-4 w-4" /> PDF
+          <Button onClick={() => void exportPdf()} disabled={!data || isExportingPdf}>
+            {isExportingPdf ? (
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <FileText className="mr-2 h-4 w-4" />
+            )}
+            {isExportingPdf ? "Generating PDF…" : "PDF"}
           </Button>
         </div>
       </div>
@@ -299,8 +536,8 @@ export default function InnovationAnalytics() {
       )}
       {isLoading && <div className="p-8 text-center text-sm text-slate-500">Loading innovation analytics…</div>}
       {data && (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div id="analytics-report-container" className="space-y-6">
+          <div id="analytics-section-overview" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <MetricCard title="Registered profiles" value={data.accounts.totalProfiles} description="All profiles, across source channels" icon={<Users className="h-4 w-4 text-blue-600" />} />
             <MetricCard title="Authenticated web users" value={data.accounts.webRegisteredUsers} description="Web-source profiles with an auth account" icon={<Users className="h-4 w-4 text-violet-600" />} />
             <MetricCard title="Linked social users" value={data.accounts.linkedSocialUsers} description="Distinct SabiRight accounts linked to bots" icon={<Users className="h-4 w-4 text-green-600" />} />
@@ -309,55 +546,57 @@ export default function InnovationAnalytics() {
             <MetricCard title="Civic guidance delivered" value={data.impact.guidanceDelivered} description="Recorded impact-metric entries in this period" icon={<Activity className="h-4 w-4 text-amber-600" />} />
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Audience by channel</CardTitle>
-              <p className="text-sm text-slate-500">
-                Profile source is a registration attribution; bot visitor counts come from inbound message logs for the selected period.
-              </p>
-              <p className="text-xs text-slate-500">
-                Native-app visits and language interactions are counted separately; existing account records do not distinguish native-app sign-ups from web sign-ups.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {visitorRows.map(row => (
-                  <div key={row.channel} className="flex items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <p className="font-medium">{row.label}</p>
-                      <p className="text-xs text-slate-500">Unique visitors in period</p>
+          <div id="analytics-section-audience">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Audience by channel</CardTitle>
+                <p className="text-sm text-slate-500">
+                  Profile source is a registration attribution; bot visitor counts come from inbound message logs for the selected period.
+                </p>
+                <p className="text-xs text-slate-500">
+                  Native-app visits and language interactions are counted separately; existing account records do not distinguish native-app sign-ups from web sign-ups.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {visitorRows.map(row => (
+                    <div key={row.channel} className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="font-medium">{row.label}</p>
+                        <p className="text-xs text-slate-500">Unique visitors in period</p>
+                      </div>
+                      <Badge variant="secondary">{row.count.toLocaleString()}</Badge>
                     </div>
-                    <Badge variant="secondary">{row.count.toLocaleString()}</Badge>
-                  </div>
-                ))}
-              </div>
-              <div className="grid gap-6 lg:grid-cols-2">
-                <ChartCard title="Registered profile source">
-                  <BarChart data={accountChartData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="users" name="Profiles" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ChartCard>
-                <ChartCard title="Daily visitors by channel">
-                  <BarChart data={data.visitors.daily}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="date" tickFormatter={value => String(value).slice(5)} minTickGap={20} />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Legend />
-                    {(Object.keys(channelLabels) as Channel[]).map(channel => (
-                      <Bar key={channel} dataKey={channel} name={channelLabels[channel]} fill={channelColors[channel]} stackId="visitors" />
-                    ))}
-                  </BarChart>
-                </ChartCard>
-              </div>
-            </CardContent>
-          </Card>
+                  ))}
+                </div>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <ChartCard title="Registered profile source">
+                    <BarChart data={accountChartData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip />
+                      <Bar dataKey="users" name="Profiles" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ChartCard>
+                  <ChartCard title="Daily visitors by channel">
+                    <BarChart data={data.visitors.daily}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="date" tickFormatter={value => String(value).slice(5)} minTickGap={20} />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip />
+                      <Legend />
+                      {(Object.keys(channelLabels) as Channel[]).map(channel => (
+                        <Bar key={channel} dataKey={channel} name={channelLabels[channel]} fill={channelColors[channel]} stackId="visitors" />
+                      ))}
+                    </BarChart>
+                  </ChartCard>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-          <div className="grid gap-6 xl:grid-cols-2">
+          <div id="analytics-section-languages-demographics" className="grid gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Languages used in conversations</CardTitle>
@@ -401,25 +640,27 @@ export default function InnovationAnalytics() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Social-channel links</CardTitle>
-              <p className="text-sm text-slate-500">Linked identities and linked account counts are different measures; one user may link both channels.</p>
-            </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2">
-              {(["whatsapp", "telegram"] as const).map(channel => (
-                <div key={channel} className="rounded-lg border p-4">
-                  <p className="font-semibold">{channelLabels[channel]}</p>
-                  <p className="mt-2 text-sm">{data.accounts.linkedUsersByChannel[channel].toLocaleString()} linked SabiRight accounts</p>
-                  <p className="text-sm text-slate-500">{data.accounts.linkedAccounts[channel].toLocaleString()} linked channel identities</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-          <p className="text-xs text-slate-500">
+          <div id="analytics-section-social">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Social-channel links</CardTitle>
+                <p className="text-sm text-slate-500">Linked identities and linked account counts are different measures; one user may link both channels.</p>
+              </CardHeader>
+              <CardContent className="grid gap-3 sm:grid-cols-2">
+                {(["whatsapp", "telegram"] as const).map(channel => (
+                  <div key={channel} className="rounded-lg border p-4">
+                    <p className="font-semibold">{channelLabels[channel]}</p>
+                    <p className="mt-2 text-sm">{data.accounts.linkedUsersByChannel[channel].toLocaleString()} linked SabiRight accounts</p>
+                    <p className="text-sm text-slate-500">{data.accounts.linkedAccounts[channel].toLocaleString()} linked channel identities</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+          <p id="analytics-section-notes" className="text-xs text-slate-500">
             Visitor counts use pseudonymous daily IDs and exclude admin pages. Visits made while offline cannot be recorded; native-app counts include online visits only.
           </p>
-        </>
+        </div>
       )}
     </div>
   );
