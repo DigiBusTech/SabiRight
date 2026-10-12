@@ -443,7 +443,7 @@ export const supabaseStorage: IStorage = {
 
   async getPlanById(planId: string): Promise<UserPlan | null> {
     const all = await this.getAllPlans();
-    return all.find(p => p.id === planId) || null;
+    return all.find(p => p.id === planId || p.type === planId || (planId === 'free' && p.id === 'plan-free')) || null;
   },
 
   async getUserPlan(userId: string): Promise<UserPlan | null> {
@@ -555,10 +555,11 @@ export const supabaseStorage: IStorage = {
   async activatePlan(userId: string, planId: string): Promise<Subscription | null> {
     const plan = await this.getPlanById(planId);
     if (!plan) return null;
+    const resolvedPlanId = plan.id;
     await supabase.from('subscriptions').update({ status: 'cancelled' }).eq('user_id', userId).eq('status', 'active');
     const sub = await this.createSubscription({
       userId,
-      planId,
+      planId: resolvedPlanId,
       status: 'active',
       startDate: new Date().toISOString()
     });

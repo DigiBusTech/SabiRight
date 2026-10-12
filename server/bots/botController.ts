@@ -502,35 +502,48 @@ async function createBotGuestProfile(msg: IncomingBotMessage): Promise<any> {
   }
 
   if (profile.id === msg.channelUserId && profile.is_guest) {
-    const subscription = await storage.getUserSubscription(msg.channelUserId);
-    if (!subscription) {
-      const activated = await storage.activatePlan(msg.channelUserId, 'free');
-      if (!activated) throw new Error('Could not activate the guest account plan');
+    try {
+      const subscription = await storage.getUserSubscription(msg.channelUserId);
+      if (!subscription) {
+        const activated = await storage.activatePlan(msg.channelUserId, 'plan-free')
+          || await storage.activatePlan(msg.channelUserId, 'free');
+        if (!activated) {
+          console.warn(`[BotController] Could not activate plan-free for guest ${msg.channelUserId}, falling back to assignDefaultPlan`);
+          await storage.assignDefaultPlan(msg.channelUserId, 'user');
+        }
+      }
+    } catch (planErr) {
+      console.error('[BotController] Non-fatal error initializing guest plan/subscription:', planErr);
     }
   }
   return profile;
 }
 
 export async function getBotLanguage(channel: IncomingBotMessage['channel'], channelUserId: string): Promise<string> {
-  const { data: link, error: linkError } = await supabase
-    .from('channel_links')
-    .select('user_id')
-    .eq('channel', channel)
-    .eq('channel_user_id', channelUserId)
-    .maybeSingle();
-  if (linkError) throw linkError;
-  const userId = link?.user_id || channelUserId;
-  const { data: profile, error } = await supabase
-    .from('profiles')
-    .select('language,bot_language_mode,language_choice_enabled_at')
-    .eq('id', userId)
-    .maybeSingle();
-  if (error) throw error;
-  return profile?.language_choice_enabled_at &&
-    profile?.bot_language_mode === 'selected' &&
-    isChatResponseLanguage(profile.language)
-    ? profile.language
-    : AUTO_DETECT_LANGUAGE;
+  try {
+    const { data: link, error: linkError } = await supabase
+      .from('channel_links')
+      .select('user_id')
+      .eq('channel', channel)
+      .eq('channel_user_id', channelUserId)
+      .maybeSingle();
+    if (linkError) throw linkError;
+    const userId = link?.user_id || channelUserId;
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('language,bot_language_mode,language_choice_enabled_at')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    return profile?.language_choice_enabled_at &&
+      profile?.bot_language_mode === 'selected' &&
+      isChatResponseLanguage(profile.language)
+      ? profile.language
+      : AUTO_DETECT_LANGUAGE;
+  } catch (langErr) {
+    console.warn('[BotController] getBotLanguage encountered non-fatal error, falling back to AUTO_DETECT_LANGUAGE:', langErr);
+    return AUTO_DETECT_LANGUAGE;
+  }
 }
 
 async function refundBotCredit(userId: string, amount: number, idempotencyKey: string): Promise<void> {

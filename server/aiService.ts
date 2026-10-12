@@ -402,89 +402,64 @@ export async function transcribeAudio(
 
   const sovereignMode = await isNAtlasSovereignMode();
   if (sovereignMode) {
-    const asrLanguage = selectNAtlasAsrLanguage(language);
-    const modelId = selectNAtlasAsrModel(language);
-    const tokenSetting = await storage.getAdminSetting('natlas_api_token')
-      || await storage.getAdminSetting('huggingface_api_key');
-    const token = tokenSetting?.value
-      || process.env.NATLAS_API_TOKEN
-      || process.env.HUGGINGFACE_API_KEY
-      || process.env.HF_TOKEN;
-    if (!token) {
-      const error = new Error(
-        'N-ATLAS transcription requires a Hugging Face access token. Configure natlas_api_token in Admin Settings or set HF_TOKEN.'
-      );
-      Object.assign(error, { statusCode: 503 });
-      throw error;
-    }
-
-    const normalizedAudio = await transcodeAudioToNAtlasWav(audio);
-    const languageEndpointSettings = await Promise.all(
-      Object.values(NATLAS_ASR_ENDPOINT_SETTINGS).map(settingKey => storage.getAdminSetting(settingKey))
-    );
-    const [yorubaEndpoint, igboEndpoint, hausaEndpoint, englishEndpoint] = languageEndpointSettings;
-    const endpointByLanguage = {
-      yoruba: yorubaEndpoint?.value?.trim(),
-      igbo: igboEndpoint?.value?.trim(),
-      hausa: hausaEndpoint?.value?.trim(),
-      nigerianEnglish: englishEndpoint?.value?.trim()
-    };
-    const languageEndpointsConfigured = Object.values(endpointByLanguage).some(Boolean);
-    const legacySetting = languageEndpointsConfigured
-      ? null
-      : await storage.getAdminSetting('natlas_asr_endpoint');
-    const configuredEndpoint = endpointByLanguage[asrLanguage] || legacySetting?.value?.trim();
-    const endpoint = configuredEndpoint
-      ? configuredEndpoint.replaceAll('{model}', modelId)
-      : `${DEFAULT_NATLAS_ASR_ENDPOINT}/${modelId.split('/').map(encodeURIComponent).join('/')}`;
-
-    let response: Response;
     try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'audio/wav'
-        },
-        body: normalizedAudio,
-        signal: AbortSignal.timeout(NATLAS_ASR_REQUEST_TIMEOUT_MS)
-      });
-    } catch (requestError: any) {
-      console.error('[Transcribe] N-ATLAS ASR request failed:', requestError.message || requestError);
-      const error = new Error('N-ATLAS speech recognition could not be reached. Please try again.');
-      Object.assign(error, { statusCode: 502 });
-      throw error;
-    }
+      const asrLanguage = selectNAtlasAsrLanguage(language);
+      const modelId = selectNAtlasAsrModel(language);
+      const tokenSetting = await storage.getAdminSetting('natlas_api_token')
+        || await storage.getAdminSetting('huggingface_api_key');
+      const token = tokenSetting?.value
+        || process.env.NATLAS_API_TOKEN
+        || process.env.HUGGINGFACE_API_KEY
+        || process.env.HF_TOKEN;
 
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 300);
-      console.error(`[Transcribe] N-ATLAS ASR ${modelId} returned ${response.status}: ${detail}`);
-      const deniedByModelAccess = /gated|access denied|not authorized|authorization required|accept.*terms/i.test(detail);
-      const unavailableFromProvider = /no (?:inference )?provider|not supported by (?:any )?provider|model.*(?:not available|unsupported)/i.test(detail);
-      const message = response.status === 401 || response.status === 403 || deniedByModelAccess
-        ? `N-ATLAS ASR access was denied for ${modelId}. Accept the model's access terms on Hugging Face and configure a read token from an account with access.`
-        : response.status === 503
-          ? `N-ATLAS ASR model ${modelId} is loading or unavailable. Please retry shortly.`
-          : unavailableFromProvider
-            ? `Hugging Face does not currently serve ${modelId} through the shared inference router. Configure a dedicated ASR endpoint in Admin Settings.`
-            : response.status === 400
-              ? `N-ATLAS rejected the audio request for ${modelId} (400). Check Hugging Face model access and that the configured endpoint supports ASR audio/WAV input.`
-              : `N-ATLAS speech recognition failed (${response.status}). Please try again.`;
-      const error = new Error(message);
-      Object.assign(error, {
-        statusCode: response.status === 401 || response.status === 403 || deniedByModelAccess ? 503 : 502
-      });
-      throw error;
-    }
+      if (!token) {
+        console.warn('[Transcribe] N-ATLAS HF token not configured; proceeding to fallback speech engines.');
+      } else {
+        const normalizedAudio = await transcodeAudioToNAtlasWav(audio);
+        const languageEndpointSettings = await Promise.all(
+          Object.values(NATLAS_ASR_ENDPOINT_SETTINGS).map(settingKey => storage.getAdminSetting(settingKey))
+        );
+        const [yorubaEndpoint, igboEndpoint, hausaEndpoint, englishEndpoint] = languageEndpointSettings;
+        const endpointByLanguage = {
+          yoruba: yorubaEndpoint?.value?.trim(),
+          igbo: igboEndpoint?.value?.trim(),
+          hausa: hausaEndpoint?.value?.trim(),
+          nigerianEnglish: englishEndpoint?.value?.trim()
+        };
+        const languageEndpointsConfigured = Object.values(endpointByLanguage).some(Boolean);
+        const legacySetting = languageEndpointsConfigured
+          ? null
+          : await storage.getAdminSetting('natlas_asr_endpoint');
+        const configuredEndpoint = endpointByLanguage[asrLanguage] || legacySetting?.value?.trim();
+        const endpoint = configuredEndpoint
+          ? configuredEndpoint.replaceAll('{model}', modelId)
+          : `${DEFAULT_NATLAS_ASR_ENDPOINT}/${modelId.split('/').map(encodeURIComponent).join('/')}`;
 
-    const data = await response.json() as any;
-    const transcript = data?.text ?? data?.transcript ?? (Array.isArray(data) ? data[0]?.text : undefined);
-    if (typeof transcript !== 'string') {
-      const error = new Error('N-ATLAS ASR returned no transcript. Check the configured speech endpoint response format.');
-      Object.assign(error, { statusCode: 502 });
-      throw error;
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'audio/wav'
+          },
+          body: normalizedAudio,
+          signal: AbortSignal.timeout(NATLAS_ASR_REQUEST_TIMEOUT_MS)
+        });
+
+        if (response.ok) {
+          const data = await response.json() as any;
+          const transcript = data?.text ?? data?.transcript ?? (Array.isArray(data) ? data[0]?.text : undefined);
+          if (typeof transcript === 'string' && transcript.trim()) {
+            return { text: transcript.trim(), engine: `N-ATLAS (${modelId})` };
+          }
+          console.warn(`[Transcribe] N-ATLAS ASR returned empty or unexpected format, falling back to speech fallback.`);
+        } else {
+          const detail = (await response.text()).slice(0, 300);
+          console.warn(`[Transcribe] N-ATLAS ASR ${modelId} returned ${response.status}: ${detail}. Falling back to speech fallback.`);
+        }
+      }
+    } catch (asrError: any) {
+      console.warn(`[Transcribe] N-ATLAS ASR request failed (${asrError?.message || asrError}). Falling back to speech fallback.`);
     }
-    return { text: transcript.trim(), engine: modelId };
   }
 
   const asrSetting = sovereignMode ? await storage.getAdminSetting('natlas_asr_endpoint') : null;
