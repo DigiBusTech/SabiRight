@@ -112,7 +112,7 @@ To satisfy NAIC validation requirements, SabiRight was benchmarked across 50+ re
 
 ## 5. Team Profile & Eligibility Details
 
-* **Organisation / Startup Name:** DigiBus Technology Solutions Limited (SabiRight Engineering)
+* **Organisation / Startup Name:** Sabi AI Technologies Ltd (SabiRight Engineering)
 * **Registration:** Incorporated under Corporate Affairs Commission (CAC), Federal Republic of Nigeria
 * **Team Composition:** 100% Nigerian Citizens (Based in Nigeria)
   * **Team Lead / AI Architect:** System Design, Model Integration, Gateway Routing

@@ -651,6 +651,6 @@ On first contact, the SabiRight Agent introduces itself and asks the user to cho
 
 SabiRight is engineered for high-impact social and legal protection.
 
-- **Organization:** DigiBusTech / SabiRight Engineering Team
+- **Organization:** Sabi AI Technologies Ltd
 - **Repository:** [https://github.com/DigiBusTech/SabiRight](https://github.com/DigiBusTech/SabiRight)
 - **License:** Proprietary / All Rights Reserved. Commercial licensing and civic integration inquiries should be directed to the repository maintainers.
