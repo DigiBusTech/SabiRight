@@ -163,13 +163,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
       {/* Gemini-Style Professional Desktop & Mobile Drawer Sidebar */}
       <aside className={cn(
-        "fixed md:sticky top-0 h-screen bg-slate-950 text-white z-50 transition-all duration-300 flex flex-col border-r border-slate-800/80 shadow-[6px_0_24px_-6px_rgba(0,0,0,0.5)] select-none",
-        isSidebarOpen ? "translate-x-0 w-68" : "-translate-x-full md:translate-x-0",
+        "fixed md:sticky top-0 h-[100dvh] max-h-[100dvh] md:h-screen bg-slate-950 text-white z-50 transition-all duration-300 flex flex-col border-r border-slate-800/80 shadow-[6px_0_24px_-6px_rgba(0,0,0,0.5)] select-none",
+        isSidebarOpen ? "translate-x-0 w-[84vw] max-w-72 sm:w-68" : "-translate-x-full md:translate-x-0",
         !isSidebarOpen && (isCollapsed ? "md:w-18" : "md:w-64")
       )}>
         {/* Gemini-Style Sleek Header */}
         <div className={cn(
-          "px-4 py-3.5 flex items-center border-b border-slate-800/60 bg-slate-950/95",
+          "shrink-0 px-4 py-3.5 flex items-center border-b border-slate-800/60 bg-slate-950/95",
           isCollapsed && !isSidebarOpen ? "justify-center" : "justify-between"
         )}>
           {/* Logo & Brand (hidden when collapsed on desktop) */}
@@ -226,7 +226,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </div>
 
         {/* Gemini "+ New Inquiry" Quick Action Pill Button */}
-        <div className={cn("px-3 pt-3 pb-1", isCollapsed && !isSidebarOpen && "px-2")}>
+        <div className={cn("shrink-0 px-3 pt-3 pb-1", isCollapsed && !isSidebarOpen && "px-2")}>
           {(!isCollapsed || isSidebarOpen) ? (
             <Link href="/app/civic" onClick={() => setIsSidebarOpen(false)}>
               <button className="w-full flex items-center gap-2.5 px-3 py-2 rounded-2xl bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-200 hover:text-white font-medium text-xs shadow-xs transition-all duration-150 group cursor-pointer">
@@ -253,7 +253,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </div>
 
         {/* Navigation Sections (Airy, clean Gemini hierarchy with mouse hover tooltips on collapsed) */}
-        <nav className="flex-1 px-2.5 py-2 space-y-4 overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <nav className="flex-1 min-h-0 px-2.5 py-2 space-y-4 overflow-y-auto overscroll-contain touch-pan-y scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {navSections.map((sec, secIdx) => (
             <div key={secIdx} className="space-y-0.5">
               {(!isCollapsed || isSidebarOpen) && (
@@ -330,36 +330,61 @@ export default function AppLayout({ children }: AppLayoutProps) {
           ))}
         </nav>
 
-        {/* Gemini-Style Bottom Dock (Profile & Sign Out) */}
-        <div className="p-2.5 border-t border-slate-800/60 bg-slate-950/95 space-y-1">
-          {/* User Profile Card */}
+        {/* Gemini-Style Bottom Dock (Profile & Sign Out - Pinned & Safe-Area Aware) */}
+        <div className="shrink-0 sticky bottom-0 z-20 p-2.5 pb-[max(0.75rem,calc(env(safe-area-inset-bottom,0px)+0.75rem))] border-t border-slate-800/80 bg-slate-950/98 backdrop-blur-md space-y-2">
           {(!isCollapsed || isSidebarOpen) ? (
-            <Link href="/app/settings" onClick={() => setIsSidebarOpen(false)}>
-              <div className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-slate-900 cursor-pointer transition-colors group">
-                <Avatar className="h-7 w-7 border border-blue-500/40 shadow-xs shrink-0">
-                  <AvatarImage src={user?.photoURL || ""} />
-                  <AvatarFallback className="text-[10px] font-bold bg-blue-600 text-white">
-                    {user?.displayName?.charAt(0) || "C"}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="overflow-hidden flex-1 min-w-0">
-                  <p className="font-semibold text-xs truncate text-slate-200 group-hover:text-blue-400 transition-colors">
-                    {user?.displayName || "Citizen"}
-                  </p>
-                  <div className="flex items-center gap-1 text-[9px] text-slate-400 font-mono">
-                    <Shield className="h-2.5 w-2.5 text-emerald-400" />
-                    <span className="truncate">Verified Citizen</span>
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); handleSignOut(); }}
-                  title="Sign Out"
-                  className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+            <div className="space-y-1.5">
+              {/* Profile Card with decoupled, high-visibility Logout Icon */}
+              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-900/60 border border-slate-800/70">
+                <Link 
+                  href="/app/settings" 
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="flex items-center gap-2.5 p-1.5 rounded-lg flex-1 min-w-0 hover:bg-slate-800/70 cursor-pointer transition-colors group"
                 >
-                  <LogOut className="h-3.5 w-3.5" />
+                  <Avatar className="h-7 w-7 border border-blue-500/40 shadow-xs shrink-0">
+                    <AvatarImage src={user?.photoURL || ""} />
+                    <AvatarFallback className="text-[10px] font-bold bg-blue-600 text-white">
+                      {user?.displayName?.charAt(0) || "C"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="overflow-hidden flex-1 min-w-0">
+                    <p className="font-semibold text-xs truncate text-slate-200 group-hover:text-blue-400 transition-colors">
+                      {user?.displayName || "Citizen"}
+                    </p>
+                    <div className="flex items-center gap-1 text-[9px] text-slate-400 font-mono">
+                      <Shield className="h-2.5 w-2.5 text-emerald-400" />
+                      <span className="truncate">Verified Citizen</span>
+                    </div>
+                  </div>
+                </Link>
+
+                {/* Dedicated High-Contrast Logout Icon Button (36px min tap area, decoupled from link) */}
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  title="Sign Out"
+                  aria-label="Sign Out"
+                  className="h-9 w-9 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-400 active:text-rose-300 hover:bg-rose-500/15 active:bg-rose-500/25 transition-all cursor-pointer"
+                >
+                  <LogOut className="h-4 w-4" />
                 </button>
               </div>
-            </Link>
+
+              {/* Explicit Sign Out Bar in mobile drawer for instant one-tap reach */}
+              {isSidebarOpen && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSidebarOpen(false);
+                    handleSignOut();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 active:bg-rose-500/30 border border-rose-500/25 text-rose-400 hover:text-rose-300 text-xs font-semibold transition-all cursor-pointer shadow-xs"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span>Sign Out</span>
+                </button>
+              )}
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-1">
               <Tooltip delayDuration={0}>
@@ -400,7 +425,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </aside>
 
       {/* Main View Area */}
-      <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden">
+      <main className="flex-1 min-w-0 flex flex-col h-[100dvh] md:h-screen overflow-hidden">
         {/* Flagship Top Navigation Bar */}
         <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 h-16 px-4 md:px-6 flex items-center justify-between sticky top-0 z-30 shrink-0">
           {/* Left: Mobile Drawer Trigger & Page Context */}
@@ -476,7 +501,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </div>
 
         {/* Flagship Mobile & PWA Native Bottom Navigation Dock */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800/80 z-40 px-2 py-1.5 flex items-center justify-around shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-slate-950/90 backdrop-blur-xl border-t border-slate-200/80 dark:border-slate-800/80 z-40 px-2 pt-1.5 pb-[max(0.375rem,calc(env(safe-area-inset-bottom,0px)+0.375rem))] flex items-center justify-around shadow-[0_-8px_30px_rgba(0,0,0,0.12)]">
           {[
             { icon: LayoutDashboard, label: "Home", href: "/app" },
             { icon: Scale, label: "Legal AI", href: "/app/civic" },

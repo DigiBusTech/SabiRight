@@ -286,7 +286,7 @@ export default function InnovationAnalytics() {
       const [{ jsPDF }, { default: autoTable }, html2canvasModule] = await Promise.all([
         import("jspdf"),
         import("jspdf-autotable"),
-        import("html2canvas")
+        import("html2canvas-pro")
       ]);
       const html2canvas = html2canvasModule.default || html2canvasModule;
 
