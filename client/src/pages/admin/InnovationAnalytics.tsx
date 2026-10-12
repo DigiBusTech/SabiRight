@@ -608,7 +608,7 @@ export default function InnovationAnalytics() {
       {data && (
         <div id="analytics-report-container" className="space-y-6">
           {data.testingActivity && (
-            <Card id="analytics-section-testing" className="border-teal-100 bg-gradient-to-br from-teal-50/40 via-white to-slate-50/50">
+            <Card id="analytics-section-testing" className="border-teal-100 bg-linear-to-br from-teal-50/40 via-white to-slate-50/50">
               <CardHeader className="pb-3">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-2">

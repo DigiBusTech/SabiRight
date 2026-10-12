@@ -163,7 +163,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
       {/* Gemini-Style Professional Desktop & Mobile Drawer Sidebar */}
       <aside className={cn(
-        "fixed md:sticky top-0 h-[100dvh] max-h-[100dvh] md:h-screen bg-slate-950 text-white z-50 transition-all duration-300 flex flex-col border-r border-slate-800/80 shadow-[6px_0_24px_-6px_rgba(0,0,0,0.5)] select-none",
+        "fixed md:sticky top-0 h-dvh max-h-dvh md:h-screen bg-slate-950 text-white z-50 transition-all duration-300 flex flex-col border-r border-slate-800/80 shadow-[6px_0_24px_-6px_rgba(0,0,0,0.5)] select-none",
         isSidebarOpen ? "translate-x-0 w-[84vw] max-w-72 sm:w-68" : "-translate-x-full md:translate-x-0",
         !isSidebarOpen && (isCollapsed ? "md:w-18" : "md:w-64")
       )}>
@@ -240,7 +240,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             <Tooltip delayDuration={0}>
               <TooltipTrigger asChild>
                 <Link href="/app/civic">
-                  <button className="h-10 w-10 mx-auto rounded-2xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-blue-400 hover:text-white hover:bg-blue-600 flex items-center justify-center shadow-xs transition-all hover:scale-105 cursor-pointer">
+                  <button className="h-10 w-10 mx-auto rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-slate-700 text-blue-400 hover:text-white hover:bg-blue-600 flex items-center justify-center shadow-xs transition-all hover:scale-105 cursor-pointer">
                     <Plus className="h-4.5 w-4.5" />
                   </button>
                 </Link>
@@ -425,7 +425,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </aside>
 
       {/* Main View Area */}
-      <main className="flex-1 min-w-0 flex flex-col h-[100dvh] md:h-screen overflow-hidden">
+      <main className="flex-1 min-w-0 flex flex-col h-dvh md:h-screen overflow-hidden">
         {/* Flagship Top Navigation Bar */}
         <header className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800/80 h-16 px-4 md:px-6 flex items-center justify-between sticky top-0 z-30 shrink-0">
           {/* Left: Mobile Drawer Trigger & Page Context */}
