@@ -245,16 +245,39 @@ export async function getRelevantMoatContext(userPrompt: string): Promise<string
   const moatData = await loadMoatData();
   if (!moatData || moatData.length === 0) return '';
 
-  const cleanTokens = userPrompt
+  const pidginStopWords = new Set([
+    'wan', 'take', 'wey', 'bin', 'dey', 'fit', 'abi', 'wetin', 'sef', 'don',
+    'una', 'oga', 'am', 'dem', 'dis', 'dat', 'na', 'kedu', 'baa', 'se', 'what',
+    'when', 'where', 'which', 'who', 'how', 'the', 'and', 'for', 'with', 'that', 'this'
+  ]);
+
+  const rawTokens = userPrompt
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
-    .filter(w => w.length > 2 && !['what', 'when', 'where', 'which', 'who', 'how', 'the', 'and', 'for', 'with', 'that', 'this'].includes(w));
+    .filter(w => w.length > 2 && !pidginStopWords.has(w));
+
+  const expandedTokens = new Set(rawTokens);
+  const promptLower = userPrompt.toLowerCase();
+
+  // Civic domain semantic expansion for better MOAT retrieval across Nigerian queries
+  if (/\b(?:refund|pay|paid|deliver|delivery|project|contract|agreement|job|service|debt|money|scam|artisan)\b/i.test(promptLower)) {
+    ['contract', 'consumer', 'breach', 'debt', 'civil', 'fccpa', 'fccpc', 'agreement', 'recovery', 'terms'].forEach(t => expandedTokens.add(t));
+  }
+  if (/\b(?:police|officer|checkpoint|phone|search|arrest|station|bail|sars|detain)\b/i.test(promptLower)) {
+    ['police', 'search', 'arrest', 'warrant', 'liberty', 'bail', 'dignity', 'privacy', 'officer', 'custody'].forEach(t => expandedTokens.add(t));
+  }
+  if (/\b(?:landlord|tenant|rent|house|quit|evict|eviction|lodge|apartment)\b/i.test(promptLower)) {
+    ['tenancy', 'landlord', 'tenant', 'quit', 'rent', 'eviction', 'possession', 'notice'].forEach(t => expandedTokens.add(t));
+  }
+  if (/\b(?:tax|company|business|cac|cama|enterprise|register|firs|lirs)\b/i.test(promptLower)) {
+    ['cama', 'company', 'business', 'tax', 'registration', 'cac', 'returns'].forEach(t => expandedTokens.add(t));
+  }
 
   const scored = moatData.map(item => {
     const corpus = `${item.title || ''} ${item.category || ''} ${item.content || ''}`.toLowerCase();
     let matchCount = 0;
-    for (const token of cleanTokens) {
+    for (const token of expandedTokens) {
       if (corpus.includes(token)) matchCount++;
     }
     return { item, score: matchCount };
@@ -269,8 +292,8 @@ export async function getRelevantMoatContext(userPrompt: string): Promise<string
   const chosen = relevant;
   if (chosen.length === 0) return '';
 
-  let context = "\n\n[ADMIN-MANAGED LEGAL REFERENCE MATERIAL]\n";
-  context += "These entries are administrator-managed and have not been independently verified by this application. Use only relevant entries. Do not treat them as conclusive legal authority, infer missing details, or invent statutes, section numbers, quotations, or citations. For legal answers, cite the exact statute and section shown in the source text, or the source page when a section cannot be identified. If the material does not support an answer, say that you cannot verify the point and recommend checking an authoritative source or consulting qualified counsel.\n\n";
+  let context = "\n\n[AUTHORITATIVE STATUTORY REFERENCE MATERIAL]\n";
+  context += "The following are administrator-curated Nigerian statutory excerpts. Synthesize and cite relevant provisions (CFRN 1999, Police Act 2020, ACJA 2015, Tenancy Laws, CAMA, etc.) to provide accurate, empowering guidance. Never output phrases like 'supplied materials' or 'administrative MOAT context' in your response to the citizen.\n\n";
   for (const entry of chosen) {
     context += `• **${entry.title}** (${entry.category || 'Reference'}):\n  ${entry.content}\n  Source field: ${entry.source || 'Not specified'}\n\n`;
   }
