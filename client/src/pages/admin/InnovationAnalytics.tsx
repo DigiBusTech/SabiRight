@@ -288,7 +288,11 @@ export default function InnovationAnalytics() {
         import("jspdf-autotable"),
         import("html2canvas-pro")
       ]);
-      const html2canvas = html2canvasModule.default || html2canvasModule;
+      const html2canvas = (
+        (html2canvasModule as any).default ||
+        (html2canvasModule as any).html2canvas ||
+        html2canvasModule
+      ) as (element: HTMLElement, options?: any) => Promise<HTMLCanvasElement>;
 
       const doc = new jsPDF({
         orientation: "portrait",
@@ -382,31 +386,35 @@ export default function InnovationAnalytics() {
         const element = document.getElementById(sectionId);
         if (!element) continue;
 
-        const canvas = await html2canvas(element, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: "#ffffff",
-          windowWidth: 1280,
-          onclone: (clonedDoc) => {
-            const svgs = clonedDoc.querySelectorAll("svg");
-            svgs.forEach((svg) => {
-              svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-            });
+        try {
+          const canvas = await html2canvas(element, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: "#ffffff",
+            windowWidth: 1280,
+            onclone: (clonedDoc) => {
+              const svgs = clonedDoc.querySelectorAll("svg");
+              svgs.forEach((svg) => {
+                svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+              });
+            }
+          });
+
+          const imgData = canvas.toDataURL("image/png");
+          const imgHeightMm = (canvas.height / canvas.width) * printableWidth;
+
+          if (currentY + imgHeightMm > maxPageY) {
+            doc.addPage();
+            drawHeader(doc);
+            currentY = 18;
           }
-        });
 
-        const imgData = canvas.toDataURL("image/png");
-        const imgHeightMm = (canvas.height / canvas.width) * printableWidth;
-
-        if (currentY + imgHeightMm > maxPageY) {
-          doc.addPage();
-          drawHeader(doc);
-          currentY = 18;
+          doc.addImage(imgData, "PNG", marginX, currentY, printableWidth, imgHeightMm, undefined, "FAST");
+          currentY += imgHeightMm + 4;
+        } catch (sectionCaptureErr) {
+          console.warn(`[Innovation Analytics] Visual capture note for ${sectionId}:`, sectionCaptureErr);
         }
-
-        doc.addImage(imgData, "PNG", marginX, currentY, printableWidth, imgHeightMm, undefined, "FAST");
-        currentY += imgHeightMm + 4;
       }
 
       if (currentY + 22 > maxPageY) {
@@ -819,7 +827,7 @@ function MetricCard({ title, value, description, icon }: { title: string; value:
   );
 }
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+function ChartCard({ title, children }: { title: string; children: React.ReactElement }) {
   return (
     <div>
       <p className="mb-2 text-sm font-medium">{title}</p>
