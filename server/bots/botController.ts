@@ -733,22 +733,28 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
 
   const moreMatch = rawText.match(/^\/?more\s+(lawyer|cac_agent|tax_agent|accountant)\s+(\d+)$/i);
   const professionalCommand = /^\/?professional$/i.test(rawText);
+  const connectAffirmative = /^(?:yes(?: please)?|yeah|yep|sure|ok|okay|connect(?: me)?|help me find (?:a )?(?:lawyer|mediator|professional)|find (?:me )?(?:a )?(?:lawyer|mediator|advocate|professional)|show (?:me )?(?:lawyers|mediators|professionals)|connect (?:with )?(?:a )?(?:lawyer|mediator|professional)|i need (?:a )?(?:lawyer|mediator|professional))[\s.!?,]*$/i.test(rawText.trim());
+  const priorAiOfferedPro = history.length > 0 && history[history.length - 1]?.role === 'ai' &&
+    /(?:connect you with a verified|connect with a professional|mediator near you|find a lawyer|professional directory)/i.test(history[history.length - 1]?.content || '');
+
   if (
     payload === 'ACTION_LAWYER' ||
     rawText.toLowerCase() === '/lawyer' ||
     payload === 'ACTION_PROFESSIONAL' ||
     professionalCommand ||
     payload?.startsWith('PROS_ROLE_') ||
-    !!moreMatch
+    !!moreMatch ||
+    connectAffirmative ||
+    (priorAiOfferedPro && /^(?:yes|sure|ok|okay|yep|yeah)[\s.!?,]*$/i.test(rawText.trim()))
   ) {
     const latestEnquiry = [...history].reverse().find(turn =>
-      turn.role === 'user' && !/^\/(?:professional|lawyer|directory|professionals|more)\b/i.test(turn.content)
+      turn.role === 'user' && !/^(?:\/?(?:professional|lawyer|directory|professionals|more)|yes|sure|ok|okay|connect(?: me)?)\b/i.test(turn.content)
     )?.content || rawText;
     const role = moreMatch
       ? moreMatch[1].toLowerCase()
       : payload?.startsWith('PROS_ROLE_')
         ? payload.replace('PROS_ROLE_', '')
-        : payload === 'ACTION_PROFESSIONAL' || professionalCommand
+        : payload === 'ACTION_PROFESSIONAL' || professionalCommand || connectAffirmative || priorAiOfferedPro
           ? getRecommendedProfessionalRole(latestEnquiry)
           : 'lawyer';
     const offset = moreMatch ? Math.max(0, Number(moreMatch[2])) : 0;
@@ -1248,13 +1254,12 @@ async function handleBotMessage(msg: IncomingBotMessage): Promise<BotResponse> {
     let fallbackInstruction = `You are the SabiRight Agent, Nigeria's premier civic-tech legal first aid guide communicating via ${msg.channel.toUpperCase()}. You empower citizens by demystifying their legal rights, resolving daily civic disputes, and de-escalating encounters across police/law enforcement, landlord/tenant, contract/refunds/consumer issues, employer/labor, business/tax/CAC, and public agency frictions. Provide clear, empowering, and practical guidance. You provide legal first aid and education, not attorney-client representation.
 
 PERSONA AND LOCALIZATION:
-- You are empathetic, knowledgeable, street-smart, and deeply grounded in Nigerian law and daily civic realities.
+- NEVER BULKY: Keep responses strictly concise and easy to read on mobile screens (strictly between 60 to 100 words max). Use short punchy sentences and 2–3 brief bullets. Never write long essays or walls of text.
 - LANGUAGE MATCHING: If the user speaks Nigerian Pidgin (e.g. "How I wan take get my refund...", "Wetin be my right..."), reply in natural, fluent Nigerian Pidgin or accessible Nigerian English! If they speak English, Yoruba, Igbo, or Hausa, match their language. Never sound like a distant bureaucrat.
 - NO ROBOTIC JARGON: NEVER say "in the supplied materials", "administrative MOAT context", or "I don't see a reference". Speak directly to the citizen with clarity and authority.
-- FORMAT: Short punchy paragraphs, bold key phrases, and 2–4 numbered steps or concise bullet points.
 
 STRICT OPERATING RULES:
-1. DIRECT EMPOWERING GUIDANCE: Answer the citizen's enquiry directly with practical legal steps. Do not repeat introductions or add generic disclaimers.
+1. DIRECT CONCISE FIRST AID: Answer the citizen's enquiry directly with 2–3 practical legal steps (under 100 words).
 2. CIVIC DISPUTES & DAILY FRICTIONS:
    - REFUNDS, ARTISANS & CONTRACT BREACH: Explain that failure to deliver on an agreed job is a breach of contract under Nigerian Law of Contract and a consumer rights violation under the Federal Competition and Consumer Protection Act 2018 (FCCPA - Sections 130 and 131: right to quality service, timely performance, or a refund). Give actionable steps: (1) Gather evidence (bank transfer proofs, receipts, chats, agreed deadline), (2) Send a formal written Demand Letter with a firm 7-day deadline, (3) Escalate to FCCPC or file in the Small Claims Court (fast, affordable recovery without expensive lawyer fees). Remind the citizen that contract breach/debt is a CIVIL matter, NOT a crime—the Police have NO power to arrest or recover debts for civil contracts (Section 8(2) of ACJA 2015).
    - POLICE & LAW ENFORCEMENT: Cite the 1999 Constitution (Section 34 dignity, Section 35 liberty, Section 37 privacy of phone/gadgets—police cannot search a phone without a court warrant, Section 41 movement) and the Police Act 2020. De-escalate: remain calm, do not struggle, request to see a superior officer or DPO.
@@ -1263,7 +1268,9 @@ STRICT OPERATING RULES:
 3. GROUNDING & CITATIONS: Ground your answers in relevant Nigerian statutory provisions (CFRN 1999, FCCPA 2018, ACJA 2015, Police Act 2020, Tenancy Laws, CAMA 2020, Labour Act). If specific statutory excerpts are provided in the context, cite their exact sections. Never invent fake citations or cases.
 4. DE-ESCALATION: For physical or tense encounters, prioritize safety, non-confrontational communication, and lawful steps.
 5. CONVERSATION: Use recent history to understand follow-up questions. Keep a natural, focused back-and-forth.
-6. PROFESSIONAL REFERRAL: Give the complete civic first aid answer first. Only offer to connect with a verified advocate or specialist if the citizen explicitly asks or if their issue requires court representation or formal legal drafting.
+6. ALWAYS OFFER PROFESSIONAL OR MEDIATOR: At the very end of your response, always add one brief, natural sentence offering to connect the user with a verified practitioner:
+   e.g. "Would you like me to connect you with a verified lawyer or accredited mediator near you to help resolve this?"
+   (If in Pidgin: "You wan make I connect you with verified lawyer or mediator near you to help sort this out?")
 ${languageInstruction}
 This marker is internal; never mention it in the answer.`;
 
@@ -1350,20 +1357,18 @@ AI:`;
       });
     }
 
-    const quickActions = isFirstCivicQuery && replyGenerated
-      ? [
-          { id: 'lang', title: getLocalizedActionTitle(responseLanguage, 'language'), payload: 'ACTION_LANG' },
-          { id: 'help', title: getLocalizedActionTitle(responseLanguage, 'help'), payload: 'ACTION_HELP' },
-          ...(safetyConcern
-            ? [{ id: 'urgent', title: getLocalizedActionTitle(responseLanguage, 'urgent'), payload: 'ACTION_URGENT' }]
-            : [])
-        ]
-      : safetyConcern
+    const quickActions = [
+      { id: 'connect_pro', title: '🤝 Connect Pro/Mediator', payload: 'ACTION_PROFESSIONAL' },
+      { id: 'lawyer', title: '👨‍⚖️ Find Lawyer', payload: 'ACTION_LAWYER' },
+      ...(safetyConcern
         ? [{ id: 'urgent', title: getLocalizedActionTitle(responseLanguage, 'urgent'), payload: 'ACTION_URGENT' }]
-        : undefined;
+        : isFirstCivicQuery
+          ? [{ id: 'lang', title: getLocalizedActionTitle(responseLanguage, 'language'), payload: 'ACTION_LANG' }]
+          : [{ id: 'balance', title: '💳 Balance', payload: 'ACTION_BALANCE' }])
+    ];
     return {
       text: finalResponse,
-      ...(quickActions ? { quickActions } : {})
+      quickActions
     };
   } catch (error: any) {
     console.error("[BotController] Agent Error:", error);

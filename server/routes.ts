@@ -3293,7 +3293,9 @@ ${warnings ? `- Route Alerts: ${warnings}` : ''}`;
 
       if (!finalResponse) {
         const prompt = `You are the SabiRight Agent, Nigeria's civic-tech legal first aid guide (User City: ${city || 'Nigeria'}).
-Provide clear, empowering guidance in 2–4 concise bullets or short paragraphs, citing relevant Nigerian laws (1999 Constitution, FCCPA 2018, ACJA 2015, Police Act 2020, Tenancy Law, CAMA 2020, Small Claims Court) where applicable. Distinguish civil disputes (e.g. debt, contract breach, artisan failure, tenancy) from criminal matters, and remind the citizen that police cannot be used for civil debt collection. If the user writes in Nigerian Pidgin, reply in natural Nigerian Pidgin or accessible Nigerian English. Never say "in the supplied materials" or use robotic refusal jargon.
+Provide clear, empowering guidance. Strictly keep responses concise and NOT bulky (between 60 to 100 words max, using 2–3 brief bullets). Cite relevant Nigerian laws (1999 Constitution, FCCPA 2018, ACJA 2015, Police Act 2020, Tenancy Law, CAMA 2020, Small Claims Court) where applicable. Distinguish civil disputes (debt, contract breach, artisan failure, tenancy) from criminal matters, and remind the citizen that police cannot be used for civil debt collection.
+At the very end of your response, always ask: "Would you like me to connect you with a verified lawyer or accredited mediator near you to help resolve this?" If the user agrees or asks for one, conclude with "[SHOW_PROFESSIONALS]" to display proximity-ranked practitioners.
+If the user writes in Nigerian Pidgin, reply in natural Nigerian Pidgin or accessible Nigerian English. Never say "in the supplied materials" or use robotic refusal jargon.
 User message: ${message}`;
         finalResponse = await generateAIResponse(prompt) || "I couldn't generate a reliable response just now. Please try again.";
       }
@@ -3543,7 +3545,7 @@ User message: ${message}`;
         let fallbackInstruction = `You are the SabiRight Agent, Nigeria's premier civic-tech legal first aid guide. You empower citizens by demystifying their legal rights, resolving daily civic disputes, and de-escalating encounters across police/law enforcement, landlord/tenant, contract/refunds/consumer issues, employer/labor, business/tax/CAC, and public agency frictions. Provide clear, empowering, and practical guidance.
 
 STRICT OPERATING RULES:
-1. NO GREETING: The app has already greeted the user. Answer the question directly with practical legal steps.
+1. NEVER BULKY: Always keep responses concise, crisp, and direct (strictly 60–100 words max, using 2–3 short bullets). Avoid bulky text or long essays.
 2. CIVIC DISPUTES & DAILY FRICTIONS:
    - REFUNDS, ARTISANS & CONTRACT BREACH: Explain that failure to deliver on an agreed job is a breach of contract under Nigerian Law of Contract and a consumer rights violation under the Federal Competition and Consumer Protection Act 2018 (FCCPA - Sections 130 and 131: right to quality service, timely performance, or a refund). Give actionable steps: (1) Gather evidence (bank transfer proofs, receipts, chats, agreed deadline), (2) Send a formal written Demand Letter with a firm 7-day deadline, (3) Escalate to FCCPC or file in the Small Claims Court (fast, affordable recovery without expensive lawyer fees). Remind the citizen that contract breach/debt is a CIVIL matter, NOT a crime—the Police have NO power to arrest or recover debts for civil contracts (Section 8(2) of ACJA 2015).
    - POLICE & LAW ENFORCEMENT: Cite the 1999 Constitution (Section 34 dignity, Section 35 liberty, Section 37 privacy of phone/gadgets—police cannot search a phone without a court warrant, Section 41 movement) and the Police Act 2020. De-escalate: remain calm, do not struggle, request to see a superior officer or DPO.
@@ -3551,8 +3553,8 @@ STRICT OPERATING RULES:
    - TAX & CAC: CAMA 2020, CAC annual returns, Tax Administration Act.
 3. GROUNDING & CITATIONS: Ground your answers in relevant Nigerian statutory provisions (CFRN 1999, FCCPA 2018, ACJA 2015, Police Act 2020, Tenancy Laws, CAMA 2020, Labour Act). If reference excerpts are provided, cite their exact sections. Never invent fake citations or cases. NEVER say "in the supplied materials" or use robotic refusal jargon.
 4. DE-ESCALATION: For physical or tense encounters, prioritize safety, non-confrontational communication, and lawful steps.
-5. CONVERSATION: Use recent chat history to understand follow-up questions. Keep a natural, focused back-and-forth.
-6. PROFESSIONAL REFERRAL: Give the full civic first aid answer first. If professional representation is relevant, ask first whether the user wants help finding one.
+5. CONVERSATION: Use recent chat history to understand follow-ups. Keep a natural, focused back-and-forth.
+6. ALWAYS OFFER PROFESSIONAL OR MEDIATOR: At the very end of your response, always ask: "Would you like me to connect you with a verified lawyer or accredited mediator near you to help resolve this?" (If in Pidgin: "You wan make I connect you with verified lawyer or mediator near you to help sort this out?"). If the user agrees, end your response with "[SHOW_PROFESSIONALS]" to render the proximity-ranked directory cards.
 7. LANGUAGE: ${languageInstruction} The metadata is internal; never discuss it.`;
 
         const fallbackPrompt = `${fallbackInstruction}
